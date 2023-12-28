@@ -1,3 +1,12 @@
+.idea/
+data_dir/
+datasets_dir/
+datasets/
+model_dir/
+models_dir/
+models/
+checkpoints/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
