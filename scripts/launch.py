@@ -169,15 +169,10 @@ def automatic_modelname_factory():
 
 def modelname_factory(option):
     if option == "save":
-        if FLAGS.save_name is not None:
-            return FLAGS.save_name
-        else:
-            return automatic_modelname_factory()
-    elif option == "load":
-        if FLAGS.load_name is not None:
-            return FLAGS.load_name
-        else:
-            return automatic_modelname_factory()
+        return FLAGS.save_name or automatic_modelname_factory()
+    if option == "load":
+        return FLAGS.load_name or automatic_modelname_factory()
+    raise NotImplementedError(f"Unrecognized option {option}")
 
 
 def checkpoint_manager_factory(option):
