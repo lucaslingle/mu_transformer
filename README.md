@@ -2,7 +2,11 @@
 
 Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
 
-- Supports distributed training on TPU pod slices and GPU clusters. 
-- Supports data parallelism and tensor parallelism.
-- Supports any HuggingFace dataset and any tokenizer.
-- Simple, flexible configuration.
+Project goals:
+```
+- Distributed training on TPU pod slices and GPU clusters. 
+- Support data parallelism and tensor parallelism.
+- Support mu parameterization. 
+[Done] Support any HuggingFace text dataset and tokenizer.
+[Done] Simple, flexible configuration.
+```
