@@ -117,9 +117,9 @@ class MultiheadSelfAttention(nn.Module):
         chex.assert_shape(x, [b, t, dm])
 
         # todo: shard
-        q_init = init.zeros                # zero init, per appdx d.2
-        kv_init = init.normal(dm ** -0.5)  # normal w variance 1 / fan_in, per table 3
-        o_init = init.normal(dm ** -0.5)   # same as kv since fan_in = nh * dh = dm
+        q_init = init.zeros  # zero init, per appdx d.2
+        kv_init = init.normal(dm**-0.5)  # normal w variance 1 / fan_in, per table 3
+        o_init = init.normal(dm**-0.5)  # same as kv since fan_in = nh * dh = dm
         wq = self.param("wq_ii", q_init, [nh, dm, dh], self.hps.param_dtype)
         wk = self.param("wk_ii", kv_init, [nh, dm, dh], self.hps.param_dtype)
         wv = self.param("wv_ii", kv_init, [nh, dm, dh], self.hps.param_dtype)
@@ -132,7 +132,7 @@ class MultiheadSelfAttention(nn.Module):
 
         q = FractionalRotaryEncoding(self.hps.rotary_base, self.hps.rotary_interp_q)(q)
         k = FractionalRotaryEncoding(self.hps.rotary_base, self.hps.rotary_interp_k)(k)
-        q, k = map(lambda y: y * (dh ** -0.5), [q, k])  # def 4.1
+        q, k = map(lambda y: y * (dh**-0.5), [q, k])  # def 4.1
         self.sow("intermediates", "q_norm_m1", jnp.mean(jnp.linalg.norm(q, axis=-1)))
         self.sow("intermediates", "k_norm_m1", jnp.mean(jnp.linalg.norm(k, axis=-1)))
 
@@ -152,8 +152,8 @@ class MultiLayerPerceptron(nn.Module):
         dff = 4 * self.hps.d_model
 
         # todo: shard
-        w1_init = init.normal(dm ** -0.5)  # normal w variance 1 / fan_in
-        w2_init = init.normal(dff ** -0.5)  # normal w variance 1 / fan_in
+        w1_init = init.normal(dm**-0.5)  # normal w variance 1 / fan_in
+        w2_init = init.normal(dff**-0.5)  # normal w variance 1 / fan_in
         w1 = self.param("w1_ii", w1_init, [dm, dff], self.hps.param_dtype)
         w2 = self.param("w2_ii", w2_init, [dff, dm], self.hps.param_dtype)
 
@@ -190,13 +190,13 @@ class Transformer(nn.Module):
 
         # todo: shard
         e_init = init.normal(1.0)  # appendix b.1
-        o_init = init.zeros        # appendix d.2
+        o_init = init.zeros  # appendix d.2
         w_emb = self.param("we_fi", e_init, [nv, dm], self.hps.param_dtype)
         w_out = self.param("wd_if", o_init, [dm, nv], self.hps.param_dtype)
 
         # todo: sharding constraints
         w_emb = w_emb[None, ...]  # 1VD
-        x = x[..., None]          # BT1
+        x = x[..., None]  # BT1
         x = jnp.take_along_axis(w_emb, x, axis=-2)
         x = x.astype(self.hps.dtype)
         x = nn.remat_scan(TransformerBlock, lengths=(self.hps.n_layer, 1))(

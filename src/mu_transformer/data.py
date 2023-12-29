@@ -1,5 +1,6 @@
 from typing import Iterator
-from typing import Mapping, Optional
+from typing import Mapping
+from typing import Optional
 
 import datasets as hfds
 import jax
@@ -120,7 +121,7 @@ def get_dataset(
     # shuffle the training split
     if shuffle:
         assert split_name == "train"
-        shuffle_seed = start_step + (10 ** 9) * pindex
+        shuffle_seed = start_step + (10**9) * pindex
         ds = ds.shuffle(seed=shuffle_seed, buffer_size=shuffle_buffer_size)
 
     # convert to iterator, batch examples to the desired batch size per host.

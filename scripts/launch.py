@@ -18,7 +18,8 @@ from flax.training import orbax_utils
 from flax.training import train_state
 from ml_collections import config_flags
 
-from mu_transformer.data import get_dataset, get_tokenizer
+from mu_transformer.data import get_dataset
+from mu_transformer.data import get_tokenizer
 from mu_transformer.model import Transformer
 from mu_transformer.model import TransformerConfig
 
@@ -189,7 +190,8 @@ def loss_fn(params, batch, is_train):
         logits = Transformer(config).apply(*args)
         sown_metrics = dict()
     loss_terms = optax.softmax_cross_entropy_with_integer_labels(
-        logits=logits, labels=batch["targets"],
+        logits=logits,
+        labels=batch["targets"],
     )
     loss_metrics = dict(
         loss_term_avg=jnp.mean(batch["loss_mask"] * loss_terms),
