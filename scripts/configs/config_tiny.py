@@ -6,12 +6,12 @@ def get_config():
     config = config_dict.ConfigDict()
     config.model_size = "tiny"
 
-    # mesh and parameter settings
+    # basics
+    config.n_shard_data = 8
+    config.n_shard_model = 1
     config.param_dtype = jnp.float32
     config.dtype = jnp.bfloat16
     config.sow_intermediates = False
-    config.n_shard_data = 1
-    config.n_shard_model = 1
 
     # huggingface tokenizer and dataset settings
     config.hftr_tokenizer_name = "GPT2TokenizerFast"
@@ -40,7 +40,7 @@ def get_config():
     config.wd_lam = 0.01  # weight decay coefficient, is multiplied by each param's lr
 
     # periodic action settings
-    config.n_print_step = 100  # print every
+    config.n_print_step = 1  # print every
     config.n_save_step = 5_000  # checkpoint every
     config.n_eval_step = 10  # eval steps per checkpoint
     config.n_warmup_step = 10_000  # warmup steps during pretraining
