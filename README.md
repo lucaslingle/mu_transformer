@@ -30,3 +30,26 @@ pip3 install '.[tpu]' \
 
 To install in editable mode, write ```pip3 install -e ...```.  
 To install via pipenv, write ```pipenv install ...```. 
+
+## Examples
+
+To train with the default hyperparameters and tiny config:
+```
+python3 scripts/launch.py \
+    --config=scripts/configs/config_tiny.py \
+    --mode=train \
+    --workdir=workdir;
+```
+
+You can also override the configs. For example, to use the T5 tokenizer and C4 dataset, write
+```
+python3 scripts/launch.py \
+    --config=scripts/configs/config_tiny.py \
+    --mode=train \
+    --workdir=workdir \
+    --config.hftr_tokenizer_name=T5TokenizerFast \
+    --config.hftr_tokenizer_shortname=t5-base \
+    --config.hfds_identifier=c4 \
+    --config.hfds_config=en \
+    --config.hfds_datacol=text;
+```
