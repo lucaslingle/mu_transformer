@@ -22,7 +22,7 @@ setup(
         "datasets==2.14.6",
         "huggingface_hub==0.19.3",
         "jaxlib>=0.4.9",
-        "flax>=0.6.11",
+        "flax==0.7.2",
         "numpy>=1.22.0",
         "optax>=0.1.5",
         "orbax-checkpoint>=0.1.7",
