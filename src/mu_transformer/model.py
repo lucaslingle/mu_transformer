@@ -133,10 +133,8 @@ class MultiheadSelfAttention(nn.Module):
         x = sharding_constraint(x, sharding["BTM"], self.global_mesh)
 
         q_init = init.zeros  # zero init; appdx d.2
-        kv_init = init.normal(
-            self.hps.d_model**-0.5
-        )  # normal, var 1 / fan_in; table 3
-        o_init = init.normal(self.hps.d_model**-0.5)  # normal, var 1 / fan_in = 1 / m
+        kv_init = init.normal(self.hps.d_model**-0.5)  # normal, var 1/fan_in; table 3
+        o_init = init.normal(self.hps.d_model**-0.5)  # normal, var 1/fan_in = 1 / m
         wq = self.param(
             "wq_ii",
             nn.with_partitioning(q_init, sharding["MHD"], self.global_mesh),
@@ -163,9 +161,9 @@ class MultiheadSelfAttention(nn.Module):
         )
 
         # todo: maybe use dot general instead of einsum? need to see if it's faster
-        q = jnp.einsum("bim,hmd->bhid", x, wq.astype(self.hps.dtype))
-        k = jnp.einsum("bim,hmd->bhid", x, wk.astype(self.hps.dtype))
-        v = jnp.einsum("bim,hmd->bhid", x, wv.astype(self.hps.dtype))
+        q = jnp.einsum("bim,mhd->bhid", x, wq.astype(self.hps.dtype))
+        k = jnp.einsum("bim,mhd->bhid", x, wk.astype(self.hps.dtype))
+        v = jnp.einsum("bim,mhd->bhid", x, wv.astype(self.hps.dtype))
         q = sharding_constraint(q, sharding["BHTD"], self.global_mesh)
         k = sharding_constraint(k, sharding["BHTD"], self.global_mesh)
         v = sharding_constraint(v, sharding["BHTD"], self.global_mesh)

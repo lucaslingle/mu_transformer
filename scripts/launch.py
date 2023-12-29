@@ -259,8 +259,8 @@ def train_step(state, batch):
     state = state.apply_gradients(grads=grads)
     # Estimate ce loss for global batch: sum of unmasked ce terms / sum of mask values.
     # Equivalently,
-    metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
-    return state, metrics
+    loss_avg = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
+    return state, dict(loss_avg=loss_avg, **metrics)
 
 
 def train_loop():
@@ -326,9 +326,10 @@ def train_loop():
             metrics = jax.block_until_ready(jtu.tree_map(jax.device_get, metrics))
             end_time = time.perf_counter()
             metrics = dict(
+                step=step,
+                sec_per_step=(end_time - start_time) / FLAGS.config.n_print_step,
                 **metrics,
                 **{f"val_{k}": v for k, v in val_metrics.items()},
-                sec_per_step=(end_time - start_time) / FLAGS.config.n_print_step,
             )
             logging.info(metrics)
             if jax.process_index() == 0:
