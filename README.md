@@ -4,9 +4,9 @@ Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466)
 
 Project goals:
 ```
-- Distributed training on TPU pod slices and GPU clusters. 
+[Done] Distributed training on TPU pod slices and GPU clusters. 
 - Support data parallelism and tensor parallelism.
-- Support mu parameterization. 
+[Done] Support mu parameterization. 
 [Done] Support any HuggingFace text dataset and tokenizer.
 [Done] Simple, flexible configuration.
 ```

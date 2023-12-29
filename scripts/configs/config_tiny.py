@@ -16,7 +16,7 @@ def get_config():
     config.hfds_config = None
     config.hfds_datacol = "text"
 
-    config.tokens_per_global_batch = 4096
+    config.tokens_per_global_batch = 1024
     config.sequence_len = 512
     config.d_model = 128
     config.n_layer = 24
@@ -27,7 +27,10 @@ def get_config():
     config.act_square = False
 
     config.grad_clip = 1.0
-    config.lr_max = 0.0004
+    config.lr_max = 0.04
+    config.adam_b1 = 0.9
+    config.adam_b2 = 0.98
+    config.adam_eps = 1e-9
     config.wd_lam = 0.01
     config.n_print_step = 10  # print every
     config.n_save_step = 5_000  # checkpoint every

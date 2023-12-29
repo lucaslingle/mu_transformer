@@ -136,7 +136,7 @@ def get_dataset(
                     constant_values=True,
                 ).astype(np.int32),
                 axis=-1,
-            ),  # mask out every timestep where the input is eos, except at seq start
+            ),  # mask out every timestep once the input is eos, except at seq start
         },
         ds_iter,
     )

@@ -3,6 +3,7 @@ import time
 
 import jax
 import jax.numpy as jnp
+import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
 import wandb
@@ -11,6 +12,7 @@ from absl import flags
 from absl import logging
 from etils import epath
 from flax import jax_utils
+from flax import traverse_util
 from flax.training import common_utils
 from flax.training import orbax_utils
 from flax.training import train_state
@@ -51,40 +53,60 @@ def transformer_config_factory(is_train):
     )
 
 
+def params_factory(rng, is_train):
+    config = transformer_config_factory(is_train)
+    inputs = jnp.ones(dtype=jnp.int32, shape=[1, config.sequence_len])
+    params = Transformer(config).init({"params": rng}, inputs)["params"]
+    params_count = sum(x.size for x in jtu.tree_leaves(params))
+    logging.info(f"Param count: {params_count}")
+    return params
+
+
+def param_label_fn(params):
+    flat = traverse_util.flatten_dict(params)
+    flat_labels = {k: k[-1].split("_")[-1] for k, v in flat.items()}
+    return traverse_util.unflatten_dict(flat_labels)
+
+
+def schedule_factory():
+    warmup_steps = FLAGS.config.n_warmup_step
+    decay_steps = FLAGS.config.n_pretrain_step - FLAGS.config.n_warmup_step  # const aft
+    return optax.join_schedules(
+        [
+            optax.linear_schedule(0.0, end_value=1.0, transition_steps=warmup_steps),
+            optax.cosine_decay_schedule(1.0, alpha=0.1, decay_steps=decay_steps),
+        ],
+        boundaries=[warmup_steps],
+    )
+
+
 def grad_transform_factory():
-    optim = optax.adamw(
-        learning_rate=FLAGS.config.lr_max,
-        b1=0.9,
-        b2=0.98,
-        eps=1e-9,
+    kwargs = dict(
+        b1=FLAGS.config.adam_b1,
+        b2=FLAGS.config.adam_b2,
+        eps=FLAGS.config.adam_eps,
         mu_dtype=FLAGS.config.param_dtype,
         weight_decay=FLAGS.config.wd_lam,
     )
-    wu_step = FLAGS.config.n_warmup_step
-    dec_step = FLAGS.config.n_pretrain_step - FLAGS.config.n_warmup_step  # const after
-    schedule = optax.join_schedules(
-        [
-            optax.linear_schedule(0.0, end_value=1.0, transition_steps=wu_step),
-            optax.cosine_decay_schedule(1.0, alpha=0.1, decay_steps=dec_step),
-        ],
-        boundaries=[wu_step],
-    )
     return optax.chain(
         optax.clip_by_global_norm(FLAGS.config.grad_clip),
-        optim,
-        optax.scale_by_schedule(schedule),
+        # optax.adamw(FLAGS.config.lr_max, **kwargs),
+        optax.multi_transform(
+            {
+                "fi": optax.adamw(FLAGS.config.lr_max, **kwargs),
+                "ii": optax.adamw(FLAGS.config.lr_max / FLAGS.config.d_model, **kwargs),
+                "if": optax.adamw(FLAGS.config.lr_max / FLAGS.config.d_model, **kwargs),
+            },
+            param_labels=param_label_fn,
+        ),
+        optax.scale_by_schedule(schedule_factory()),
     )
 
 
 def train_state_factory(rng, is_train):
-    config = transformer_config_factory(is_train)
-    inputs = jnp.ones(dtype=jnp.int32, shape=[1, config.sequence_len])
-    params = Transformer(config).init({"params": rng}, inputs)["params"]
-    params_count = sum(x.size for x in jax.tree_util.tree_leaves(params))
-    logging.info(f"Param count: {params_count}")
     return train_state.TrainState.create(
         apply_fn=None,
-        params=params,
+        params=params_factory(rng, is_train),
         tx=grad_transform_factory(),
     )
 
@@ -339,6 +361,8 @@ def main(argv):
     logging.info("=== Config: ===")
     for k, v in vars(FLAGS.config)["_fields"].items():
         logging.info(f"{k}: {v}")
+    assert FLAGS.config.d_model >= 128
+    assert FLAGS.config.d_model % 128 == 0
 
     try:
         jax.distributed.initialize()
