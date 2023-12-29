@@ -31,7 +31,7 @@ def get_config():
 
     # optimization settings
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
-    config.lr_max = 0.04  # maximum main lr; scaled by mu-parameterization and schedule
+    config.lr_max = 0.3  # maximum main lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
     config.adam_b2 = 0.98
     config.adam_eps = 1e-9
