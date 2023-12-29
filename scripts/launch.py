@@ -1,7 +1,10 @@
 import functools
 import time
 
+import flax.core
+import flax.linen as nn
 import jax
+import jax.experimental.mesh_utils as jmu
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
@@ -11,18 +14,17 @@ from absl import app
 from absl import flags
 from absl import logging
 from etils import epath
-from flax import jax_utils
 from flax import traverse_util
-from flax.training import common_utils
 from flax.training import orbax_utils
-from flax.training import train_state
+from flax.training import train_state as train_utils
 from ml_collections import config_flags
 
 from mu_transformer.data import get_dataset
 from mu_transformer.data import get_tokenizer
 from mu_transformer.model import Transformer
 from mu_transformer.model import TransformerConfig
-
+from mu_transformer.sharding import get_namedsharding
+from mu_transformer.sharding import to_global_array
 
 MODES = ["train", "val", "test"]
 FLAGS = flags.FLAGS
@@ -34,6 +36,7 @@ flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
 flags.DEFINE_enum("mode", None, MODES, "Mode")
 flags.DEFINE_string("load_name", None, "Model name to load; None = use autogen")
 flags.DEFINE_string("save_name", None, "Model name to save; None = use autogen")
+flags.DEFINE_integer("experiment_seed", 0, "Experiment seed")
 flags.mark_flags_as_required(["config", "workdir", "mode"])
 
 
@@ -45,21 +48,32 @@ def tokenizer_factory():
     )
 
 
-@functools.lru_cache(maxsize=2)
-def transformer_config_factory(is_train):
+@functools.lru_cache(maxsize=1)
+def transformer_config_factory():
     return TransformerConfig.create(
         **vars(FLAGS.config)["_fields"],
         n_vocab=tokenizer_factory().vocab_size,
-        is_train=is_train,
     )
 
 
-def params_factory(rng, is_train):
-    config = transformer_config_factory(is_train)
+@functools.lru_cache(maxsize=1)
+def global_mesh_factory():
+    return jax.sharding.Mesh(
+        devices=jmu.create_device_mesh(
+            mesh_shape=(FLAGS.config.n_shard_data, FLAGS.config.n_shard_model),
+            devices=jax.devices(),
+        ),
+        axis_names=("data", "model"),
+    )
+
+
+def params_factory(rng, model_cls):
+    config = transformer_config_factory()
+    global_mesh = global_mesh_factory()
     inputs = jnp.ones(dtype=jnp.int32, shape=[1, config.sequence_len])
-    params = Transformer(config).init({"params": rng}, inputs)["params"]
-    params_count = sum(x.size for x in jtu.tree_leaves(params))
-    logging.info(f"Param count: {params_count}")
+    params = model_cls(config, global_mesh).init({"params": rng}, inputs)["params"]
+    if isinstance(params, flax.core.FrozenDict):
+        params = params.unfreeze()
     return params
 
 
@@ -103,12 +117,33 @@ def grad_transform_factory():
     )
 
 
-def train_state_factory(rng, is_train):
-    return train_state.TrainState.create(
-        apply_fn=None,
-        params=params_factory(rng, is_train),
-        tx=grad_transform_factory(),
+def train_state_factory(rng_init):
+    # based on https://flax.readthedocs.io/en/latest/guides/parallel_training/flax_on_pjit.html#the-output-s-sharding  # noqa
+    model_cls = Transformer
+    optimizer_cls = grad_transform_factory()
+
+    def init_fn(rng, model_cls_, optim_cls_):
+        return train_utils.TrainState.create(
+            apply_fn=None,
+            params=params_factory(rng, model_cls_),
+            tx=optim_cls_,
+        )
+
+    global_mesh = global_mesh_factory()
+    prng_sharding = get_namedsharding(axis_names=(None,), device_mesh=global_mesh)
+    abstract_variables = jax.eval_shape(
+        functools.partial(init_fn, model_cls_=model_cls, optim_cls_=optimizer_cls),
+        rng_init,
     )
+    state_sharding = nn.get_sharding(abstract_variables, global_mesh)
+    jit_init_fn = jax.jit(
+        init_fn,
+        static_argnums=(1, 2),
+        in_shardings=(prng_sharding,),
+        out_shardings=state_sharding,
+    )
+    initialized_state = jit_init_fn(rng_init, model_cls, optimizer_cls)
+    return initialized_state
 
 
 def global_batch_size_factory():
@@ -127,6 +162,7 @@ def automatic_modelname_factory():
         FLAGS.config.model_size,
         f"t{FLAGS.config.sequence_len}",
         f"s{FLAGS.config.n_pretrain_step}",
+        f"r{FLAGS.experiment_seed}",
     ]
     return "_".join(parts)
 
@@ -178,17 +214,29 @@ def do_save(mgr, step, target):
     )
 
 
-def loss_fn(params, batch, is_train):
-    config = transformer_config_factory(is_train)
-    args = [{"params": params}, batch["inputs"]]
-    if FLAGS.config.sow_intermediates:
-        logits, mvars = Transformer(config).apply(*args, mutable="intermediates")
-        intermediates = mvars["intermediates"]
-        sown_metrics, _ = jax.tree_util.tree_flatten_with_path(intermediates["stack"])
-        sown_metrics = {k[-2].key: jnp.mean(v) for k, v in sown_metrics}  # layer avg
-    else:
-        logits = Transformer(config).apply(*args)
-        sown_metrics = dict()
+def size_pytree(x):
+    return jtu.tree_reduce(lambda a, b: a + b.size, x, initializer=0.0)
+
+
+def l2norm_pytree(x):
+    return jtu.tree_reduce(lambda a, b: a + jnp.sum(b**2), x, initializer=0.0) ** 0.5
+
+
+def loss_fn(params, batch):
+    # todo: support sown intermediates
+    # if FLAGS.config.sow_intermediates:
+    #     logits, mvars = Transformer(*i_args).apply(*c_args, mutable="intermediates")
+    #     intermediates = mvars["intermediates"]
+    #     sown_metrics, _ = jtu.tree_flatten_with_path(intermediates["stack"])
+    #     sown_metrics = {k[-2].key: jnp.mean(v) for k, v in sown_metrics}  # layer avg
+    # else:
+    #     logits = Transformer(i_args).apply(*c_args)
+    #     sown_metrics = dict()
+    config = transformer_config_factory()
+    global_mesh = global_mesh_factory()
+    logits = Transformer(config, global_mesh).apply({"params": params}, batch["inputs"])
+    sown_metrics = dict()
+
     loss_terms = optax.softmax_cross_entropy_with_integer_labels(
         logits=logits,
         labels=batch["targets"],
@@ -200,20 +248,22 @@ def loss_fn(params, batch, is_train):
     return loss_metrics["loss_term_avg"], dict(**loss_metrics, **sown_metrics)
 
 
-@functools.partial(jax.pmap, donate_argnums=(0,), axis_name="devices")
-def train_step(state, batch, rng):
-    (_, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-        state.params,
-        batch=batch,
-        is_train=True,
-    )
-    metrics, grads = jax.lax.pmean([metrics, grads], axis_name="devices")
+@functools.partial(jax.jit, donate_argnums=(0,))
+def train_step(state, batch):
+    (_, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(state.params, batch)
+    # no extra mean anywhere, we already have the mean gradient!
+    # if you do a jtu.tree_map(jnp.mean), it will avg within each leaf, leading to a bug
+    metrics["param_count"] = size_pytree(state.params)  # so it's always visible
+    metrics["param_norm"] = l2norm_pytree(state.params)
+    metrics["grad_norm"] = l2norm_pytree(grads)
     state = state.apply_gradients(grads=grads)
+    # Estimate ce loss for global batch: sum of unmasked ce terms / sum of mask values.
+    # Equivalently,
     metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
     return state, metrics
 
 
-def train_loop(rng):
+def train_loop():
     log_level = logging.INFO
     logging.log(log_level, "Entering train loop function...")
     logging.log(log_level, "Creating W&B connection...")
@@ -226,16 +276,15 @@ def train_loop(rng):
             id=FLAGS.wb_run,
         )
     logging.log(log_level, "Creating RNGs...")
-    rng_init, rng_stoch = jax.random.split(rng)
+    rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.experiment_seed))
     rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())
 
     logging.log(log_level, "Creating train state...")
     load_checkpoint_mgr = checkpoint_manager_factory(option="load")
-    state = train_state_factory(rng_init, is_train=True)
+    state = train_state_factory(rng_init)
     if load_checkpoint_mgr.latest_step() is not None:
         state = do_restore(load_checkpoint_mgr, state)
     start_step = load_checkpoint_mgr.latest_step() or 0
-    state = jax.block_until_ready(jax_utils.replicate(state))
     del load_checkpoint_mgr
 
     logging.log(log_level, "Creating dataset...")
@@ -252,65 +301,66 @@ def train_loop(rng):
     batch_iter = get_dataset(start_step=start_step, **batch_iter_kwargs)
 
     logging.log(log_level, "Starting training loop...")
-    # use n_finetune_step > 0 if and only if currently fine-tuning.
-    n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
     best_val_loss = float("inf")
-    val_loss = None
+    val_metrics = dict()
+    global_mesh = global_mesh_factory()
     save_checkpoint_mgr = checkpoint_manager_factory(option="save")
     start_time = time.perf_counter()
+    # the user should set n_finetune_step > 0 if and only if currently fine-tuning.
+    n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
     for step in range(start_step, n_total_step + 1):
+        # get next batch, and reset at epoch end.
         try:
             batch = next(batch_iter)
         except StopIteration:
             batch_iter = get_dataset(start_step=step, **batch_iter_kwargs)
             batch = next(batch_iter)
-        state, metrics = train_step(
-            state,
-            common_utils.shard(batch),
-            common_utils.shard_prng_key(jax.random.fold_in(rng_stoch, step)),
-        )
+
+        # distribute local batch arrays to global batch arrays
+        batch = jtu.tree_map(lambda y: to_global_array(y, global_mesh), batch)
+        # run a training step
+        state, metrics = train_step(state, batch=batch)
+
+        # occasionally print metrics
         if step % FLAGS.config.n_print_step == 0:
-            metrics = jax_utils.unreplicate(metrics)
-            metrics = jax.block_until_ready(metrics)
+            state = jax.block_until_ready(state)
+            metrics = jax.block_until_ready(jtu.tree_map(jax.device_get, metrics))
             end_time = time.perf_counter()
-            extras = dict(
-                step=step,
-                val_loss_avg=val_loss,
+            metrics = dict(
+                **metrics,
+                **val_metrics,
                 sec_per_step=(end_time - start_time) / FLAGS.config.n_print_step,
             )
-            metrics.update(extras)
             logging.info(metrics)
             if jax.process_index() == 0:
                 wandb.log(metrics)
             start_time = end_time
+
+        # occasionally perform an evaluation and save a checkpoint on improvement
         if (step % FLAGS.config.n_save_step == 0) or step == n_total_step:
-            val_loss = eval_loop(
-                params=state.params,
-                rng=jax.random.fold_in(rng_stoch, step),
-                step=step,
-            )
-            if best_val_loss > val_loss:
-                do_save(save_checkpoint_mgr, step, jax_utils.unreplicate(state))
-                best_val_loss = val_loss
+            val_metrics = eval_loop(state.params, n_eval_step=FLAGS.config.n_eval_step)
+            if best_val_loss > val_metrics["loss_avg"]:
+                do_save(save_checkpoint_mgr, step, state)
+                best_val_loss = val_metrics["loss_avg"]
 
 
-@functools.partial(jax.pmap, axis_name="devices")
-def eval_step(params, batch, rng):
-    _, metrics = loss_fn(params, batch, is_train=False)
-    return jax.lax.pmean(metrics, axis_name="devices")
+@jax.jit
+def eval_step(params, batch):
+    _, metrics = loss_fn(params, batch)
+    return metrics
 
 
-def eval_loop(params, rng, step):
+def eval_loop(params, n_eval_step=None):
     logging.info("Entering eval loop function...")
     if params is None:
-        rng, rng_init = jax.random.split(rng)
+        rng_init, _ = jax.random.split(jax.random.PRNGKey(FLAGS.experiment_seed))
         logging.info("Creating params...")
         load_checkpoint_mgr = checkpoint_manager_factory(option="load")
-        state = train_state_factory(rng_init, is_train=False)
+        state = train_state_factory(rng_init)
         if load_checkpoint_mgr.latest_step() is not None:
             state = do_restore(load_checkpoint_mgr, state)
         del load_checkpoint_mgr
-        state = jax.block_until_ready(jax_utils.replicate(state))
+        state = jax.block_until_ready(state)
         params = state.params
         del state
 
@@ -323,28 +373,33 @@ def eval_loop(params, rng, step):
         split_name="val" if FLAGS.mode == "train" else FLAGS.mode,
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
-        start_step=step,
+        start_step=0,
         shuffle=False,
     )
 
-    logging.info("Starting eval loop...")
-    loss_term_avg = 0.0
-    loss_mask_avg = 0.0
-    count = 0
-    for batch in batch_iter:
-        logging.info(f"eval step {count}...")
-        if (FLAGS.mode == "train") and (count == FLAGS.config.n_eval_step):
-            break
-        metrics = eval_step(
-            params,
-            common_utils.shard(batch),
-            common_utils.shard_prng_key(jax.random.fold_in(rng, count)),
-        )
-        loss_term_avg += (1 / (count + 1)) * (metrics["loss_term_avg"] - loss_term_avg)
-        loss_mask_avg += (1 / (count + 1)) * (metrics["loss_mask_avg"] - loss_mask_avg)
-        count += 1
-    loss_avg = loss_term_avg / loss_mask_avg
-    return jax.block_until_ready(jax_utils.unreplicate(loss_avg))
+    start_time = time.perf_counter()
+    accumulator = None
+    for i, batch in enumerate(batch_iter):
+        logging.info(f"eval step {i}...")
+        stats = eval_step(params=params, batch=batch)
+        stats = jax.block_until_ready(stats)  # slows a bit, but makes printout accurate
+        if accumulator is not None:
+            accumulator = jtu.tree_map(lambda a, b: a + b, stats, accumulator)
+        else:
+            accumulator = stats
+        if n_eval_step is not None:
+            if i + 1 == n_eval_step:
+                break
+
+    accumulator = jtu.tree_map(jax.device_get, accumulator)
+    accumulator = jax.block_until_ready(accumulator)
+    end_time = time.perf_counter()
+    eval_metrics = dict(
+        loss_avg=accumulator["loss_term_avg"] / accumulator["loss_mask_avg"],
+        secs_per_step=(end_time - start_time) / i,
+        **accumulator,
+    )
+    return eval_metrics
 
 
 def main(argv):
@@ -372,9 +427,11 @@ def main(argv):
         logging.warning("Jax distributed did not init successfully.")
 
     if FLAGS.mode == "train":
-        train_loop(jax.random.PRNGKey(0))
-    elif FLAGS.mode in {"validation", "test"}:
-        eval_loss = eval_loop(None, jax.random.PRNGKey(0), 0)
+        train_loop()
+    elif FLAGS.mode in {"val", "test"}:
+        eval_metrics = eval_loop(params=None, n_eval_step=None)
+        eval_loss = eval_metrics["loss_avg"]
+        logging.info(f"Eval metrics: {eval_metrics}")
         logging.info(f"Eval loss: {eval_loss}")
     else:
         raise NotImplementedError

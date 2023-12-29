@@ -6,10 +6,12 @@ def get_config():
     config = config_dict.ConfigDict()
     config.model_size = "tiny"
 
-    # basics
+    # mesh and parameter settings
     config.param_dtype = jnp.float32
     config.dtype = jnp.bfloat16
     config.sow_intermediates = False
+    config.n_shard_data = 1
+    config.n_shard_model = 1
 
     # huggingface tokenizer and dataset settings
     config.hftr_tokenizer_name = "GPT2TokenizerFast"
@@ -19,7 +21,7 @@ def get_config():
     config.hfds_datacol = "text"
 
     # batch size, sequence length, architecture settings
-    config.tokens_per_global_batch = 65536
+    config.tokens_per_global_batch = 1024
     config.sequence_len = 512
     config.d_model = 128
     config.n_layer = 24
@@ -40,7 +42,7 @@ def get_config():
     # periodic action settings
     config.n_print_step = 100  # print every
     config.n_save_step = 5_000  # checkpoint every
-    config.n_eval_step = 100  # eval steps per checkpoint
+    config.n_eval_step = 10  # eval steps per checkpoint
     config.n_warmup_step = 10_000  # warmup steps during pretraining
     config.n_pretrain_step = 125_000  # pretraining steps
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
