@@ -123,7 +123,7 @@ def automatic_modelname_factory():
     assert dataset_name.isalnum()
     parts = [
         "mutransformer",
-        FLAGS.config.hfds_identifier.split("/")[-1].lower(),
+        dataset_name,
         FLAGS.config.model_size,
         f"t{FLAGS.config.sequence_len}",
         f"s{FLAGS.config.n_pretrain_step}",
