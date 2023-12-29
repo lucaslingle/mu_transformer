@@ -395,7 +395,7 @@ def eval_loop(params, n_eval_step=None):
             if i + 1 == n_eval_step:
                 break
 
-    accumulator = jtu.tree_map(jax.device_get, accumulator)
+    accumulator = jtu.tree_map(lambda a: jax.device_get(a).item(), accumulator)
     accumulator = jax.block_until_ready(accumulator)
     end_time = time.perf_counter()
     eval_metrics = dict(
