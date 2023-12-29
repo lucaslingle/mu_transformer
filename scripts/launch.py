@@ -325,14 +325,16 @@ def train_loop():
         if step % FLAGS.config.n_print_step == 0:
             metrics = jax.block_until_ready(jtu.tree_map(jax.device_get, metrics))
             end_time = time.perf_counter()
-            metrics = dict(
-                step=step,
-                sec_per_step=(end_time - start_time) / FLAGS.config.n_print_step,
-                **metrics,
-                **{f"val_{k}": v for k, v in val_metrics.items()},
-            )
-            logging.info(metrics)
+            sec_per_step = (end_time - start_time) / FLAGS.config.n_print_step
+            essentials = {
+                "step": step,
+                "sec_per_step": sec_per_step,
+                "loss_avg": metrics["loss_avg"],
+                "val_loss_avg": val_metrics["loss_avg"],
+            }
+            logging.info(essentials)
             if jax.process_index() == 0:
+                metrics.update(essentials)
                 wandb.log(metrics)
             start_time = end_time
 
