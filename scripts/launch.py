@@ -329,8 +329,8 @@ def train_loop():
             essentials = {
                 "step": step,
                 "sec_per_step": sec_per_step,
-                "loss_avg": metrics["loss_avg"],
-                "val_loss_avg": val_metrics["loss_avg"],
+                "loss_avg": metrics.get("loss_avg"),
+                "val_loss_avg": val_metrics.get("loss_avg"),
             }
             logging.info(essentials)
             if jax.process_index() == 0:
