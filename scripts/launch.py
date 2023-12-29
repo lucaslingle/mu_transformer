@@ -91,7 +91,6 @@ def grad_transform_factory():
     )
     return optax.chain(
         optax.clip_by_global_norm(FLAGS.config.grad_clip),
-        # optax.adamw(FLAGS.config.lr_max, **kwargs),
         optax.multi_transform(
             {
                 "fi": optax.adamw(FLAGS.config.lr_max, **kwargs),
