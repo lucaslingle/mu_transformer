@@ -21,7 +21,7 @@ def get_config():
     config.hfds_datacol = "text"
 
     # batch size, sequence length, architecture settings
-    config.tokens_per_global_batch = 1024  # when acc_steps > 1, this is microbatch sz
+    config.tokens_per_global_batch = 65536  # when acc_steps > 1, this is microbatch sz
     config.sequence_len = 512
     config.d_model = 128
     config.n_layer = 24
