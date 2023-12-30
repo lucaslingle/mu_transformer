@@ -160,6 +160,7 @@ def automatic_modelname_factory():
         "mutransformer",
         dataset_name,
         FLAGS.config.model_size,
+        f"b{global_batch_size_factory()}",
         f"t{FLAGS.config.sequence_len}",
         f"s{FLAGS.config.n_pretrain_step}",
         f"r{FLAGS.experiment_seed}",
