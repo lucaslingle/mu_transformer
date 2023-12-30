@@ -40,7 +40,7 @@ def get_config():
     config.wd_lam = 0.01  # weight decay coefficient, is multiplied by each param's lr
 
     # periodic action settings
-    config.n_print_step = 10  # print every
+    config.n_print_step = 100  # print every
     config.n_save_step = 5_000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
     config.n_warmup_step = 10_000  # warmup steps during pretraining
