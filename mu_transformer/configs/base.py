@@ -27,6 +27,7 @@ def get_base_config():
     config.act_square = False  # activation squaring
 
     # optimization
+    config.tokens_per_global_batch = 262144  # when acc_steps > 1, this is microbatch sz
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
     config.lr_max = 0.3  # maximum main lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
