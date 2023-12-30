@@ -248,9 +248,9 @@ def train_step(state, batch):
     (_, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(state.params, batch)
     # no extra mean anywhere, we already have the mean gradient!
     # if you do a jtu.tree_map(jnp.mean), it will avg within each leaf, leading to a bug
-    # metrics["param_count"] = size_pytree(state.params)  # so it's always visible
-    # metrics["param_norm"] = l2norm_pytree(state.params)
-    # metrics["grad_norm"] = l2norm_pytree(grads)
+    metrics["param_count"] = size_pytree(state.params)  # so it's always visible
+    metrics["param_norm"] = l2norm_pytree(state.params)
+    metrics["grad_norm"] = l2norm_pytree(grads)
     state = state.apply_gradients(grads=grads)
     # Estimate ce loss for global batch: sum of unmasked ce terms / sum of mask values.
     # Equivalently,
