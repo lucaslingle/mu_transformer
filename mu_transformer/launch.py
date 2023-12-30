@@ -317,6 +317,7 @@ def train_loop():
 
         # occasionally print metrics
         if step % FLAGS.config.n_print_step == 0:
+            state = jax.block_until_ready(state)
             metrics = jtu.tree_map(lambda a: jax.device_get(a).item(), metrics)
             metrics = jax.block_until_ready(metrics)
             end_time = time.perf_counter()
