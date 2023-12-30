@@ -1,4 +1,5 @@
 import functools
+import re
 import time
 
 import flax.core
@@ -154,7 +155,7 @@ def global_batch_size_factory():
 
 def automatic_modelname_factory():
     dataset_name = FLAGS.config.hfds_identifier.split("/")[-1].lower()
-    assert dataset_name.isalnum()
+    assert re.search(r"^[a-zA-Z0-9-_]+$", dataset_name) is not None  # ^=start, $=end.
     parts = [
         "mutransformer",
         dataset_name,
