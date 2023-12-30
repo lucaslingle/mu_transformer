@@ -263,7 +263,7 @@ def train_loop():
     logging.log(log_level, "Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project=modelname_factory(option="save"),
+            project="mu_transformer",
             config=vars(FLAGS.config)["_fields"],
             resume="never" if FLAGS.wb_run is None else "must",
             mode="online" if FLAGS.wb_enabled else "disabled",
