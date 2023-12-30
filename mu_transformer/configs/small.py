@@ -11,6 +11,6 @@ def get_config():
 
     # batch size, width
     config.tokens_per_global_batch = 65536  # when acc_steps > 1, this is microbatch sz
-    config.d_model = 768
+    config.d_model = 512
 
     return config

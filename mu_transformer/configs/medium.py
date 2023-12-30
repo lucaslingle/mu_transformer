@@ -6,8 +6,8 @@ def get_config():
     config.model_size = "medium"
 
     # mesh
-    config.n_shard_data = 4
-    config.n_shard_model = 8
+    config.n_shard_data = 32
+    config.n_shard_model = 1
 
     # batch size, width
     config.tokens_per_global_batch = 262144  # when acc_steps > 1, this is microbatch sz
