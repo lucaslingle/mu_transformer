@@ -247,6 +247,7 @@ def loss_fn(params, batch):
 def train_step(state, batch):
     (_, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(state.params, batch)
     # no extra mean anywhere, we already have the sharded all-device mean gradient!
+    metrics["param_count"] = size_pytree(state.params)  # so it's always visible
     metrics["param_norm"] = l2norm_pytree(state.params)
     metrics["grad_norm"] = l2norm_pytree(grads)
     state = state.apply_gradients(grads=grads)
