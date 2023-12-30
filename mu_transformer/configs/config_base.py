@@ -2,13 +2,10 @@ import jax.numpy as jnp
 from ml_collections import config_dict
 
 
-def get_config():
+def get_base_config():
     config = config_dict.ConfigDict()
-    config.model_size = "large"
 
     # basics
-    config.n_shard_data = 16
-    config.n_shard_model = 8
     config.param_dtype = jnp.float32
     config.dtype = jnp.bfloat16
     config.sow_intermediates = False
@@ -19,11 +16,9 @@ def get_config():
     config.hfds_identifier = "skylion007/openwebtext"
     config.hfds_config = None
     config.hfds_datacol = "text"
-
-    # batch size, sequence length, architecture settings
-    config.tokens_per_global_batch = 262144  # when acc_steps > 1, this is microbatch sz
     config.sequence_len = 512
-    config.d_model = 2048
+
+    # architecture
     config.n_layer = 24
     config.rotary_base = 10_000
     config.rotary_interp_q = False
@@ -31,7 +26,7 @@ def get_config():
     config.act_name = "relu"  # any activation defined jax.nn
     config.act_square = False  # activation squaring
 
-    # optimization settings
+    # optimization
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
     config.lr_max = 0.3  # maximum main lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9

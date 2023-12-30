@@ -35,16 +35,16 @@ To install via pipenv, write ```pipenv install ...```.
 
 To train with the default hyperparameters and tiny config:
 ```
-python3 scripts/launch.py \
-    --config=scripts/configs/config_tiny.py \
+python3 mu_transformer/launch.py \
+    --config=mu_transformer/configs/config_tiny.py \
     --mode=train \
     --workdir=workdir;
 ```
 
 You can also override the configs. For example, to use the T5 tokenizer and C4 dataset, write
 ```
-python3 scripts/launch.py \
-    --config=scripts/configs/config_tiny.py \
+python3 mu_transformer/launch.py \
+    --config=mu_transformer/configs/config_tiny.py \
     --mode=train \
     --workdir=workdir \
     --config.hftr_tokenizer_name=T5TokenizerFast \

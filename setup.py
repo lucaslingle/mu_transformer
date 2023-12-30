@@ -9,8 +9,8 @@ setup(
     license="Apache 2.0",
     author="Lucas D. Lingle",
     description="Transformer with Mu-Transfer, implemented in Jax.",
-    packages=find_packages(where=".:src"),
-    package_dir={"": "src"},
+    packages=find_packages(where="."),
+    package_dir={"": "."},
     platforms="any",
     python_requires=">=3.8",
     install_requires=[
