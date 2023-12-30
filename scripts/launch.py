@@ -418,6 +418,9 @@ def main(argv):
         logging.info(f"{k}: {v}")
     assert FLAGS.config.d_model >= 128
     assert FLAGS.config.d_model % 128 == 0
+    assert FLAGS.n_shard_data * FLAGS.n_shard_model == jax.device_count()
+    assert FLAGS.config.global_batch_size >= jax.device_count()  # dataloader quirk
+    assert FLAGS.config.global_batch_size % FLAGS.n_shard_data == 0
 
     try:
         jax.distributed.initialize()

@@ -4,11 +4,11 @@ from ml_collections import config_dict
 
 def get_config():
     config = config_dict.ConfigDict()
-    config.model_size = "tiny"
+    config.model_size = "large"
 
     # basics
-    config.n_shard_data = 8
-    config.n_shard_model = 1
+    config.n_shard_data = 16
+    config.n_shard_model = 8
     config.param_dtype = jnp.float32
     config.dtype = jnp.bfloat16
     config.sow_intermediates = False
@@ -21,9 +21,9 @@ def get_config():
     config.hfds_datacol = "text"
 
     # batch size, sequence length, architecture settings
-    config.tokens_per_global_batch = 1024  # when acc_steps > 1, this is microbatch sz
+    config.tokens_per_global_batch = 262144  # when acc_steps > 1, this is microbatch sz
     config.sequence_len = 512
-    config.d_model = 128
+    config.d_model = 2048
     config.n_layer = 24
     config.rotary_base = 10_000
     config.rotary_interp_q = False
