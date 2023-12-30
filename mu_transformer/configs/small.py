@@ -1,4 +1,4 @@
-from mu_transformer.configs.config_base import get_base_config
+from mu_transformer.configs.base import get_base_config
 
 
 def get_config():
