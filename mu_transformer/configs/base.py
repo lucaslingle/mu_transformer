@@ -32,7 +32,7 @@ def get_base_config():
     config.adam_b1 = 0.9
     config.adam_b2 = 0.98
     config.adam_eps = 1e-9
-    config.wd_lam = 0.01  # weight decay coefficient, is multiplied by each param's lr
+    config.wd_lam = 0.0  # weight decay coefficient, is multiplied by each param's lr
 
     # periodic action settings
     config.n_print_step = 100  # print every
