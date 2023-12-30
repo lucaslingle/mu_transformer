@@ -29,11 +29,11 @@ def get_base_config():
     # optimization
     config.tokens_per_global_batch = 262144  # when acc_steps > 1, this is microbatch sz
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
-    config.lr_max = 0.3  # maximum main lr; scaled by mu-parameterization adam, schedule
+    config.lr_max = 10.0  # master lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
     config.adam_b2 = 0.98
     config.adam_eps = 1e-9
-    config.wd_lam = 0.0  # weight decay coefficient, is multiplied by each param's lr
+    config.wd_lam = 0.0  # weight decay coeff, multiplied by each param's current lr
 
     # periodic action settings
     config.n_print_step = 100  # print every

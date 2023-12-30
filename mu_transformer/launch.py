@@ -22,6 +22,8 @@ from ml_collections import config_flags
 
 from mu_transformer.data import get_dataset
 from mu_transformer.data import get_tokenizer
+from mu_transformer.model import FF_MULTIPLE
+from mu_transformer.model import HEAD_DIM
 from mu_transformer.model import Transformer
 from mu_transformer.model import TransformerConfig
 from mu_transformer.sharding import get_namedsharding
@@ -79,7 +81,7 @@ def params_factory(rng, model_cls):
 
 def param_label_fn(params):
     flat = traverse_util.flatten_dict(params)
-    flat_labels = {k: k[-1].split("_")[-1] for k, v in flat.items()}
+    flat_labels = {k: k[-1] for k, v in flat.items()}
     return traverse_util.unflatten_dict(flat_labels)
 
 
@@ -89,27 +91,37 @@ def schedule_factory():
     return optax.join_schedules(
         [
             optax.linear_schedule(0.0, end_value=1.0, transition_steps=warmup_steps),
-            optax.linear_schedule(1.0, end_value=0.0, transition_steps=decay_steps),
+            optax.linear_schedule(1.0, end_value=0.1, transition_steps=decay_steps),
         ],
         boundaries=[warmup_steps],
     )
 
 
 def grad_transform_factory():
-    kwargs = dict(
+    kws = dict(
         b1=FLAGS.config.adam_b1,
         b2=FLAGS.config.adam_b2,
         eps=FLAGS.config.adam_eps,
         mu_dtype=FLAGS.config.param_dtype,
         weight_decay=FLAGS.config.wd_lam,
     )
+    lr = FLAGS.config.lr_max
+    dm = FLAGS.config.d_model
     return optax.chain(
         optax.clip_by_global_norm(FLAGS.config.grad_clip),
         optax.multi_transform(
             {
-                "fi": optax.adamw(FLAGS.config.lr_max, **kwargs),
-                "ii": optax.adamw(FLAGS.config.lr_max / FLAGS.config.d_model, **kwargs),
-                "if": optax.adamw(FLAGS.config.lr_max / FLAGS.config.d_model, **kwargs),
+                # embeddings and de-embeddings
+                "w_ei": optax.adamw(lr, **kws),  # table 3, col 1
+                "w_eo": optax.adamw(lr / dm, **kws),  # table 3, col2
+                # attention projections
+                "w_aq": optax.adamw(lr / dm, **kws),  # table 3, col3
+                "w_ak": optax.adamw(lr / dm, **kws),  # table 3, col3
+                "w_av": optax.adamw(lr / dm, **kws),  # table 3, col3
+                "w_ao": optax.adamw(lr / dm, **kws),  # table 3, col3; assumes dm=nh*dh
+                # feed-forward projections
+                "w_fi": optax.adamw(lr / dm, **kws),  # table 3, col3
+                "w_fo": optax.adamw(lr / (dm * FF_MULTIPLE), **kws),  # table 3, col3
             },
             param_labels=param_label_fn,
         ),
@@ -419,8 +431,8 @@ def main(argv):
     logging.info("=== Config: ===")
     for k, v in vars(FLAGS.config)["_fields"].items():
         logging.info(f"{k}: {v}")
-    assert FLAGS.config.d_model >= 128
-    assert FLAGS.config.d_model % 128 == 0
+    assert FLAGS.config.d_model >= HEAD_DIM
+    assert FLAGS.config.d_model % HEAD_DIM == 0
     assert FLAGS.config.n_shard_data * FLAGS.config.n_shard_model == jax.device_count()
     assert global_batch_size_factory() >= jax.device_count()  # dataloader quirk
     assert global_batch_size_factory() % FLAGS.config.n_shard_data == 0

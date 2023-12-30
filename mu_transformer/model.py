@@ -12,13 +12,15 @@ from flax.linen import partitioning as nn_partitioning
 from mu_transformer.dims import Dimensions
 from mu_transformer.sharding import sharding_constraint
 
-DTypeLike = Any
+HEAD_DIM = 128
+FF_MULTIPLE = 4
+INFTY_APPROX = 1e30
 
 
 @struct.dataclass
 class TransformerConfig:
-    param_dtype: DTypeLike
-    dtype: DTypeLike
+    param_dtype: Any
+    dtype: Any
     sequence_len: int
     d_model: int
     n_layer: int
@@ -105,7 +107,7 @@ class CausalMask(nn.Module):
         mask = jnp.less(i, j)  # keep lower triangular
         while mask.ndim < x.ndim:
             mask = mask[None, ...]
-        return x - 1e30 * mask.astype(x.dtype)
+        return x - INFTY_APPROX * mask.astype(x.dtype)
 
 
 class MultiheadSelfAttention(nn.Module):
@@ -114,13 +116,12 @@ class MultiheadSelfAttention(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        d_head = 128
         shapes = Dimensions(
             B=x.shape[0],
             T=self.hps.sequence_len,
             M=self.hps.d_model,
-            D=d_head,
-            H=self.hps.d_model // d_head,
+            D=HEAD_DIM,
+            H=self.hps.d_model // HEAD_DIM,
         )
         sharding = Dimensions(
             B="data",
@@ -136,25 +137,25 @@ class MultiheadSelfAttention(nn.Module):
         kv_init = init.normal(self.hps.d_model**-0.5)  # normal, var 1/fan_in; table 3
         o_init = init.normal(self.hps.d_model**-0.5)  # normal, var 1/fan_in = 1 / m
         wq = self.param(
-            "wq_ii",
+            "w_aq",
             nn.with_partitioning(q_init, sharding["MHD"], self.global_mesh),
             shapes["MHD"],
             self.hps.param_dtype,
         )
         wk = self.param(
-            "wk_ii",
+            "w_ak",
             nn.with_partitioning(kv_init, sharding["MHD"], self.global_mesh),
             shapes["MHD"],
             self.hps.param_dtype,
         )
         wv = self.param(
-            "wv_ii",
+            "w_av",
             nn.with_partitioning(kv_init, sharding["MHD"], self.global_mesh),
             shapes["MHD"],
             self.hps.param_dtype,
         )
         wo = self.param(
-            "wo_ii",
+            "w_ao",
             nn.with_partitioning(o_init, sharding["HDM"], self.global_mesh),
             shapes["HDM"],
             self.hps.param_dtype,
@@ -172,13 +173,13 @@ class MultiheadSelfAttention(nn.Module):
         k = FractionalRotaryEncoding(self.hps.rotary_base, self.hps.rotary_interp_k)(k)
         q = sharding_constraint(q, sharding["BHTD"], self.global_mesh)
         k = sharding_constraint(k, sharding["BHTD"], self.global_mesh)
-        q, k = map(lambda y: y * (d_head**-0.5), [q, k])  # def 4.1
+        q, k = map(lambda y: y * (HEAD_DIM**-0.5), [q, k])  # def 4.1
         q = sharding_constraint(q, sharding["BHTD"], self.global_mesh)
         k = sharding_constraint(k, sharding["BHTD"], self.global_mesh)
         self.sow("intermediates", "q_norm_m1", jnp.mean(jnp.linalg.norm(q, axis=-1)))
         self.sow("intermediates", "k_norm_m1", jnp.mean(jnp.linalg.norm(k, axis=-1)))
 
-        s = jnp.einsum("bhik,bhjk->bhij", q, k)
+        s = jnp.einsum("bhid,bhjd->bhij", q, k)
         s = sharding_constraint(s, sharding["BHTT"], self.global_mesh)
         s = CausalMask(length=self.hps.sequence_len)(s)
         s = sharding_constraint(s, sharding["BHTT"], self.global_mesh)
@@ -199,7 +200,7 @@ class MultiLayerPerceptron(nn.Module):
     def __call__(self, x):
         seqlen = self.hps.sequence_len
         d_model = self.hps.d_model
-        d_ff = 4 * self.hps.d_model
+        d_ff = self.hps.d_model * FF_MULTIPLE
         shapes = Dimensions(B=x.shape[0], T=seqlen, M=d_model, F=d_ff)
         sharding = Dimensions(B="data", T=None, M=None, F="model")
         chex.assert_shape(x, shapes["BTM"])
@@ -208,13 +209,13 @@ class MultiLayerPerceptron(nn.Module):
         w1_init = init.normal(d_model**-0.5)  # normal w variance 1 / fan_in
         w2_init = init.normal(d_ff**-0.5)  # normal w variance 1 / fan_in
         w1 = self.param(
-            "w1_ii",
+            "w_fi",
             nn.with_partitioning(w1_init, sharding["MF"], self.global_mesh),
             shapes["MF"],
             self.hps.param_dtype,
         )
         w2 = self.param(
-            "w2_ii",
+            "w_fo",
             nn.with_partitioning(w2_init, sharding["FM"], self.global_mesh),
             shapes["FM"],
             self.hps.param_dtype,
@@ -264,13 +265,13 @@ class Transformer(nn.Module):
         e_init = init.normal(1.0)  # appendix b.1
         o_init = init.zeros  # appendix d.2
         w_emb = self.param(
-            "we_fi",
+            "w_ei",
             nn.with_partitioning(e_init, (None, None), self.global_mesh),
             [nv, dm],
             self.hps.param_dtype,
         )
         w_out = self.param(
-            "wd_if",
+            "w_eo",
             nn.with_partitioning(o_init, (None, None), self.global_mesh),
             [dm, nv],
             self.hps.param_dtype,
