@@ -31,12 +31,12 @@ FLAGS = flags.FLAGS
 
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
 flags.DEFINE_string("workdir", None, "Working directory (local or GCS)")
+flags.DEFINE_enum("mode", None, MODES, "Mode")
+flags.DEFINE_integer("seed", 0, "Experiment seed")
 flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
 flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
-flags.DEFINE_enum("mode", None, MODES, "Mode")
-flags.DEFINE_string("load_name", None, "Model name to load; None = use autogen")
-flags.DEFINE_string("save_name", None, "Model name to save; None = use autogen")
-flags.DEFINE_integer("experiment_seed", 0, "Experiment seed")
+flags.DEFINE_string("loading_name", None, "Model name to load; None = use autogen")
+flags.DEFINE_string("saving_name", None, "Model name to save; None = use autogen")
 flags.mark_flags_as_required(["config", "workdir", "mode"])
 
 
@@ -163,16 +163,16 @@ def automatic_modelname_factory():
         f"b{global_batch_size_factory()}",
         f"t{FLAGS.config.sequence_len}",
         f"s{FLAGS.config.n_pretrain_step}",
-        f"r{FLAGS.experiment_seed}",
+        f"r{FLAGS.seed}",
     ]
     return "_".join(parts)
 
 
 def modelname_factory(option):
     if option == "save":
-        return FLAGS.save_name or automatic_modelname_factory()
+        return FLAGS.saving_name or automatic_modelname_factory()
     if option == "load":
-        return FLAGS.load_name or automatic_modelname_factory()
+        return FLAGS.loading_name or automatic_modelname_factory()
     raise NotImplementedError(f"Unrecognized option {option}")
 
 
@@ -271,7 +271,7 @@ def train_loop():
             id=FLAGS.wb_run,
         )
     logging.log(log_level, "Creating RNGs...")
-    rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.experiment_seed))
+    rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
     rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())
 
     logging.log(log_level, "Creating train state...")
@@ -352,7 +352,7 @@ def eval_step(params, batch):
 def eval_loop(params, n_eval_step=None):
     logging.info("Entering eval loop function...")
     if params is None:
-        rng_init, _ = jax.random.split(jax.random.PRNGKey(FLAGS.experiment_seed))
+        rng_init, _ = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
         logging.info("Creating params...")
         load_checkpoint_mgr = checkpoint_manager_factory(option="load")
         state = train_state_factory(rng_init)
@@ -409,11 +409,12 @@ def main(argv):
     logging.info("JAX process: %d / %d", jax.process_index(), jax.process_count())
     logging.info("=== Flags: ===")
     logging.info(f"workdir: {FLAGS.workdir}")
+    logging.info(f"mode: {FLAGS.mode}")
+    logging.info(f"seed: {FLAGS.seed}")
     logging.info(f"wb_enabled: {FLAGS.wb_enabled}")
     logging.info(f"wb_run: {FLAGS.wb_run}")
-    logging.info(f"mode: {FLAGS.mode}")
-    logging.info(f"load_name: {FLAGS.load_name}")
-    logging.info(f"save_name: {FLAGS.save_name}")
+    logging.info(f"loading_name: {FLAGS.loading_name}")
+    logging.info(f"saving_name: {FLAGS.saving_name}")
     logging.info("=== Config: ===")
     for k, v in vars(FLAGS.config)["_fields"].items():
         logging.info(f"{k}: {v}")
