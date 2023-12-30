@@ -89,7 +89,7 @@ def schedule_factory():
     return optax.join_schedules(
         [
             optax.linear_schedule(0.0, end_value=1.0, transition_steps=warmup_steps),
-            optax.cosine_decay_schedule(1.0, alpha=0.1, decay_steps=decay_steps),
+            optax.linear_schedule(1.0, end_value=0.0, transition_steps=decay_steps),
         ],
         boundaries=[warmup_steps],
     )
