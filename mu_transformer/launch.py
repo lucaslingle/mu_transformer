@@ -26,12 +26,11 @@ from mu_transformer.model import TransformerConfig
 from mu_transformer.sharding import get_namedsharding
 from mu_transformer.sharding import to_global_array
 
-MODES = ["train", "val", "test"]
-FLAGS = flags.FLAGS
 
+FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
 flags.DEFINE_string("workdir", None, "Working directory (local or GCS)")
-flags.DEFINE_enum("mode", None, MODES, "Mode")
+flags.DEFINE_enum("mode", None, ["train", "val", "test"], "Mode")
 flags.DEFINE_integer("seed", 0, "Experiment seed")
 flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
 flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
