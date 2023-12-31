@@ -77,6 +77,8 @@ class RotaryEncoding(nn.Module):
             r_even = even * cos - odd * sin
             r_odd = even * sin + odd * cos
         r = jnp.concatenate([r_even, r_odd], axis=-1)
+        if self.interpretable:
+            r = jnp.broadcast_to(r, x.shape)
         chex.assert_shape(r, x.shape)
         return r
 
