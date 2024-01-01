@@ -9,7 +9,7 @@ def get_config():
     config.n_shard_data = 32
     config.n_shard_model = 1
 
-    # batch size, width
+    # width
     config.d_model = 1024
 
     return config

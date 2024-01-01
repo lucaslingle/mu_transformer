@@ -2,7 +2,6 @@ import functools
 import re
 import time
 
-import flax.core
 import flax.linen as nn
 import jax
 import jax.experimental.mesh_utils as jmu
@@ -26,8 +25,9 @@ from mu_transformer.model import FF_MULTIPLE
 from mu_transformer.model import HEAD_DIM
 from mu_transformer.model import Transformer
 from mu_transformer.model import TransformerConfig
-from mu_transformer.sharding import get_namedsharding
-from mu_transformer.sharding import to_global_array
+from mu_transformer.shard import get_namedsharding
+from mu_transformer.shard import to_global_array
+from mu_transformer.sow import split_coord_checks
 
 
 FLAGS = flags.FLAGS
@@ -69,13 +69,11 @@ def global_mesh_factory():
     )
 
 
-def params_factory(rng, model_cls):
-    config = transformer_config_factory()
-    global_mesh = global_mesh_factory()
+def params_factory(rng, model_cls, config, global_mesh):
     inputs = jnp.ones(dtype=jnp.int32, shape=[1, config.sequence_len])
     params = model_cls(config, global_mesh).init({"params": rng}, inputs)["params"]
-    if isinstance(params, flax.core.FrozenDict):
-        params = params.unfreeze()
+    # if isinstance(params, flax.core.FrozenDict):
+    #     params = params.unfreeze()
     return params
 
 
@@ -129,32 +127,47 @@ def grad_transform_factory():
     )
 
 
+def init_fn(rng, model_cls, optim_cls, config, global_mesh):
+    return train_utils.TrainState.create(
+        apply_fn=None,
+        params=params_factory(
+            rng=rng,
+            model_cls=model_cls,
+            config=config,
+            global_mesh=global_mesh,
+        ),
+        tx=optim_cls,
+    )
+
+
 def train_state_factory(rng_init):
     # based on https://flax.readthedocs.io/en/latest/guides/parallel_training/flax_on_pjit.html#the-output-s-sharding  # noqa
     model_cls = Transformer
     optimizer_cls = grad_transform_factory()
-
-    def init_fn(rng, model_cls_, optim_cls_):
-        return train_utils.TrainState.create(
-            apply_fn=None,
-            params=params_factory(rng, model_cls_),
-            tx=optim_cls_,
-        )
-
+    config = transformer_config_factory()
     global_mesh = global_mesh_factory()
+
     prng_sharding = get_namedsharding(axis_names=(None,), device_mesh=global_mesh)
     abstract_variables = jax.eval_shape(
-        functools.partial(init_fn, model_cls_=model_cls, optim_cls_=optimizer_cls),
+        functools.partial(
+            init_fn,
+            model_cls=model_cls,
+            optim_cls=optimizer_cls,
+            config=config,
+            global_mesh=global_mesh,
+        ),
         rng_init,
     )
     state_sharding = nn.get_sharding(abstract_variables, global_mesh)
     jit_init_fn = jax.jit(
         init_fn,
-        static_argnums=(1, 2),
+        static_argnums=(1, 2, 3, 4),
         in_shardings=(prng_sharding,),
         out_shardings=state_sharding,
     )
-    initialized_state = jit_init_fn(rng_init, model_cls, optimizer_cls)
+    initialized_state = jit_init_fn(
+        rng_init, model_cls, optimizer_cls, config, global_mesh
+    )
     return initialized_state
 
 
@@ -230,35 +243,34 @@ def l2norm_pytree(x):
     return jtu.tree_reduce(lambda a, b: a + jnp.sum(b**2), x, initializer=0.0) ** 0.5
 
 
-def loss_fn(params, batch):
-    # todo: support sown intermediates
-    # if FLAGS.config.sow_intermediates:
-    #     logits, mvars = Transformer(*i_args).apply(*c_args, mutable="intermediates")
-    #     intermediates = mvars["intermediates"]
-    #     sown_metrics, _ = jtu.tree_flatten_with_path(intermediates["stack"])
-    #     sown_metrics = {k[-2].key: jnp.mean(v) for k, v in sown_metrics}  # layer avg
-    # else:
-    #     logits = Transformer(i_args).apply(*c_args)
-    #     sown_metrics = dict()
-    config = transformer_config_factory()
-    global_mesh = global_mesh_factory()
-    logits = Transformer(config, global_mesh).apply({"params": params}, batch["inputs"])
-    sown_metrics = dict()
-
-    loss_terms = optax.softmax_cross_entropy_with_integer_labels(
-        logits=logits,
-        labels=batch["targets"],
-    )
-    loss_metrics = dict(
-        loss_term_avg=jnp.mean(batch["loss_mask"] * loss_terms),
+def loss_fn(params, batch, config, global_mesh):
+    init_args = [config, global_mesh]
+    apply_args = [{"params": params}, batch["inputs"]]
+    if FLAGS.config.sow_intermediates:
+        logits, mv = Transformer(*init_args).apply(*apply_args, mutable="intermediates")
+        sown = traverse_util.flatten_dict(mv["intermediates"])
+        sown = {k[-1]: split_coord_checks(k[-1], v[0]) for k, v in sown.items()}
+        sown = traverse_util.flatten_dict(sown)
+        sown = {k[-1]: v for k, v in sown.items()}
+    else:
+        logits = Transformer(*init_args).apply(*apply_args)
+        sown = dict()
+    terms = optax.softmax_cross_entropy_with_integer_labels(logits, batch["targets"])
+    metrics = dict(
+        loss_term_avg=jnp.mean(batch["loss_mask"] * terms),
         loss_mask_avg=jnp.mean(batch["loss_mask"]),
     )
-    return loss_metrics["loss_term_avg"], dict(**loss_metrics, **sown_metrics)
+    return metrics["loss_term_avg"], dict(**metrics, **sown)
 
 
 @functools.partial(jax.jit, donate_argnums=(0,))
 def train_step(state, batch):
-    (_, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(state.params, batch)
+    (_, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(
+        state.params,
+        batch=batch,
+        config=transformer_config_factory(),
+        global_mesh=global_mesh_factory(),
+    )
     # no extra mean anywhere, we already have the sharded all-device mean gradient!
     metrics["param_count"] = size_pytree(state.params)  # so it's always visible
     metrics["param_norm"] = l2norm_pytree(state.params)
@@ -358,7 +370,12 @@ def train_loop():
 
 @jax.jit
 def eval_step(params, batch):
-    _, metrics = loss_fn(params, batch)
+    _, metrics = loss_fn(
+        params=params,
+        batch=batch,
+        config=transformer_config_factory(),
+        global_mesh=global_mesh_factory(),
+    )
     return metrics
 
 
