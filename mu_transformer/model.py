@@ -202,13 +202,13 @@ class MultiLayerPerceptron(nn.Module):
         w2_init = init.normal(d_ff**-0.5)  # normal w variance 1 / fan_in
         w1 = self.param(
             "w_fi",
-            nn.with_partitioning(w1_init, SHARDING["SR"], self.global_mesh),
+            nn.with_partitioning(w1_init, SHARDING["RS"], self.global_mesh),
             shapes["MF"],
             self.hps.param_dtype,
         )
         w2 = self.param(
             "w_fo",
-            nn.with_partitioning(w2_init, SHARDING["RS"], self.global_mesh),
+            nn.with_partitioning(w2_init, SHARDING["SR"], self.global_mesh),
             shapes["FM"],
             self.hps.param_dtype,
         )
