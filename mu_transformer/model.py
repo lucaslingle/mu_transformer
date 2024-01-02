@@ -40,10 +40,9 @@ class TransformerConfig:
     n_layer: int
     n_vocab: int
     rotary_base: int
-    rotary_interp_q: bool
-    rotary_interp_k: bool
     act_name: str
     act_square: bool
+    optimize_sharding: bool
 
     @classmethod
     def create(cls, **kwargs):
@@ -60,7 +59,6 @@ class RMSLayerNorm(nn.Module):
 
 class RotaryEncoder(nn.Module):
     rotary_base: float
-    interpretable: bool
 
     @nn.compact
     def __call__(self, x):
@@ -81,31 +79,12 @@ class RotaryEncoder(nn.Module):
         radians = positions * ang_freqs
         cos = jnp.cos(radians).astype(x.dtype)
         sin = jnp.sin(radians).astype(x.dtype)
-        if self.interpretable:
-            # treat 'even' as all ones, 'odd' as all zeros.
-            r_even = cos
-            r_odd = sin
-        else:
-            # rotate coordinate pairs as usual
-            even, odd = jnp.split(x, 2, axis=-1)
-            r_even = even * cos - odd * sin
-            r_odd = even * sin + odd * cos
+        even, odd = jnp.split(x, 2, axis=-1)
+        r_even = even * cos - odd * sin
+        r_odd = even * sin + odd * cos
         r = jnp.concatenate([r_even, r_odd], axis=-1)
-        if self.interpretable:
-            r = jnp.broadcast_to(r, x.shape)
         chex.assert_shape(r, x.shape)
         return r
-
-
-class FractionalRotaryEncoder(nn.Module):
-    rotary_base: float
-    interpretable: bool
-
-    @nn.compact
-    def __call__(self, x):
-        rotary, skip = jnp.split(x, 2, axis=-1)
-        rotary = RotaryEncoder(self.rotary_base, self.interpretable)(rotary)
-        return jnp.concatenate([rotary, skip], axis=-1)
 
 
 class CausalMask(nn.Module):
@@ -127,6 +106,7 @@ class MultiheadSelfAttention(nn.Module):
 
     @nn.compact
     def __call__(self, x):
+        sc_enabled = not self.hps.optimize_sharding
         shapes = Dimensions(
             B=x.shape[0],
             T=self.hps.sequence_len,
@@ -142,7 +122,7 @@ class MultiheadSelfAttention(nn.Module):
             H="model",
         )
         chex.assert_shape(x, shapes["BTM"])
-        x = sharding_constraint(x, sharding["BTM"], self.global_mesh)
+        x = sharding_constraint(x, sharding["BTM"], self.global_mesh, sc_enabled)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
 
         q_init = init.zeros  # zero init; appdx d.2
@@ -177,37 +157,37 @@ class MultiheadSelfAttention(nn.Module):
         q = jnp.einsum("bim,mhd->bhid", x, wq.astype(self.hps.dtype))
         k = jnp.einsum("bim,mhd->bhid", x, wk.astype(self.hps.dtype))
         v = jnp.einsum("bim,mhd->bhid", x, wv.astype(self.hps.dtype))
-        q = sharding_constraint(q, sharding["BHTD"], self.global_mesh)
-        k = sharding_constraint(k, sharding["BHTD"], self.global_mesh)
-        v = sharding_constraint(v, sharding["BHTD"], self.global_mesh)
+        q = sharding_constraint(q, sharding["BHTD"], self.global_mesh, sc_enabled)
+        k = sharding_constraint(k, sharding["BHTD"], self.global_mesh, sc_enabled)
+        v = sharding_constraint(v, sharding["BHTD"], self.global_mesh, sc_enabled)
         self.sow("intermediates", "aq_l1", coord_check_l1(q))
         self.sow("intermediates", "ak_l1", coord_check_l1(k))
         self.sow("intermediates", "av_l1", coord_check_l1(v))
 
-        q = FractionalRotaryEncoder(self.hps.rotary_base, self.hps.rotary_interp_q)(q)
-        k = FractionalRotaryEncoder(self.hps.rotary_base, self.hps.rotary_interp_k)(k)
-        q = sharding_constraint(q, sharding["BHTD"], self.global_mesh)
-        k = sharding_constraint(k, sharding["BHTD"], self.global_mesh)
+        q = RotaryEncoder(self.hps.rotary_base)(q)
+        k = RotaryEncoder(self.hps.rotary_base)(k)
+        q = sharding_constraint(q, sharding["BHTD"], self.global_mesh, sc_enabled)
+        k = sharding_constraint(k, sharding["BHTD"], self.global_mesh, sc_enabled)
         self.sow("intermediates", "aqr_l1", coord_check_l1(q))
         self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
         s = jnp.einsum("bhid,bhjd->bhij", q, k) / HEAD_DIM
-        s = sharding_constraint(s, sharding["BHTT"], self.global_mesh)
+        s = sharding_constraint(s, sharding["BHTT"], self.global_mesh, sc_enabled)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
 
         s = CausalMask(length=self.hps.sequence_len)(s)
-        s = sharding_constraint(s, sharding["BHTT"], self.global_mesh)
+        s = sharding_constraint(s, sharding["BHTT"], self.global_mesh, sc_enabled)
 
         p = jax.nn.softmax(s, axis=-1)
-        p = sharding_constraint(p, sharding["BHTT"], self.global_mesh)
+        p = sharding_constraint(p, sharding["BHTT"], self.global_mesh, sc_enabled)
         self.sow("intermediates", "ap_l1", coord_check_l1(p))
 
         o = jnp.einsum("bhij,bhjd->bhid", p, v)
-        o = sharding_constraint(o, sharding["BHTD"], self.global_mesh)
+        o = sharding_constraint(o, sharding["BHTD"], self.global_mesh, sc_enabled)
         self.sow("intermediates", "ao_l1", coord_check_l1(o))
 
         r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.hps.dtype))
-        r = sharding_constraint(r, sharding["BTM"], self.global_mesh)
+        r = sharding_constraint(r, sharding["BTM"], self.global_mesh, sc_enabled)
         self.sow("intermediates", "ar_l1", coord_check_l1(r))
         return r
 
@@ -218,13 +198,14 @@ class MultiLayerPerceptron(nn.Module):
 
     @nn.compact
     def __call__(self, x):
+        sc_enabled = not self.hps.optimize_sharding
         seqlen = self.hps.sequence_len
         d_model = self.hps.d_model
         d_ff = self.hps.d_model * FF_MULTIPLE
         shapes = Dimensions(B=x.shape[0], T=seqlen, M=d_model, F=d_ff)
         sharding = Dimensions(B="data", T=None, M=None, F="model")
         chex.assert_shape(x, shapes["BTM"])
-        x = sharding_constraint(x, sharding["BTM"], self.global_mesh)
+        x = sharding_constraint(x, sharding["BTM"], self.global_mesh, sc_enabled)
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
 
         w1_init = init.normal(d_model**-0.5)  # normal w variance 1 / fan_in
@@ -244,19 +225,19 @@ class MultiLayerPerceptron(nn.Module):
 
         # todo: maybe use dot general?
         x = jnp.einsum("btm,mf->btf", x, w1.astype(self.hps.dtype))
-        x = sharding_constraint(x, sharding["BTF"], self.global_mesh)
+        x = sharding_constraint(x, sharding["BTF"], self.global_mesh, sc_enabled)
         self.sow("intermediates", "fp_l1", coord_check_l1(x))
 
         x = getattr(jax.nn, self.hps.act_name)(x)
-        x = sharding_constraint(x, sharding["BTF"], self.global_mesh)
+        x = sharding_constraint(x, sharding["BTF"], self.global_mesh, sc_enabled)
         if self.hps.act_square:
             x = jnp.square(x)
-            x = sharding_constraint(x, sharding["BTF"], self.global_mesh)
+            x = sharding_constraint(x, sharding["BTF"], self.global_mesh, sc_enabled)
         self.sow("intermediates", "fa_l1", coord_check_l1(x))
 
         # todo: maybe use dot general?
         x = jnp.einsum("btf,fm->btm", x, w2.astype(self.hps.dtype))
-        x = sharding_constraint(x, sharding["BTF"], self.global_mesh)
+        x = sharding_constraint(x, sharding["BTF"], self.global_mesh, sc_enabled)
         self.sow("intermediates", "fr_l1", coord_check_l1(x))
         return x
 
@@ -268,9 +249,9 @@ class TransformerBlock(nn.Module):
     @nn.compact
     def __call__(self, x, _):
         x += MultiheadSelfAttention(self.hps, self.global_mesh)(RMSLayerNorm()(x))
-        x = sharding_constraint(x, ("data", None, None), self.global_mesh)
+        x = sharding_constraint(x, ("data", None, None), self.global_mesh, True)
         x += MultiLayerPerceptron(self.hps, self.global_mesh)(RMSLayerNorm()(x))
-        x = sharding_constraint(x, ("data", None, None), self.global_mesh)
+        x = sharding_constraint(x, ("data", None, None), self.global_mesh, True)
         return x, None
 
 
@@ -283,7 +264,7 @@ class Transformer(nn.Module):
         nv = self.hps.n_vocab
         dm = self.hps.d_model
         chex.assert_shape(x, [None, self.hps.sequence_len])
-        x = sharding_constraint(x, ("data", None), self.global_mesh)
+        x = sharding_constraint(x, ("data", None), self.global_mesh, True)
 
         e_init = init.normal(1.0)  # appendix b.1
         o_init = init.zeros  # appendix d.2
@@ -302,10 +283,10 @@ class Transformer(nn.Module):
 
         w_emb = w_emb[None, ...]  # 1VD
         x = x[..., None]  # BT1
-        x = sharding_constraint(x, ("data", None, None), self.global_mesh)
+        x = sharding_constraint(x, ("data", None, None), self.global_mesh, True)
         x = jnp.take_along_axis(w_emb, x, axis=-2)
         x = x.astype(self.hps.dtype)
-        x = sharding_constraint(x, ("data", None, None), self.global_mesh)
+        x = sharding_constraint(x, ("data", None, None), self.global_mesh, True)
 
         x, _ = nn.scan(
             nn_partitioning.remat(TransformerBlock),
@@ -315,12 +296,12 @@ class Transformer(nn.Module):
             split_rngs=dict(params=True),
             metadata_params={nn.PARTITION_NAME: None},
         )(hps=self.hps, global_mesh=self.global_mesh)(x, None)
-        x = sharding_constraint(x, ("data", None, None), self.global_mesh)
+        x = sharding_constraint(x, ("data", None, None), self.global_mesh, True)
 
         x = RMSLayerNorm()(x)
-        x = sharding_constraint(x, ("data", None, None), self.global_mesh)
+        x = sharding_constraint(x, ("data", None, None), self.global_mesh, True)
 
         # todo: dot general
         x = jnp.einsum("btd,dv->btv", x, w_out.astype(jnp.float32))
-        x = sharding_constraint(x, ("data", None, None), self.global_mesh)
+        x = sharding_constraint(x, ("data", None, None), self.global_mesh, True)
         return x

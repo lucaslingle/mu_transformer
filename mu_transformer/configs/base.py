@@ -34,20 +34,17 @@ def get_base_config():
     # architecture
     config.n_layer = 24
     config.rotary_base = 10_000
-    config.rotary_interp_q = False
-    config.rotary_interp_k = False
     config.act_name = "gelu"  # any activation defined jax.nn
     config.act_square = False  # activation squaring
 
     # optimization
-    config.tokens_per_global_batch = 65536  # when acc_steps > 1, this is microbatch sz
+    config.tokens_per_global_batch = 262144
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
-    config.optimizer = "lion"
-    config.lr_max = 0.001  # master lr; scaled by mu-parameterization adam, schedule
-    config.optim_b1 = 0.95
+    config.lr_max = 10.0  # master lr; scaled by mu-parameterization adam, schedule
+    config.optim_b1 = 0.9
     config.optim_b2 = 0.98
     config.optim_eps = 1e-9  # used by adam only
-    config.wd_lam = 0.1  # weight decay coeff, multiplied by master lr * schedule
+    config.wd_lam = 0.0  # weight decay coeff, multiplied by master lr * schedule
 
     # periodic action settings
     config.n_print_step = 100  # print every

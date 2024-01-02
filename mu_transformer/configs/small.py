@@ -21,6 +21,7 @@ def get_config():
     # mesh
     config.n_shard_data = 8
     config.n_shard_model = 1
+    config.optimize_sharding = False
 
     # width
     config.d_model = 512

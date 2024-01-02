@@ -19,8 +19,9 @@ def get_config():
     config.model_size = "huge"
 
     # mesh
-    config.n_shard_data = 4
-    config.n_shard_model = 32
+    config.n_shard_data = 16
+    config.n_shard_model = 8
+    config.optimize_sharding = True
 
     # width
     config.d_model = 4096

@@ -21,7 +21,9 @@ def get_namedsharding(*, axis_names, device_mesh):
     )
 
 
-def sharding_constraint(x, axis_names, device_mesh):
+def sharding_constraint(x, axis_names, device_mesh, enabled):
+    if not enabled:
+        return x
     ns = get_namedsharding(axis_names=axis_names, device_mesh=device_mesh)
     return jax.lax.with_sharding_constraint(x, ns)
 
