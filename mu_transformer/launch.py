@@ -75,10 +75,14 @@ def transformer_config_factory():
 def global_mesh_factory():
     return jax.sharding.Mesh(
         devices=jmu.create_device_mesh(
-            mesh_shape=(jax.device_count(),),
+            mesh_shape=(
+                FLAGS.config.n_mesh_rows,
+                FLAGS.config.n_mesh_cols,
+                FLAGS.config.n_mesh_planes,
+            ),
             devices=jax.devices(),
         ),
-        axis_names=("devices",),
+        axis_names=("rows", "columns", "planes"),
     )
 
 
@@ -463,11 +467,20 @@ def main(argv):
         logging.info(f"{k}: {v}")
     assert FLAGS.config.d_model >= HEAD_DIM
     assert FLAGS.config.d_model % HEAD_DIM == 0
-    assert FLAGS.config.d_model // HEAD_DIM >= jax.device_count()
-    assert (FLAGS.config.d_model // HEAD_DIM) % jax.device_count() == 0
-    assert global_batch_size_factory() >= jax.device_count()  # dataloader quirk
-    assert global_batch_size_factory() % jax.device_count() == 0
-
+    n_device = jax.device_count()
+    n_example = global_batch_size_factory()
+    n_head = FLAGS.config.d_model // HEAD_DIM
+    d_model = FLAGS.config.d_model
+    n_row = FLAGS.config.n_mesh_rows
+    n_col = FLAGS.config.n_mesh_cols
+    n_plane = FLAGS.config.n_mesh_planes
+    assert n_row * n_col * n_plane == n_device
+    assert n_example >= n_device  # dataloader quirk
+    assert n_example % n_row == 0  # parallelize batch across rows
+    assert d_model >= n_col  # parallelize residual-backbone layers across columns
+    assert d_model % n_col == 0
+    assert n_head >= n_plane  # parallelize hidden activations across planes
+    assert n_head % n_plane == 0
     try:
         jax.distributed.initialize()
     except Exception:

@@ -18,9 +18,10 @@ def get_config():
     config = get_base_config()
     config.model_size = "tiny"
 
-    # # mesh
-    # config.n_shard_data = 8
-    # config.n_shard_model = 1
+    # mesh
+    config.n_mesh_rows = 1
+    config.n_mesh_cols = 1
+    config.n_mesh_planes = 1
 
     # width
     config.d_model = 256
