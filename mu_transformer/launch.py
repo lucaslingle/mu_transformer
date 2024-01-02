@@ -107,19 +107,19 @@ def schedule_factory():
 
 
 def grad_transform_factory():
-    kws = dict(
-        b1=FLAGS.config.adam_b1,
-        b2=FLAGS.config.adam_b2,
-        eps=FLAGS.config.adam_eps,
-        mu_dtype=FLAGS.config.param_dtype,
-        weight_decay=0.0,  # done later
-    )
     lr = FLAGS.config.lr_max
     wd = FLAGS.config.wd_lam
     dm = FLAGS.config.d_model
-    return optax.chain(
-        optax.clip_by_global_norm(FLAGS.config.grad_clip),
-        optax.multi_transform(
+
+    if FLAGS.config.optimizer == "adamw":
+        kws = dict(
+            b1=FLAGS.config.optim_b1,
+            b2=FLAGS.config.optim_b2,
+            eps=FLAGS.config.optim_eps,
+            mu_dtype=FLAGS.config.param_dtype,
+            weight_decay=0.0,  # done later
+        )
+        optim = optax.multi_transform(
             {
                 # embeddings and de-embeddings
                 "w_ei": optax.adamw(lr, **kws),  # table 3, col 1
@@ -134,7 +134,36 @@ def grad_transform_factory():
                 "w_fo": optax.adamw(lr / (dm * FF_MULTIPLE), **kws),  # table 3, col3
             },
             param_labels=param_label_fn,
-        ),
+        )
+    elif FLAGS.config.optimizer == "lion":
+        kws = dict(
+            b1=FLAGS.config.optim_b1,
+            b2=FLAGS.config.optim_b2,
+            mu_dtype=FLAGS.config.dtype,
+            weight_decay=0.0,  # done later
+        )
+        optim = optax.multi_transform(
+            {
+                # embeddings and de-embeddings
+                "w_ei": optax.lion(lr * dm, **kws),  # table 3, col 1
+                "w_eo": optax.lion(lr / dm, **kws),  # table 3, col2
+                # attention projections
+                "w_aq": optax.lion(lr, **kws),  # table 3, col3
+                "w_ak": optax.lion(lr, **kws),  # table 3, col3
+                "w_av": optax.lion(lr, **kws),  # table 3, col3
+                "w_ao": optax.lion(lr, **kws),  # table 3, col3
+                # feed-forward projections
+                "w_fi": optax.lion(lr, **kws),  # table 3, col3
+                "w_fo": optax.lion(lr, **kws),  # table 3, col3
+            },
+            param_labels=param_label_fn,
+        )
+    else:
+        raise NotImplementedError
+
+    return optax.chain(
+        optax.clip_by_global_norm(FLAGS.config.grad_clip),
+        optim,
         optax.add_decayed_weights(-lr * wd),  # mult by master lr * schedule; not width
         optax.scale_by_schedule(schedule_factory()),
     )
