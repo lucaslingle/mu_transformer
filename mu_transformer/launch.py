@@ -75,10 +75,10 @@ def transformer_config_factory():
 def global_mesh_factory():
     return jax.sharding.Mesh(
         devices=jmu.create_device_mesh(
-            mesh_shape=(FLAGS.config.n_shard_data, FLAGS.config.n_shard_model),
+            mesh_shape=(jax.device_count(),),
             devices=jax.devices(),
         ),
-        axis_names=("data", "model"),
+        axis_names=("devices",),
     )
 
 
@@ -463,9 +463,10 @@ def main(argv):
         logging.info(f"{k}: {v}")
     assert FLAGS.config.d_model >= HEAD_DIM
     assert FLAGS.config.d_model % HEAD_DIM == 0
-    assert FLAGS.config.n_shard_data * FLAGS.config.n_shard_model == jax.device_count()
+    assert FLAGS.config.d_model // HEAD_DIM >= jax.device_count()
+    assert (FLAGS.config.d_model // HEAD_DIM) % jax.device_count() == 0
     assert global_batch_size_factory() >= jax.device_count()  # dataloader quirk
-    assert global_batch_size_factory() % FLAGS.config.n_shard_data == 0
+    assert global_batch_size_factory() % jax.device_count() == 0
 
     try:
         jax.distributed.initialize()

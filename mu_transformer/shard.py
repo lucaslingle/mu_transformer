@@ -21,9 +21,7 @@ def get_namedsharding(*, axis_names, device_mesh):
     )
 
 
-def sharding_constraint(x, axis_names, device_mesh, enabled):
-    if not enabled:
-        return x
+def sharding_constraint(x, axis_names, device_mesh):
     ns = get_namedsharding(axis_names=axis_names, device_mesh=device_mesh)
     return jax.lax.with_sharding_constraint(x, ns)
 
@@ -31,8 +29,6 @@ def sharding_constraint(x, axis_names, device_mesh, enabled):
 def to_global_array(array, global_mesh):
     # based on
     # https://github.com/google/maxtext/blob/main/MaxText/multihost_dataloading.py#L47
-    assert array.ndim == 2
-    assert global_mesh.axis_names == ("data", "model")
     # first temporarily put the arrays on each local device, they may get moved later
     arrays = jax.device_put(
         np.split(array, len(global_mesh.local_devices), axis=0),
