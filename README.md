@@ -44,7 +44,7 @@ Settings follow ```base.py```, with exception of width and mesh sizes.
 Settings overrides are supported via command line
 ```
 python3 mu_transformer/launch.py \
-    --config=mu_transformer/configs/config_tiny.py \
+    --config=mu_transformer/configs/tiny.py \
     --mode=train \
     --workdir=workdir \
     --config.lr_max=0.123;
@@ -54,7 +54,7 @@ This project supports any HuggingFace text dataset and tokenizer out-of-the-box.
 For instance, to use the [T5 tokenizer](https://huggingface.co/docs/transformers/model_doc/t5#transformers.T5TokenizerFast) and [C4 dataset](https://huggingface.co/datasets/c4), you can write
 ```
 python3 mu_transformer/launch.py \
-    --config=mu_transformer/configs/config_tiny.py \
+    --config=mu_transformer/configs/tiny.py \
     --mode=train \
     --workdir=workdir \
     --config.hftr_tokenizer_name=T5TokenizerFast \
