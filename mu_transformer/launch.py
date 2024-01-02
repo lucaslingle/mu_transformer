@@ -72,8 +72,6 @@ def global_mesh_factory():
 def params_factory(rng, model_cls, config, global_mesh):
     inputs = jnp.ones(dtype=jnp.int32, shape=[1, config.sequence_len])
     params = model_cls(config, global_mesh).init({"params": rng}, inputs)["params"]
-    # if isinstance(params, flax.core.FrozenDict):
-    #     params = params.unfreeze()
     return params
 
 
