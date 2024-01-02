@@ -63,3 +63,7 @@ python3 mu_transformer/launch.py \
     --config.hfds_config=en \
     --config.hfds_datacol=text;
 ```
+
+## Acknowledgements
+
+This project was supported by Cloud TPUs from Google's TPU Research Cloud (TRC).
