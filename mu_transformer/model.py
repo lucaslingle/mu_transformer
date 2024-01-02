@@ -287,7 +287,6 @@ class Transformer(nn.Module):
             self.hps.param_dtype,
         )
 
-        # todo: sharding constraints
         w_emb = w_emb[None, ...]  # 1VD
         x = x[..., None]  # BT1
         x = sharding_constraint(x, ("data", None, None), self.global_mesh)
@@ -303,8 +302,8 @@ class Transformer(nn.Module):
             split_rngs=dict(params=True),
             metadata_params={nn.PARTITION_NAME: None},
         )(hps=self.hps, global_mesh=self.global_mesh)(x, None)
-
         x = sharding_constraint(x, ("data", None, None), self.global_mesh)
+
         x = RMSLayerNorm()(x)
         x = sharding_constraint(x, ("data", None, None), self.global_mesh)
 
