@@ -36,7 +36,7 @@ def get_base_config():
     config.rotary_base = 10_000
     config.rotary_interp_q = False
     config.rotary_interp_k = False
-    config.act_name = "relu"  # any activation defined jax.nn
+    config.act_name = "gelu"  # any activation defined jax.nn
     config.act_square = False  # activation squaring
 
     # optimization
@@ -46,7 +46,7 @@ def get_base_config():
     config.adam_b1 = 0.9
     config.adam_b2 = 0.98
     config.adam_eps = 1e-9
-    config.wd_lam = 0.0  # weight decay coeff, multiplied by master lr * schedule
+    config.wd_lam = 0.1  # weight decay coeff, multiplied by master lr * schedule
 
     # periodic action settings
     config.n_print_step = 100  # print every
