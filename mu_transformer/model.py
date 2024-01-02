@@ -26,7 +26,7 @@ from mu_transformer.dims import Dimensions
 from mu_transformer.shard import sharding_constraint
 from mu_transformer.sow import coord_check_l1
 
-HEAD_DIM = 128
+HEAD_DIM = 32
 FF_MULTIPLE = 4
 INFTY_APPROX = 1e30
 SHARDING = Dimensions(S="devices", R=None)
