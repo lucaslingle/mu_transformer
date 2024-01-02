@@ -105,7 +105,7 @@ class CausalMask(nn.Module):
         mask = jnp.less(i, j)  # keep lower triangular
         while mask.ndim < x.ndim:
             mask = mask[None, ...]
-        return x - INFTY_APPROX * mask.astype(x.dtype)
+        return x - jnp.array([INFTY_APPROX], dtype=x.dtype) * mask
 
 
 class MultiheadSelfAttention(nn.Module):
@@ -132,7 +132,6 @@ class MultiheadSelfAttention(nn.Module):
         x = sharding_constraint(x, sharding["BTM"], self.global_mesh)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
 
-        # q_init = init.normal(self.hps.d_model ** -0.5)  # todo: change back
         q_init = init.zeros  # zero init; appdx d.2
         kv_init = init.normal(self.hps.d_model**-0.5)  # normal, var 1/fan_in; table 3
         o_init = init.normal(self.hps.d_model**-0.5)  # normal, var 1/fan_in = 1 / m
@@ -257,10 +256,8 @@ class TransformerBlock(nn.Module):
     def __call__(self, x, _):
         x += MultiheadSelfAttention(self.hps, self.global_mesh)(RMSLayerNorm()(x))
         x = sharding_constraint(x, ("data", None, None), self.global_mesh)
-
         x += MultiLayerPerceptron(self.hps, self.global_mesh)(RMSLayerNorm()(x))
         x = sharding_constraint(x, ("data", None, None), self.global_mesh)
-
         return x, None
 
 
