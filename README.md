@@ -31,8 +31,6 @@ To install via pipenv, write ```pipenv install ...```.
 
 ## Examples
 
-### Configs
-
 To train with the default config applied to a tiny model, you can run
 ```
 python3 mu_transformer/launch.py \
@@ -43,8 +41,6 @@ python3 mu_transformer/launch.py \
 A series of model configs, each increasing model size by about 4x, are provided.  
 Settings follow ```base.py```, with exception of width and mesh sizes. 
 
-### Overrides
-
 Settings overrides are supported via command line
 ```
 python3 mu_transformer/launch.py \
@@ -53,8 +49,6 @@ python3 mu_transformer/launch.py \
     --workdir=workdir \
     --config.lr_max=0.123;
 ```
-
-### Dataset and Tokenizer
 
 This project supports any HuggingFace text dataset and tokenizer out-of-the-box.  
 For instance, to use the [T5 tokenizer](https://huggingface.co/docs/transformers/model_doc/t5#transformers.T5TokenizerFast) and [C4 dataset](https://huggingface.co/datasets/c4), you can write

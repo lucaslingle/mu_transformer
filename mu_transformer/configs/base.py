@@ -8,7 +8,7 @@ def get_base_config():
     # basics
     config.param_dtype = jnp.float32
     config.dtype = jnp.bfloat16
-    config.sow_intermediates = False
+    config.sow_intermediates = True
 
     # huggingface tokenizer and dataset settings
     config.hftr_tokenizer_name = "GPT2TokenizerFast"
@@ -33,7 +33,7 @@ def get_base_config():
     config.adam_b1 = 0.9
     config.adam_b2 = 0.98
     config.adam_eps = 1e-9
-    config.wd_lam = 0.0  # weight decay coeff, multiplied by lr_max * schedule
+    config.wd_lam = 0.0  # weight decay coeff, multiplied by master lr * schedule
 
     # periodic action settings
     config.n_print_step = 100  # print every
