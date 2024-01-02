@@ -99,9 +99,10 @@ def grad_transform_factory():
         b2=FLAGS.config.adam_b2,
         eps=FLAGS.config.adam_eps,
         mu_dtype=FLAGS.config.param_dtype,
-        weight_decay=FLAGS.config.wd_lam,
+        weight_decay=0.0,  # done later
     )
     lr = FLAGS.config.lr_max
+    wd = FLAGS.config.wd_lam
     dm = FLAGS.config.d_model
     return optax.chain(
         optax.clip_by_global_norm(FLAGS.config.grad_clip),
@@ -121,6 +122,7 @@ def grad_transform_factory():
             },
             param_labels=param_label_fn,
         ),
+        optax.add_decayed_weights(-lr * wd),  # mult by master lr * schedule; not width
         optax.scale_by_schedule(schedule_factory()),
     )
 
