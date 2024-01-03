@@ -429,7 +429,6 @@ def eval_loop(params, n_eval_step=None):
     for i, batch in enumerate(batch_iter):
         logging.info(f"eval step {i}...")
         stats = eval_step(params=params, batch=batch)
-        print(stats)
         stats = jtu.tree_map(lambda a: jax.device_get(a).item(), stats)
         stats = jax.block_until_ready(stats)  # slows a bit, but makes printout accurate
         if acc is not None:
