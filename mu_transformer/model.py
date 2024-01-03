@@ -205,7 +205,9 @@ class MultiheadSelfAttention(nn.Module):
         q = jnp.einsum("bim,mhd->bhid", x, wq)
         k = jnp.einsum("bim,mhd->bhid", x, wk)
         v = jnp.einsum("bim,mhd->bhid", x, wv)
-        chex.assert_trees_all_equal_dtypes(x, q, k, v)
+        chex.assert_trees_all_equal_dtypes(
+            q, k, v, jnp.array([0.0], dtype=self.hps.dtype)
+        )
         # q = sharding_constraint(q, MESH_AXES["RPNN"], self.global_mesh)
         # k = sharding_constraint(k, MESH_AXES["RPNN"], self.global_mesh)
         # v = sharding_constraint(v, MESH_AXES["RPNN"], self.global_mesh)
@@ -215,29 +217,37 @@ class MultiheadSelfAttention(nn.Module):
 
         q = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(q)
         k = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(k)
+        chex.assert_trees_all_equal_dtypes(
+            q, k, v, jnp.array([0.0], dtype=self.hps.dtype)
+        )
         # q = sharding_constraint(q, MESH_AXES["RPNN"], self.global_mesh)
         # k = sharding_constraint(k, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "aqr_l1", coord_check_l1(q))
         self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
         s = jnp.einsum("bhid,bhjd->bhij", q, k) / self.hps.d_head
+        chex.assert_trees_all_equal_dtypes(s, jnp.array([0.0], dtype=self.hps.dtype))
         # s = sharding_constraint(s, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
 
         s = CausalMask(self.hps.sequence_len, self.global_mesh)(s)
+        chex.assert_trees_all_equal_dtypes(s, jnp.array([0.0], dtype=self.hps.dtype))
         # s = sharding_constraint(s, MESH_AXES["RPNN"], self.global_mesh)
 
         p = jax.nn.softmax(s, axis=-1)
+        chex.assert_trees_all_equal_dtypes(p, jnp.array([0.0], dtype=self.hps.dtype))
         # p = sharding_constraint(p, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "ap_l1", coord_check_l1(p))
 
         o = jnp.einsum("bhij,bhjd->bhid", p, v)
+        chex.assert_trees_all_equal_dtypes(o, jnp.array([0.0], dtype=self.hps.dtype))
         # o = sharding_constraint(o, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "ao_l1", coord_check_l1(o))
 
         wo = wo.astype(self.hps.dtype)
         # wo = sharding_constraint(wo, MESH_AXES["PNC"], self.global_mesh)
         r = jnp.einsum("bhid,hdm->bim", o, wo)
+        chex.assert_trees_all_equal_dtypes(r, jnp.array([0.0], dtype=self.hps.dtype))
         # r = sharding_constraint(r, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "ar_l1", coord_check_l1(r))
         return r
@@ -254,6 +264,7 @@ class MultiLayerPerceptron(nn.Module):
         d_ff = self.hps.d_model * self.hps.ff_multiple
         shapes = Dimensions(B=x.shape[0], T=seqlen, M=d_model, F=d_ff)
         chex.assert_shape(x, shapes["BTM"])
+        chex.assert_trees_all_equal_dtypes(x, jnp.array([0.0], dtype=self.hps.dtype))
         # x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
 
@@ -277,6 +288,8 @@ class MultiLayerPerceptron(nn.Module):
         # w1 = sharding_constraint(w1, MESH_AXES["CP"], self.global_mesh)
         x = jnp.einsum("btm,mf->btf", x, w1)
         # x = sharding_constraint(x, MESH_AXES["RNP"], self.global_mesh)
+        chex.assert_shape(x, shapes["BTF"])
+        chex.assert_trees_all_equal_dtypes(x, jnp.array([0.0], dtype=self.hps.dtype))
         self.sow("intermediates", "fp_l1", coord_check_l1(x))
 
         x = getattr(jax.nn, self.hps.act_name)(x)
@@ -284,6 +297,7 @@ class MultiLayerPerceptron(nn.Module):
         if self.hps.act_square:
             x = jnp.square(x)
             # x = sharding_constraint(x, MESH_AXES["RNP"], self.global_mesh)
+        chex.assert_trees_all_equal_dtypes(x, jnp.array([0.0], dtype=self.hps.dtype))
         self.sow("intermediates", "fa_l1", coord_check_l1(x))
 
         # todo: maybe use dot general?
@@ -291,6 +305,8 @@ class MultiLayerPerceptron(nn.Module):
         # w2 = sharding_constraint(w2, MESH_AXES["PC"], self.global_mesh)
         x = jnp.einsum("btf,fm->btm", x, w2)
         # x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+        chex.assert_shape(x, shapes["BTM"])
+        chex.assert_trees_all_equal_dtypes(x, jnp.array([0.0], dtype=self.hps.dtype))
         self.sow("intermediates", "fr_l1", coord_check_l1(x))
         return x
 
