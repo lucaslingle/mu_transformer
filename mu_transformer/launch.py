@@ -121,7 +121,7 @@ def grad_transform_factory():
     wd = FLAGS.config.wd_lam
     dm = FLAGS.config.d_model
     dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
-    optimizer = optax.chain(
+    return optax.chain(
         optax.clip_by_global_norm(FLAGS.config.grad_clip),
         optax.multi_transform(
             {
@@ -142,7 +142,6 @@ def grad_transform_factory():
         optax.add_decayed_weights(-lr * wd),
         optax.scale_by_schedule(schedule_factory()),
     )
-    return optax.MultiSteps(optimizer, every_k_schedule=FLAGS.config.n_acc_steps)
 
 
 def init_fn(rng, model_cls, optim_cls, config, global_mesh):
@@ -477,17 +476,17 @@ def main(argv):
     n_device = jax.device_count()
     n_example = global_batch_size_factory()
     n_head = FLAGS.config.d_model // FLAGS.config.d_head
-    d_model = FLAGS.config.d_model
+    n_layer = FLAGS.config.n_layer
     n_row = FLAGS.config.n_mesh_rows
     n_col = FLAGS.config.n_mesh_cols
     n_plane = FLAGS.config.n_mesh_planes
     assert n_row * n_col * n_plane == n_device
     assert n_example >= n_device  # dataloader quirk
     assert n_example % n_row == 0  # parallelize batch across rows
-    assert d_model >= n_col  # parallelize residual activations across columns
-    assert d_model % n_col == 0
-    assert n_head >= n_plane  # parallelize hidden activations across planes
-    assert n_head % n_plane == 0
+    assert n_head >= n_col  # parallelize hidden activations across columns
+    assert n_head % n_col == 0
+    assert n_layer >= n_plane  # parallelize layers across planes
+    assert n_layer % n_plane == 0
     try:
         jax.distributed.initialize()
     except Exception:

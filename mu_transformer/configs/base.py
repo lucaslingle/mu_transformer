@@ -30,9 +30,9 @@ def get_base_config():
     config.sequence_len = 512
 
     # architecture
-    config.param_dtype = jnp.bfloat16  # maybe change to higher precision
+    config.param_dtype = jnp.float32
     config.dtype = jnp.bfloat16
-    config.output_logits_dtype = jnp.bfloat16  # same
+    config.output_logits_dtype = jnp.float32
     config.n_layer = 24
     config.d_head = 256
     config.ff_multiple = 4
@@ -51,7 +51,6 @@ def get_base_config():
     config.wd_lam = 0.0  # weight decay coeff, multiplied by master lr * schedule
 
     # periodic action settings
-    config.n_acc_steps = 4  # update every
     config.n_print_step = 100  # print every
     config.n_save_step = 5_000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
