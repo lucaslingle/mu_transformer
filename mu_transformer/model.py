@@ -117,6 +117,7 @@ class RotaryEncoding(nn.Module):
 
 class FractionalRotaryEncoding(nn.Module):
     rotary_base: float
+    global_mesh: jax.sharding.Mesh
 
     @nn.compact
     def __call__(self, x):
