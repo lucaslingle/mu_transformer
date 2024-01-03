@@ -121,7 +121,7 @@ def grad_transform_factory():
     wd = FLAGS.config.wd_lam
     dm = FLAGS.config.d_model
     dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
-    return optax.chain(
+    optimizer = optax.chain(
         optax.clip_by_global_norm(FLAGS.config.grad_clip),
         optax.multi_transform(
             {
@@ -142,6 +142,7 @@ def grad_transform_factory():
         optax.add_decayed_weights(-lr * wd),
         optax.scale_by_schedule(schedule_factory()),
     )
+    return optax.MultiSteps(optimizer, every_k_schedule=FLAGS.config.n_acc_steps)
 
 
 def init_fn(rng, model_cls, optim_cls, config, global_mesh):
