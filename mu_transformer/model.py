@@ -319,11 +319,10 @@ class Transformer(nn.Module):
             self.hps.param_dtype,
         )
 
-        w_emb = w_emb[None, ...]  # 1VD
+        w_emb = w_emb.astype(self.hps.dtype)[None, ...]  # 1VD
         x = x[..., None]  # BT1
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         x = jnp.take_along_axis(w_emb, x, axis=-2)
-        x = x.astype(self.hps.dtype)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
         x, _ = nn.scan(
