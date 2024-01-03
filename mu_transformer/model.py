@@ -26,8 +26,6 @@ from mu_transformer.dims import Dimensions
 from mu_transformer.shard import sharding_constraint
 from mu_transformer.sow import coord_check_l1
 
-HEAD_DIM = 128
-FF_MULTIPLE = 4
 INFTY_APPROX = 1e30
 MESH_AXES = Dimensions(R="rows", C="columns", P="planes", N=None)
 
@@ -38,6 +36,8 @@ class TransformerConfig:
     dtype: Any
     sequence_len: int
     d_model: int
+    d_head: int
+    ff_multiple: int
     n_layer: int
     n_vocab: int
     rotary_base: int
@@ -57,34 +57,71 @@ class RMSLayerNorm(nn.Module):
         return x / jnp.sqrt(jnp.mean(jnp.square(x), axis=-1) + 1e-8)[..., None]
 
 
-class RotaryEncoder(nn.Module):
+class RotaryEncoding(nn.Module):
     rotary_base: float
 
     @nn.compact
     def __call__(self, x):
-        length = x.shape[-2]
-        width = x.shape[-1]
+        *_, length, width = x.shape
+
         positions = jnp.arange(length)
+        positions = sharding_constraint(positions, MESH_AXES["N"], self.global_mesh)
         positions = positions[..., None]  # expand along width axis
+        positions = sharding_constraint(positions, MESH_AXES["NN"], self.global_mesh)
 
         dimensions = jnp.arange(width // 2)  # half each for sin and cos
+        dimensions = sharding_constraint(dimensions, MESH_AXES["N"], self.global_mesh)
         ang_freqs = jnp.power(self.rotary_base, -dimensions / (width // 2))
         ang_freqs = ang_freqs[None, ...]  # expand along length axis
+        ang_freqs = sharding_constraint(ang_freqs, MESH_AXES["NN"], self.global_mesh)
 
         # expand along leading axes, such as batch and head.
-        while positions.ndim < x.ndim:
-            positions = positions[None, ...]
-            ang_freqs = ang_freqs[None, ...]
+        positions = positions[None, None, ...]
+        ang_freqs = ang_freqs[None, None, ...]
+        positions = sharding_constraint(positions, MESH_AXES["NNNN"], self.global_mesh)
+        ang_freqs = sharding_constraint(ang_freqs, MESH_AXES["NNNN"], self.global_mesh)
+        chex.assert_shape(positions, [1, 1, length, 1])
+        chex.assert_shape(ang_freqs, [1, 1, 1, width // 2])
 
         radians = positions * ang_freqs
+        radians = sharding_constraint(radians, MESH_AXES["NNNN"], self.global_mesh)
+        chex.assert_shape(radians, [1, 1, length, width // 2])
+
         cos = jnp.cos(radians).astype(x.dtype)
         sin = jnp.sin(radians).astype(x.dtype)
+        cos = sharding_constraint(cos, MESH_AXES["NNNN"], self.global_mesh)
+        sin = sharding_constraint(sin, MESH_AXES["NNNN"], self.global_mesh)
+        chex.assert_shape(positions, [1, 1, length, width // 2])
+        chex.assert_shape(ang_freqs, [1, 1, length, width // 2])
+
         even, odd = jnp.split(x, 2, axis=-1)
+        even = sharding_constraint(even, MESH_AXES["RPNN"], self.global_mesh)
+        odd = sharding_constraint(odd, MESH_AXES["RPNN"], self.global_mesh)
+
         r_even = even * cos - odd * sin
         r_odd = even * sin + odd * cos
+        r_even = sharding_constraint(r_even, MESH_AXES["RPNN"], self.global_mesh)
+        r_odd = sharding_constraint(r_odd, MESH_AXES["RPNN"], self.global_mesh)
+
         r = jnp.concatenate([r_even, r_odd], axis=-1)
+        r = sharding_constraint(r, MESH_AXES["RPNN"], self.global_mesh)
         chex.assert_shape(r, x.shape)
         return r
+
+
+class FractionalRotaryEncoding(nn.Module):
+    rotary_base: float
+
+    @nn.compact
+    def __call__(self, x):
+        x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
+        rotary, skip = jnp.split(x, 2, axis=-1)
+        rotary = sharding_constraint(rotary, MESH_AXES["RPNN"], self.global_mesh)
+        skip = sharding_constraint(skip, MESH_AXES["RPNN"], self.global_mesh)
+        rotary = RotaryEncoding(self.rotary_base)(rotary)
+        x = jnp.concatenate([rotary, skip], axis=-1)
+        x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
+        return x
 
 
 class CausalMask(nn.Module):
@@ -110,8 +147,8 @@ class MultiheadSelfAttention(nn.Module):
             B=x.shape[0],
             T=self.hps.sequence_len,
             M=self.hps.d_model,
-            D=HEAD_DIM,
-            H=self.hps.d_model // HEAD_DIM,
+            D=self.hps.d_head,
+            H=self.hps.d_model // self.hps.d_head,
         )
         chex.assert_shape(x, shapes["BTM"])
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
@@ -156,14 +193,14 @@ class MultiheadSelfAttention(nn.Module):
         self.sow("intermediates", "ak_l1", coord_check_l1(k))
         self.sow("intermediates", "av_l1", coord_check_l1(v))
 
-        q = RotaryEncoder(self.hps.rotary_base)(q)
-        k = RotaryEncoder(self.hps.rotary_base)(k)
+        q = FractionalRotaryEncoding(self.hps.rotary_base)(q)
+        k = FractionalRotaryEncoding(self.hps.rotary_base)(k)
         q = sharding_constraint(q, MESH_AXES["RPNN"], self.global_mesh)
         k = sharding_constraint(k, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "aqr_l1", coord_check_l1(q))
         self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
-        s = jnp.einsum("bhid,bhjd->bhij", q, k) / HEAD_DIM
+        s = jnp.einsum("bhid,bhjd->bhij", q, k) / self.hps.d_head
         s = sharding_constraint(s, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
 
@@ -192,7 +229,7 @@ class MultiLayerPerceptron(nn.Module):
     def __call__(self, x):
         seqlen = self.hps.sequence_len
         d_model = self.hps.d_model
-        d_ff = self.hps.d_model * FF_MULTIPLE
+        d_ff = self.hps.d_model * self.hps.ff_multiple
         shapes = Dimensions(B=x.shape[0], T=seqlen, M=d_model, F=d_ff)
         chex.assert_shape(x, shapes["BTM"])
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)

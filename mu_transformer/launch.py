@@ -34,8 +34,6 @@ from ml_collections import config_flags
 
 from mu_transformer.data import get_dataset
 from mu_transformer.data import get_tokenizer
-from mu_transformer.model import FF_MULTIPLE
-from mu_transformer.model import HEAD_DIM
 from mu_transformer.model import Transformer
 from mu_transformer.model import TransformerConfig
 from mu_transformer.shard import get_namedsharding
@@ -121,6 +119,7 @@ def grad_transform_factory():
     lr = FLAGS.config.lr_max
     wd = FLAGS.config.wd_lam
     dm = FLAGS.config.d_model
+    dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
     return optax.chain(
         optax.clip_by_global_norm(FLAGS.config.grad_clip),
         optax.multi_transform(
@@ -135,7 +134,7 @@ def grad_transform_factory():
                 "w_ao": optax.adamw(lr / dm, **kws),  # table 3, col3; assumes dm=nh*dh
                 # feed-forward projections
                 "w_fi": optax.adamw(lr / dm, **kws),  # table 3, col3
-                "w_fo": optax.adamw(lr / (dm * FF_MULTIPLE), **kws),  # table 3, col3
+                "w_fo": optax.adamw(lr / dff, **kws),  # table 3, col3
             },
             param_labels=param_label_fn,
         ),
@@ -468,11 +467,11 @@ def main(argv):
     logging.info("=== Config: ===")
     for k, v in vars(FLAGS.config)["_fields"].items():
         logging.info(f"{k}: {v}")
-    assert FLAGS.config.d_model >= HEAD_DIM
-    assert FLAGS.config.d_model % HEAD_DIM == 0
+    assert FLAGS.config.d_model >= FLAGS.config.d_head
+    assert FLAGS.config.d_model % FLAGS.config.d_head == 0
     n_device = jax.device_count()
     n_example = global_batch_size_factory()
-    n_head = FLAGS.config.d_model // HEAD_DIM
+    n_head = FLAGS.config.d_model // FLAGS.config.d_head
     d_model = FLAGS.config.d_model
     n_row = FLAGS.config.n_mesh_rows
     n_col = FLAGS.config.n_mesh_cols
