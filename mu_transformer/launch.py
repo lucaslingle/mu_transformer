@@ -115,7 +115,7 @@ def grad_transform_factory():
         b1=FLAGS.config.adam_b1,
         b2=FLAGS.config.adam_b2,
         eps=FLAGS.config.adam_eps,
-        mu_dtype=FLAGS.config.param_dtype,
+        mu_dtype=FLAGS.config.dtype,
         weight_decay=0.0,  # done later
     )
     lr = FLAGS.config.lr_max
