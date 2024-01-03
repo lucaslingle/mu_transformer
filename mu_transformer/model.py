@@ -286,9 +286,9 @@ class TransformerBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x, _):
-        x += nnp.remat(MultiheadSelfAttention)(self.hps, self.global_mesh)(RMSNorm()(x))
+        x += MultiheadSelfAttention(self.hps, self.global_mesh)(RMSNorm()(x))
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        x += nnp.remat(MultiLayerPerceptron)(self.hps, self.global_mesh)(RMSNorm()(x))
+        x += MultiLayerPerceptron(self.hps, self.global_mesh)(RMSNorm()(x))
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         return x, None
 
@@ -314,7 +314,7 @@ class Transformer(nn.Module):
         )
         w_out = self.param(
             "w_eo",
-            nn.with_partitioning(o_init, MESH_AXES["NN"], self.global_mesh),  # shard
+            nn.with_partitioning(o_init, MESH_AXES["CN"], self.global_mesh),  # shard
             [dm, nv],
             self.hps.param_dtype,
         )
