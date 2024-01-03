@@ -41,7 +41,7 @@ def get_base_config():
     config.act_square = False  # activation squaring
 
     # optimization
-    config.tokens_per_global_batch = 262144
+    config.tokens_per_global_batch = 2**16
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
     config.lr_max = 10.0  # master lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
@@ -51,6 +51,7 @@ def get_base_config():
     config.wd_lam = 0.0  # weight decay coeff, multiplied by master lr * schedule
 
     # periodic action settings
+    config.n_acc_step = 25
     config.n_print_step = 100  # print every
     config.n_save_step = 5_000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
