@@ -19,8 +19,9 @@ import flax.linen as nn
 import jax
 import jax.nn.initializers as init
 import jax.numpy as jnp
+import numpy as np
 from flax import struct
-from flax.linen import partitioning as nnp
+from flax.linen import partitioning
 
 from mu_transformer.dims import Dimensions
 from mu_transformer.shard import sharding_constraint
@@ -114,19 +115,19 @@ class RotaryEncoding(nn.Module):
         return r
 
 
-class FractionalRotaryEncoding(nn.Module):
-    rotary_base: float
-
-    @nn.compact
-    def __call__(self, x):
-        x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
-        rotary, skip = jnp.split(x, 2, axis=-1)
-        rotary = sharding_constraint(rotary, MESH_AXES["RPNN"], self.global_mesh)
-        skip = sharding_constraint(skip, MESH_AXES["RPNN"], self.global_mesh)
-        rotary = RotaryEncoding(self.rotary_base)(rotary)
-        x = jnp.concatenate([rotary, skip], axis=-1)
-        x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
-        return x
+# class FractionalRotaryEncoding(nn.Module):
+#     rotary_base: float
+#
+#     @nn.compact
+#     def __call__(self, x):
+#         x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
+#         rotary, skip = jnp.split(x, 2, axis=-1)
+#         rotary = sharding_constraint(rotary, MESH_AXES["RPNN"], self.global_mesh)
+#         skip = sharding_constraint(skip, MESH_AXES["RPNN"], self.global_mesh)
+#         rotary = RotaryEncoding(self.rotary_base)(rotary)
+#         x = jnp.concatenate([rotary, skip], axis=-1)
+#         x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
+#         return x
 
 
 class CausalMask(nn.Module):
@@ -321,7 +322,7 @@ class Transformer(nn.Module):
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
         x, _ = nn.scan(
-            nnp.remat(TransformerBlock),
+            partitioning.remat(TransformerBlock),
             length=self.hps.n_layer,
             variable_axes=dict(params=0, intermediates=0),
             variable_broadcast=False,
