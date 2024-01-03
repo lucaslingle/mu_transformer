@@ -110,6 +110,21 @@ class RotaryEncoding(nn.Module):
         return r
 
 
+class FractionalRotaryEncoding(nn.Module):
+    rotary_base: float
+
+    @nn.compact
+    def __call__(self, x):
+        x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
+        rotary, skip = jnp.split(x, 2, axis=-1)
+        rotary = sharding_constraint(rotary, MESH_AXES["RPNN"], self.global_mesh)
+        skip = sharding_constraint(skip, MESH_AXES["RPNN"], self.global_mesh)
+        rotary = RotaryEncoding(self.rotary_base)(rotary)
+        x = jnp.concatenate([rotary, skip], axis=-1)
+        x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
+        return x
+
+
 class CausalMask(nn.Module):
     length: int
     global_mesh: jax.sharding.Mesh
@@ -177,6 +192,15 @@ class MultiheadSelfAttention(nn.Module):
         )
 
         # todo: maybe use dot general instead of einsum? need to see if it's faster
+        wq = sharding_constraint(
+            wq.astype(self.hps.dtype), MESH_AXES["CPN"], self.global_mesh
+        )
+        wk = sharding_constraint(
+            wk.astype(self.hps.dtype), MESH_AXES["CPN"], self.global_mesh
+        )
+        wv = sharding_constraint(
+            wv.astype(self.hps.dtype), MESH_AXES["CPN"], self.global_mesh
+        )
         q = jnp.einsum("bim,mhd->bhid", x, wq.astype(self.hps.dtype))
         k = jnp.einsum("bim,mhd->bhid", x, wk.astype(self.hps.dtype))
         v = jnp.einsum("bim,mhd->bhid", x, wv.astype(self.hps.dtype))
@@ -209,7 +233,10 @@ class MultiheadSelfAttention(nn.Module):
         o = sharding_constraint(o, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "ao_l1", coord_check_l1(o))
 
-        r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.hps.dtype))
+        wo = sharding_constraint(
+            wo.astype(self.hps.dtype), MESH_AXES["PNC"], self.global_mesh
+        )
+        r = jnp.einsum("bhid,hdm->bim", o, wo)
         r = sharding_constraint(r, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "ar_l1", coord_check_l1(r))
         return r
@@ -297,7 +324,7 @@ class Transformer(nn.Module):
         )
         w_out = self.param(
             "w_eo",
-            nn.with_partitioning(o_init, MESH_AXES["CN"], self.global_mesh),  # shard
+            nn.with_partitioning(o_init, MESH_AXES["NN"], self.global_mesh),  # shard
             [dm, nv],
             self.hps.param_dtype,
         )
