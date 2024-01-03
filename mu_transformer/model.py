@@ -299,9 +299,12 @@ class Transformer(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        nv = self.hps.n_vocab
-        dm = self.hps.d_model
-        shapes = Dimensions(B=x.shape[0], T=self.hps.sequence_len, M=self.hps.d_model)
+        shapes = Dimensions(
+            B=x.shape[0],
+            T=self.hps.sequence_len,
+            M=self.hps.d_model,
+            V=self.hps.n_vocab,
+        )
         chex.assert_shape(x, shapes["BT"])
         x = sharding_constraint(x, MESH_AXES["RN"], self.global_mesh)
 
@@ -309,7 +312,7 @@ class Transformer(nn.Module):
         w_emb = self.param(
             "w_emb",
             nn.with_partitioning(e_init, MESH_AXES["NN"], self.global_mesh),  # no shard
-            [nv, dm],
+            shapes["VM"],
             self.hps.param_dtype,
         )
 
@@ -335,7 +338,14 @@ class Transformer(nn.Module):
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         x /= jnp.array([self.hps.d_model], dtype=self.hps.dtype)
 
-        # todo: dot general
-        x = jnp.einsum("btd,vd->btv", x, w_emb.astype(jnp.float32))
+        chex.assert_shape(x, shapes["BTM"])
+        chex.assert_shape(w_emb, shapes["VM"])  # noqa
+        x = jax.lax.dot_general(
+            lhs=x,
+            rhs=w_emb,  # noqa
+            dimension_numbers=(((2,), (1,)), ((), ())),
+            preferred_element_type=jnp.float32,
+        )
+        # x = jnp.einsum("btd,vd->btv", x, w_emb)
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         return x
