@@ -110,9 +110,9 @@ def schedule_factory():
 
 def grad_transform_factory():
     kws = dict(
-        b1=FLAGS.config.optim_b1,
-        b2=FLAGS.config.optim_b2,
-        eps=FLAGS.config.optim_eps,
+        b1=FLAGS.config.adam_b1,
+        b2=FLAGS.config.adam_b2,
+        eps=FLAGS.config.adam_eps,
         mu_dtype=FLAGS.config.param_dtype,
         weight_decay=0.0,  # done later
     )

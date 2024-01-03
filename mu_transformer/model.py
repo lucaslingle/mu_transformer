@@ -59,6 +59,7 @@ class RMSLayerNorm(nn.Module):
 
 class RotaryEncoding(nn.Module):
     rotary_base: float
+    global_mesh: jax.sharding.Mesh
 
     @nn.compact
     def __call__(self, x):
@@ -91,8 +92,8 @@ class RotaryEncoding(nn.Module):
         sin = jnp.sin(radians).astype(x.dtype)
         cos = sharding_constraint(cos, MESH_AXES["NNNN"], self.global_mesh)
         sin = sharding_constraint(sin, MESH_AXES["NNNN"], self.global_mesh)
-        chex.assert_shape(positions, [1, 1, length, width // 2])
-        chex.assert_shape(ang_freqs, [1, 1, length, width // 2])
+        chex.assert_shape(cos, [1, 1, length, width // 2])
+        chex.assert_shape(sin, [1, 1, length, width // 2])
 
         even, odd = jnp.split(x, 2, axis=-1)
         even = sharding_constraint(even, MESH_AXES["RPNN"], self.global_mesh)
@@ -111,6 +112,7 @@ class RotaryEncoding(nn.Module):
 
 class FractionalRotaryEncoding(nn.Module):
     rotary_base: float
+    global_mesh: jax.sharding.Mesh
 
     @nn.compact
     def __call__(self, x):
@@ -118,7 +120,7 @@ class FractionalRotaryEncoding(nn.Module):
         rotary, skip = jnp.split(x, 2, axis=-1)
         rotary = sharding_constraint(rotary, MESH_AXES["RPNN"], self.global_mesh)
         skip = sharding_constraint(skip, MESH_AXES["RPNN"], self.global_mesh)
-        rotary = RotaryEncoding(self.rotary_base)(rotary)
+        rotary = RotaryEncoding(self.rotary_base, self.global_mesh)(rotary)
         x = jnp.concatenate([rotary, skip], axis=-1)
         x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
         return x
@@ -126,15 +128,23 @@ class FractionalRotaryEncoding(nn.Module):
 
 class CausalMask(nn.Module):
     length: int
+    global_mesh: jax.sharding.Mesh
 
     @nn.compact
     def __call__(self, x):
-        i = jnp.arange(self.length)[..., None]
-        j = jnp.arange(self.length)[None, ...]
-        mask = jnp.less(i, j)  # keep lower triangular
-        while mask.ndim < x.ndim:
-            mask = mask[None, ...]
-        return x - jnp.array([INFTY_APPROX], dtype=x.dtype) * mask
+        positions = jnp.arange(self.length)
+        positions = sharding_constraint(positions, MESH_AXES["N"], self.global_mesh)
+        i = positions[..., None]
+        j = positions[None, ...]
+        i = sharding_constraint(i, MESH_AXES["NN"], self.global_mesh)
+        j = sharding_constraint(j, MESH_AXES["NN"], self.global_mesh)
+        mask = jnp.less(i, j)  # i.e., j > i, indicator masks out non-causal connections
+        mask = sharding_constraint(mask, MESH_AXES["NN"], self.global_mesh)
+        mask = mask[None, None, ...]
+        mask = sharding_constraint(mask, MESH_AXES["NNNN"], self.global_mesh)
+        x = x - jnp.array([INFTY_APPROX], dtype=x.dtype) * mask
+        x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
+        return x
 
 
 class MultiheadSelfAttention(nn.Module):
@@ -193,8 +203,8 @@ class MultiheadSelfAttention(nn.Module):
         self.sow("intermediates", "ak_l1", coord_check_l1(k))
         self.sow("intermediates", "av_l1", coord_check_l1(v))
 
-        q = FractionalRotaryEncoding(self.hps.rotary_base)(q)
-        k = FractionalRotaryEncoding(self.hps.rotary_base)(k)
+        q = FractionalRotaryEncoding(self.hps.rotary_base, self.global_mesh)(q)
+        k = FractionalRotaryEncoding(self.hps.rotary_base, self.global_mesh)(k)
         q = sharding_constraint(q, MESH_AXES["RPNN"], self.global_mesh)
         k = sharding_constraint(k, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "aqr_l1", coord_check_l1(q))
@@ -204,7 +214,7 @@ class MultiheadSelfAttention(nn.Module):
         s = sharding_constraint(s, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
 
-        s = CausalMask(length=self.hps.sequence_len)(s)
+        s = CausalMask(self.hps.sequence_len, self.global_mesh)(s)
         s = sharding_constraint(s, MESH_AXES["RPNN"], self.global_mesh)
 
         p = jax.nn.softmax(s, axis=-1)

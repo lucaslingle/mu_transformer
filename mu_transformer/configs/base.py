@@ -40,13 +40,13 @@ def get_base_config():
     config.act_square = False  # activation squaring
 
     # optimization
-    config.tokens_per_global_batch = 65536
+    config.tokens_per_global_batch = 262144
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
-    config.lr_max = 0.001  # master lr; scaled by mu-parameterization adam, schedule
-    config.optim_b1 = 0.9
-    config.optim_b2 = 0.95
-    config.optim_eps = 1e-8  # used by adam only
-    config.wd_lam = 0.01  # weight decay coeff, multiplied by master lr * schedule
+    config.lr_max = 10.0  # master lr; scaled by mu-parameterization adam, schedule
+    config.adam_b1 = 0.9
+    config.adam_b2 = 0.98
+    config.adam_eps = 1e-9  # used by adam only
+    config.wd_lam = 0.0  # weight decay coeff, multiplied by master lr * schedule
 
     # periodic action settings
     config.n_print_step = 100  # print every
