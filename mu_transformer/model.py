@@ -291,13 +291,13 @@ class Transformer(nn.Module):
         o_init = init.zeros  # appendix d.2
         w_emb = self.param(
             "w_ei",
-            nn.with_partitioning(e_init, MESH_AXES["NN"], self.global_mesh),
+            nn.with_partitioning(e_init, MESH_AXES["NN"], self.global_mesh),  # no shard
             [nv, dm],
             self.hps.param_dtype,
         )
         w_out = self.param(
             "w_eo",
-            nn.with_partitioning(o_init, MESH_AXES["NN"], self.global_mesh),
+            nn.with_partitioning(o_init, MESH_AXES["CN"], self.global_mesh),  # shard
             [dm, nv],
             self.hps.param_dtype,
         )
