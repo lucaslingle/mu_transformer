@@ -327,7 +327,7 @@ class Transformer(nn.Module):
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
         x, _ = nn.scan(
-            TransformerBlock,  # nnp.remat(TransformerBlock),
+            nnp.remat(TransformerBlock),
             length=self.hps.n_layer,
             variable_axes=dict(params=0, intermediates=0),
             variable_broadcast=False,
