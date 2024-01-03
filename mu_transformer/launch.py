@@ -292,6 +292,7 @@ def train_step(state, batch):
     metrics["param_count"] = size_pytree(state.params)  # so it's always visible
     metrics["param_norm"] = l2norm_pytree(state.params)
     metrics["grad_norm"] = l2norm_pytree(grads)
+    metrics["grad_nan"] = jnp.isnan(metrics["grad_norm"]).astype(jnp.int32)
     state = state.apply_gradients(grads=grads)
     # Estimate ce loss for global batch: sum of unmasked ce terms / sum of mask values.
     # Equivalently,
