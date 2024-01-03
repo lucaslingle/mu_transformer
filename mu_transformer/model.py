@@ -316,7 +316,7 @@ class Transformer(nn.Module):
         )
         w_out = self.param(
             "w_eo",
-            nn.with_partitioning(o_init, MESH_AXES["NN"], self.global_mesh),
+            nn.with_partitioning(o_init, MESH_AXES["CN"], self.global_mesh),
             shapes["MV"],
             self.hps.param_dtype,
         )

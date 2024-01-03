@@ -19,7 +19,7 @@ def get_base_config():
     config = config_dict.ConfigDict()
 
     # basics
-    config.param_dtype = jnp.float32
+    config.param_dtype = jnp.bfloat16
     config.dtype = jnp.bfloat16
     config.sow_intermediates = True
 
