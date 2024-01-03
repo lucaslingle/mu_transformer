@@ -361,7 +361,7 @@ def train_loop():
         # distribute local batch arrays to global batch arrays
         batch = jtu.tree_map(lambda y: to_global_array(y, global_mesh), batch)
         # run a training step
-        state, metrics = train_step(state, batch=batch)
+        state, metrics = train_step(state, batch)
 
         # occasionally print metrics
         if step % FLAGS.config.n_print_step == 0:
