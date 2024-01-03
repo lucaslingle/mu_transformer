@@ -341,6 +341,6 @@ class Transformer(nn.Module):
         x = RMSNorm()(x)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
-        x = jnp.einsum("btd,dv->btv", x, w_out.astype(self.hps.dtype))
+        x = jnp.einsum("btm,mv->btv", x, w_out.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         return x
