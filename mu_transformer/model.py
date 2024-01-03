@@ -301,28 +301,24 @@ class Transformer(nn.Module):
     def __call__(self, x):
         nv = self.hps.n_vocab
         dm = self.hps.d_model
-        chex.assert_shape(x, [None, self.hps.sequence_len])
+        shapes = Dimensions(B=x.shape[0], T=self.hps.sequence_len, M=self.hps.d_model)
+        chex.assert_shape(x, shapes["BT"])
         x = sharding_constraint(x, MESH_AXES["RN"], self.global_mesh)
 
-        e_init = init.normal(1.0)  # appendix b.1
-        o_init = init.zeros  # appendix d.2
+        e_init = init.normal(1.0)  # table 8 purple
         w_emb = self.param(
-            "w_ei",
+            "w_emb",
             nn.with_partitioning(e_init, MESH_AXES["NN"], self.global_mesh),  # no shard
             [nv, dm],
             self.hps.param_dtype,
         )
-        w_out = self.param(
-            "w_eo",
-            nn.with_partitioning(o_init, MESH_AXES["CN"], self.global_mesh),  # shard
-            [dm, nv],
-            self.hps.param_dtype,
-        )
 
-        w_emb = w_emb.astype(self.hps.dtype)[None, ...]  # 1VD
-        x = x[..., None]  # BT1
-        x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
-        x = jnp.take_along_axis(w_emb, x, axis=-2)
+        x = jnp.take_along_axis(
+            w_emb.astype(self.hps.dtype)[None, ...],  # 1VM
+            x[..., None],  # BT1
+            axis=1,
+        )
+        chex.assert_shape(x, shapes["BTM"])
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
         x, _ = nn.scan(
@@ -337,8 +333,9 @@ class Transformer(nn.Module):
 
         x = RMSNorm()(x)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+        x /= jnp.array([self.hps.d_model], dtype=self.hps.dtype)
 
         # todo: dot general
-        x = jnp.einsum("btd,dv->btv", x, w_out.astype(jnp.float32))
+        x = jnp.einsum("btd,vd->btv", x, w_emb.astype(jnp.float32))
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         return x
