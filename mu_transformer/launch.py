@@ -37,6 +37,8 @@ from mu_transformer.data import get_tokenizer
 from mu_transformer.model import Transformer
 from mu_transformer.model import TransformerConfig
 from mu_transformer.shard import get_namedsharding
+from mu_transformer.shard import MESH_AXES
+from mu_transformer.shard import sharding_constraint
 from mu_transformer.shard import to_global_array
 from mu_transformer.sow import split_coord_checks
 
@@ -271,7 +273,10 @@ def loss_fn(params, batch, config, global_mesh):
     else:
         logits = Transformer(*init_args).apply(*apply_args)
         sown = dict()
-    terms = optax.softmax_cross_entropy_with_integer_labels(logits, batch["targets"])
+    terms = optax.softmax_cross_entropy_with_integer_labels(
+        logits=logits,
+        labels=sharding_constraint(batch["targets"], MESH_AXES["RN"], global_mesh),
+    )
     metrics = dict(
         loss_term_avg=jnp.mean(batch["loss_mask"] * terms),
         loss_mask_avg=jnp.mean(batch["loss_mask"]),
