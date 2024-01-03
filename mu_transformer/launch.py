@@ -461,12 +461,12 @@ def main(argv):
     logging.info("=== Config: ===")
     for k, v in vars(FLAGS.config)["_fields"].items():
         logging.info(f"{k}: {v}")
-    assert FLAGS.config.d_model >= HEAD_DIM
-    assert FLAGS.config.d_model % HEAD_DIM == 0
-    assert FLAGS.config.d_model // HEAD_DIM >= jax.device_count()
-    assert (FLAGS.config.d_model // HEAD_DIM) % jax.device_count() == 0
     assert global_batch_size_factory() >= jax.device_count()  # dataloader quirk
     assert global_batch_size_factory() % jax.device_count() == 0
+    assert FLAGS.config.d_model >= jax.device_count()
+    assert FLAGS.config.d_model % jax.device_count() == 0
+    assert FLAGS.config.d_model >= HEAD_DIM
+    assert FLAGS.config.d_model % HEAD_DIM == 0
 
     try:
         jax.distributed.initialize()

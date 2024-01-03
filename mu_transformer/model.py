@@ -114,7 +114,7 @@ class MultiheadSelfAttention(nn.Module):
             H=self.hps.d_model // HEAD_DIM,
         )
         chex.assert_shape(x, shapes["BTM"])
-        x = sharding_constraint(x, SHARDING["SRR"], self.global_mesh)
+        x = sharding_constraint(x, SHARDING["RRS"], self.global_mesh)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
 
         q_init = init.zeros  # zero init; appdx d.2
@@ -122,25 +122,25 @@ class MultiheadSelfAttention(nn.Module):
         o_init = init.normal(self.hps.d_model**-0.5)  # normal, var 1/fan_in = 1 / m
         wq = self.param(
             "w_aq",
-            nn.with_partitioning(q_init, SHARDING["RSR"], self.global_mesh),
+            nn.with_partitioning(q_init, SHARDING["SRR"], self.global_mesh),
             shapes["MHD"],
             self.hps.param_dtype,
         )
         wk = self.param(
             "w_ak",
-            nn.with_partitioning(kv_init, SHARDING["RSR"], self.global_mesh),
+            nn.with_partitioning(kv_init, SHARDING["SRR"], self.global_mesh),
             shapes["MHD"],
             self.hps.param_dtype,
         )
         wv = self.param(
             "w_av",
-            nn.with_partitioning(kv_init, SHARDING["RSR"], self.global_mesh),
+            nn.with_partitioning(kv_init, SHARDING["SRR"], self.global_mesh),
             shapes["MHD"],
             self.hps.param_dtype,
         )
         wo = self.param(
             "w_ao",
-            nn.with_partitioning(o_init, SHARDING["SRR"], self.global_mesh),
+            nn.with_partitioning(o_init, SHARDING["RRS"], self.global_mesh),
             shapes["HDM"],
             self.hps.param_dtype,
         )
@@ -179,7 +179,7 @@ class MultiheadSelfAttention(nn.Module):
         self.sow("intermediates", "ao_l1", coord_check_l1(o))
 
         r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.hps.dtype))
-        r = sharding_constraint(r, SHARDING["SRR"], self.global_mesh)
+        r = sharding_constraint(r, SHARDING["RRS"], self.global_mesh)
         self.sow("intermediates", "ar_l1", coord_check_l1(r))
         return r
 
@@ -195,20 +195,20 @@ class MultiLayerPerceptron(nn.Module):
         d_ff = self.hps.d_model * FF_MULTIPLE
         shapes = Dimensions(B=x.shape[0], T=seqlen, M=d_model, F=d_ff)
         chex.assert_shape(x, shapes["BTM"])
-        x = sharding_constraint(x, SHARDING["SRR"], self.global_mesh)
+        x = sharding_constraint(x, SHARDING["RRS"], self.global_mesh)
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
 
         w1_init = init.normal(d_model**-0.5)  # normal w variance 1 / fan_in
         w2_init = init.normal(d_ff**-0.5)  # normal w variance 1 / fan_in
         w1 = self.param(
             "w_fi",
-            nn.with_partitioning(w1_init, SHARDING["RS"], self.global_mesh),
+            nn.with_partitioning(w1_init, SHARDING["SR"], self.global_mesh),
             shapes["MF"],
             self.hps.param_dtype,
         )
         w2 = self.param(
             "w_fo",
-            nn.with_partitioning(w2_init, SHARDING["SR"], self.global_mesh),
+            nn.with_partitioning(w2_init, SHARDING["RS"], self.global_mesh),
             shapes["FM"],
             self.hps.param_dtype,
         )
@@ -227,7 +227,7 @@ class MultiLayerPerceptron(nn.Module):
 
         # todo: maybe use dot general?
         x = jnp.einsum("btf,fm->btm", x, w2.astype(self.hps.dtype))
-        x = sharding_constraint(x, SHARDING["SRR"], self.global_mesh)
+        x = sharding_constraint(x, SHARDING["RRS"], self.global_mesh)
         self.sow("intermediates", "fr_l1", coord_check_l1(x))
         return x
 
@@ -239,9 +239,9 @@ class TransformerBlock(nn.Module):
     @nn.compact
     def __call__(self, x, _):
         x += MultiheadSelfAttention(self.hps, self.global_mesh)(RMSLayerNorm()(x))
-        x = sharding_constraint(x, SHARDING["SRR"], self.global_mesh)
+        x = sharding_constraint(x, SHARDING["RRS"], self.global_mesh)
         x += MultiLayerPerceptron(self.hps, self.global_mesh)(RMSLayerNorm()(x))
-        x = sharding_constraint(x, SHARDING["SRR"], self.global_mesh)
+        x = sharding_constraint(x, SHARDING["RRS"], self.global_mesh)
         return x, None
 
 
@@ -260,13 +260,13 @@ class Transformer(nn.Module):
         o_init = init.zeros  # appendix d.2
         w_emb = self.param(
             "w_ei",
-            nn.with_partitioning(e_init, SHARDING["RR"], self.global_mesh),
+            nn.with_partitioning(e_init, SHARDING["RS"], self.global_mesh),
             [nv, dm],
             self.hps.param_dtype,
         )
         w_out = self.param(
             "w_eo",
-            nn.with_partitioning(o_init, SHARDING["RR"], self.global_mesh),
+            nn.with_partitioning(o_init, SHARDING["SR"], self.global_mesh),
             [dm, nv],
             self.hps.param_dtype,
         )
@@ -276,7 +276,7 @@ class Transformer(nn.Module):
         x = sharding_constraint(x, SHARDING["SRR"], self.global_mesh)
         x = jnp.take_along_axis(w_emb, x, axis=-2)
         x = x.astype(self.hps.dtype)
-        x = sharding_constraint(x, SHARDING["SRR"], self.global_mesh)
+        x = sharding_constraint(x, SHARDING["RRS"], self.global_mesh)
 
         x, _ = nn.scan(
             nn_partitioning.remat(TransformerBlock),
@@ -286,10 +286,10 @@ class Transformer(nn.Module):
             split_rngs=dict(params=True),
             metadata_params={nn.PARTITION_NAME: None},
         )(hps=self.hps, global_mesh=self.global_mesh)(x, None)
-        x = sharding_constraint(x, SHARDING["SRR"], self.global_mesh)
+        x = sharding_constraint(x, SHARDING["RRS"], self.global_mesh)
 
         x = RMSLayerNorm()(x)
-        x = sharding_constraint(x, SHARDING["SRR"], self.global_mesh)
+        x = sharding_constraint(x, SHARDING["RRS"], self.global_mesh)
 
         # todo: dot general
         x = jnp.einsum("btd,dv->btv", x, w_out.astype(jnp.float32))
