@@ -193,6 +193,7 @@ class MultiheadSelfAttention(nn.Module):
 
         # todo: maybe use dot general instead of einsum? need to see if it's faster
         wq = wq.astype(self.hps.dtype)
+        jax.debug.print(wq.addressable_data(0))
         # wq = sharding_constraint(wq, MESH_AXES["CPN"], self.global_mesh)
         wk = wk.astype(self.hps.dtype)
         # wk = sharding_constraint(wk, MESH_AXES["CPN"], self.global_mesh)
