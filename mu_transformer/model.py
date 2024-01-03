@@ -320,6 +320,9 @@ class Transformer(nn.Module):
             shapes["MV"],
             self.hps.param_dtype,
         )
+        # todo: investigate:
+        #  when using param_dtype = float32, large batch, and casting w_out to float32,
+        #  CN gives OOM, but NN doesnt
 
         x = jnp.take_along_axis(
             w_emb.astype(self.hps.dtype)[None, ...],  # 1VM
@@ -341,6 +344,6 @@ class Transformer(nn.Module):
         x = RMSNorm()(x)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
-        x = jnp.einsum("btm,mv->btv", x, w_out.astype(self.hps.dtype))
+        x = jnp.einsum("btm,mv->btv", x, w_out.astype(self.hps.dtype))  # todo: float32?
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         return x
