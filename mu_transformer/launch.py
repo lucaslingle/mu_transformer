@@ -273,9 +273,10 @@ def loss_fn(params, batch, config, global_mesh):
     else:
         logits = Transformer(*init_args).apply(*apply_args)
         sown = dict()
+    targets = batch["targets"]
+    # targets = sharding_constraint(targets, MESH_AXES["RC"], global_mesh)
     terms = optax.softmax_cross_entropy_with_integer_labels(
-        logits=logits,
-        labels=sharding_constraint(batch["targets"], MESH_AXES["RN"], global_mesh),
+        logits=logits, labels=targets
     )
     metrics = dict(
         loss_term_avg=jnp.mean(batch["loss_mask"] * terms),
