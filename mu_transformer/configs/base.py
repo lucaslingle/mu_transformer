@@ -33,20 +33,20 @@ def get_base_config():
 
     # architecture
     config.n_layer = 24
-    config.d_head = 128
+    config.d_head = 256
     config.ff_multiple = 4
     config.rotary_base = 10_000
     config.act_name = "gelu"  # any activation defined jax.nn
     config.act_square = False  # activation squaring
 
     # optimization
-    config.tokens_per_global_batch = 2**17
+    config.tokens_per_global_batch = 2**16
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
-    config.lr_max = 10.0  # master lr; scaled by mu-parameterization adam, schedule
+    config.lr_max = 0.3  # master lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
-    config.adam_b2 = 0.98
-    config.adam_eps = 1e-9  # used by adam only
-    config.wd_lam = 0.0  # weight decay coeff, multiplied by master lr * schedule
+    config.adam_b2 = 0.95
+    config.adam_eps = 1e-8  # used by adam only
+    config.wd_lam = 0.1  # weight decay coeff, multiplied by master lr * schedule
 
     # periodic action settings
     config.n_print_step = 100  # print every
