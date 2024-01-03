@@ -19,14 +19,14 @@ import flax.linen as nn
 import jax
 import jax.nn.initializers as init
 import jax.numpy as jnp
-import numpy as np
 from flax import struct
-from flax.linen import partitioning as nn_partitioning
+from flax.linen import partitioning as nnp
 
 from mu_transformer.dims import Dimensions
 from mu_transformer.shard import sharding_constraint
 from mu_transformer.sow import coord_check_l1
 
+EPSILON = 1e-8
 INFTY_APPROX = 1e30
 MESH_AXES = Dimensions(R="rows", C="columns", P="planes", N=None)
 
@@ -52,10 +52,10 @@ class TransformerConfig:
         return cls(**filtered)
 
 
-class RMSLayerNorm(nn.Module):
+class RMSNorm(nn.Module):
     @nn.compact
     def __call__(self, x):
-        eps = jnp.array([1e-8], dtype=x.dtype)
+        eps = jnp.array([EPSILON], dtype=x.dtype)
         ms = jnp.mean(jnp.square(x), axis=-1)
         rms = jnp.sqrt(ms + eps)
         return x / rms[..., None]
@@ -286,9 +286,9 @@ class TransformerBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x, _):
-        x += MultiheadSelfAttention(self.hps, self.global_mesh)(RMSLayerNorm()(x))
+        x += nnp.remat(MultiheadSelfAttention)(self.hps, self.global_mesh)(RMSNorm()(x))
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        x += MultiLayerPerceptron(self.hps, self.global_mesh)(RMSLayerNorm()(x))
+        x += nnp.remat(MultiLayerPerceptron)(self.hps, self.global_mesh)(RMSNorm()(x))
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         return x, None
 
@@ -327,7 +327,7 @@ class Transformer(nn.Module):
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
         x, _ = nn.scan(
-            nn_partitioning.remat(TransformerBlock),
+            TransformerBlock,  # nnp.remat(TransformerBlock),
             length=self.hps.n_layer,
             variable_axes=dict(params=0, intermediates=0),
             variable_broadcast=False,
@@ -336,7 +336,7 @@ class Transformer(nn.Module):
         )(hps=self.hps, global_mesh=self.global_mesh)(x, None)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
-        x = RMSLayerNorm()(x)
+        x = RMSNorm()(x)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
         # todo: dot general
