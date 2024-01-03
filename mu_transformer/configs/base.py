@@ -33,10 +33,10 @@ def get_base_config():
 
     # architecture
     config.n_layer = 24
-    config.d_head = 256
+    config.d_head = 128
     config.ff_multiple = 4
     config.rotary_base = 10_000
-    config.act_name = "relu"  # any activation defined jax.nn
+    config.act_name = "gelu"  # any activation defined jax.nn
     config.act_square = False  # activation squaring
 
     # optimization

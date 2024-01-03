@@ -115,19 +115,19 @@ class RotaryEncoding(nn.Module):
         return r
 
 
-# class FractionalRotaryEncoding(nn.Module):
-#     rotary_base: float
-#
-#     @nn.compact
-#     def __call__(self, x):
-#         x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
-#         rotary, skip = jnp.split(x, 2, axis=-1)
-#         rotary = sharding_constraint(rotary, MESH_AXES["RPNN"], self.global_mesh)
-#         skip = sharding_constraint(skip, MESH_AXES["RPNN"], self.global_mesh)
-#         rotary = RotaryEncoding(self.rotary_base)(rotary)
-#         x = jnp.concatenate([rotary, skip], axis=-1)
-#         x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
-#         return x
+class FractionalRotaryEncoding(nn.Module):
+    rotary_base: float
+
+    @nn.compact
+    def __call__(self, x):
+        x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
+        rotary, skip = jnp.split(x, np.array([x.shape[-1] // 4]), axis=-1)
+        rotary = sharding_constraint(rotary, MESH_AXES["RPNN"], self.global_mesh)
+        skip = sharding_constraint(skip, MESH_AXES["RPNN"], self.global_mesh)
+        rotary = RotaryEncoding(self.rotary_base)(rotary)
+        x = jnp.concatenate([rotary, skip], axis=-1)
+        x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
+        return x
 
 
 class CausalMask(nn.Module):
@@ -193,7 +193,6 @@ class MultiheadSelfAttention(nn.Module):
             self.hps.param_dtype,
         )
 
-        # todo: maybe use dot general instead of einsum? need to see if it's faster
         q = jnp.einsum("bim,hmd->bhid", x, wq.astype(self.hps.dtype))
         k = jnp.einsum("bim,hmd->bhid", x, wk.astype(self.hps.dtype))
         v = jnp.einsum("bim,hmd->bhid", x, wv.astype(self.hps.dtype))
@@ -204,8 +203,8 @@ class MultiheadSelfAttention(nn.Module):
         self.sow("intermediates", "ak_l1", coord_check_l1(k))
         self.sow("intermediates", "av_l1", coord_check_l1(v))
 
-        q = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(q)
-        k = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(k)
+        q = FractionalRotaryEncoding(self.hps.rotary_base, self.global_mesh)(q)
+        k = FractionalRotaryEncoding(self.hps.rotary_base, self.global_mesh)(k)
         q = sharding_constraint(q, MESH_AXES["RPNN"], self.global_mesh)
         k = sharding_constraint(k, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "aqr_l1", coord_check_l1(q))
@@ -306,11 +305,18 @@ class Transformer(nn.Module):
         )
         x = sharding_constraint(x, MESH_AXES["RN"], self.global_mesh)
 
-        e_init = init.normal(1.0)  # table 8 purple
+        e_init = init.normal(1.0)  # appendix b.1
+        o_init = init.zeros  # appendix d.2
         w_emb = self.param(
-            "w_emb",
+            "w_ei",
             nn.with_partitioning(e_init, MESH_AXES["NN"], self.global_mesh),
             shapes["VM"],
+            self.hps.param_dtype,
+        )
+        w_out = self.param(
+            "w_eo",
+            nn.with_partitioning(o_init, MESH_AXES["NN"], self.global_mesh),
+            shapes["MV"],
             self.hps.param_dtype,
         )
 
@@ -334,9 +340,6 @@ class Transformer(nn.Module):
         x = RMSNorm()(x)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
-        x /= jnp.array([self.hps.d_model], dtype=self.hps.dtype)
-        x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-
-        x = jnp.einsum("btd,vd->btv", x, w_emb.astype(self.hps.dtype))
+        x = jnp.einsum("btd,dv->btv", x, w_out.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         return x

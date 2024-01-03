@@ -126,15 +126,16 @@ def grad_transform_factory():
         optax.multi_transform(
             {
                 # embeddings and de-embeddings
-                "w_emb": optax.adam(lr, **kws),  # table 8
+                "w_ei": optax.adamw(lr, **kws),  # table 3, col 1
+                "w_eo": optax.adamw(lr / dm, **kws),  # table 3, col2
                 # attention projections
-                "w_aq": optax.adam(lr / dm, **kws),  # table 8
-                "w_ak": optax.adam(lr / dm, **kws),  # table 8
-                "w_av": optax.adam(lr / dm, **kws),  # table 8
-                "w_ao": optax.adam(lr / dm, **kws),  # table 8; assumes dm=nh*dh
+                "w_aq": optax.adamw(lr / dm, **kws),  # table 3, col3
+                "w_ak": optax.adamw(lr / dm, **kws),  # table 3, col3
+                "w_av": optax.adamw(lr / dm, **kws),  # table 3, col3
+                "w_ao": optax.adamw(lr / dm, **kws),  # table 3, col3; assumes dm=nh*dh
                 # feed-forward projections
-                "w_fi": optax.adam(lr / dm, **kws),  # table 8
-                "w_fo": optax.adam(lr / dff, **kws),  # table 8
+                "w_fi": optax.adamw(lr / dm, **kws),  # table 3, col3
+                "w_fo": optax.adamw(lr / dff, **kws),  # table 3, col3
             },
             param_labels=param_label_fn,
         ),
