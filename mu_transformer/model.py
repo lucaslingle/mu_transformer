@@ -54,7 +54,10 @@ class TransformerConfig:
 class RMSLayerNorm(nn.Module):
     @nn.compact
     def __call__(self, x):
-        return x / jnp.sqrt(jnp.mean(jnp.square(x), axis=-1) + 1e-8)[..., None]
+        eps = jnp.array([1e-8], dtype=x.dtype)
+        ms = jnp.mean(jnp.square(x), axis=-1)
+        rms = jnp.sqrt(ms + eps)
+        return x / rms[..., None]
 
 
 class RotaryEncoding(nn.Module):
@@ -202,6 +205,7 @@ class MultiheadSelfAttention(nn.Module):
         q = jnp.einsum("bim,mhd->bhid", x, wq)
         k = jnp.einsum("bim,mhd->bhid", x, wk)
         v = jnp.einsum("bim,mhd->bhid", x, wv)
+        chex.assert_trees_all_equal_dtypes(x, q, k, v)
         # q = sharding_constraint(q, MESH_AXES["RPNN"], self.global_mesh)
         # k = sharding_constraint(k, MESH_AXES["RPNN"], self.global_mesh)
         # v = sharding_constraint(v, MESH_AXES["RPNN"], self.global_mesh)
