@@ -30,9 +30,9 @@ def get_base_config():
     config.sequence_len = 512
 
     # architecture
-    config.param_dtype = jnp.float32  # maybe change to higher precision
+    config.param_dtype = jnp.float32
     config.dtype = jnp.bfloat16
-    config.output_logits_dtype = jnp.float32  # same
+    config.output_logits_dtype = jnp.float32
     config.n_layer = 24
     config.d_head = 256
     config.ff_multiple = 4
