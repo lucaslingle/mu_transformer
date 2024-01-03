@@ -51,7 +51,6 @@ def get_base_config():
     config.wd_lam = 0.0  # weight decay coeff, multiplied by master lr * schedule
 
     # periodic action settings
-    config.n_acc_step = 25
     config.n_print_step = 100  # print every
     config.n_save_step = 5_000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
