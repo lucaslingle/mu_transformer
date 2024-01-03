@@ -120,7 +120,7 @@ class FractionalRotaryEncoding(nn.Module):
     @nn.compact
     def __call__(self, x):
         # x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
-        rotary, skip = jnp.split(x, np.array([x.shape[-1] // 4]), axis=-1)
+        rotary, skip = jnp.split(x, 2, axis=-1)
         # rotary = sharding_constraint(rotary, MESH_AXES["RPNN"], self.global_mesh)
         # skip = sharding_constraint(skip, MESH_AXES["RPNN"], self.global_mesh)
         rotary = RotaryEncoding(self.rotary_base)(rotary)
