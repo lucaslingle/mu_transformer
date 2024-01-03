@@ -19,6 +19,7 @@ import flax.linen as nn
 import jax
 import jax.nn.initializers as init
 import jax.numpy as jnp
+import numpy as np
 from flax import struct
 from flax.linen import partitioning as nn_partitioning
 
@@ -119,7 +120,7 @@ class FractionalRotaryEncoding(nn.Module):
     @nn.compact
     def __call__(self, x):
         # x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
-        rotary, skip = jnp.split(x, 2, axis=-1)
+        rotary, skip = jnp.split(x, np.array([x.shape[-1] // 4]), axis=-1)
         # rotary = sharding_constraint(rotary, MESH_AXES["RPNN"], self.global_mesh)
         # skip = sharding_constraint(skip, MESH_AXES["RPNN"], self.global_mesh)
         rotary = RotaryEncoding(self.rotary_base)(rotary)
@@ -134,10 +135,8 @@ class CausalMask(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        positions = jnp.arange(self.length)
-        # positions = sharding_constraint(positions, MESH_AXES["N"], self.global_mesh)
-        i = positions[..., None]
-        j = positions[None, ...]
+        i = jnp.arange(self.length)[..., None]
+        j = jnp.arange(self.length)[None, ...]
         # i = sharding_constraint(i, MESH_AXES["NN"], self.global_mesh)
         # j = sharding_constraint(j, MESH_AXES["NN"], self.global_mesh)
         mask = jnp.less(i, j)  # i.e., j > i, indicator masks out non-causal connections
@@ -224,7 +223,7 @@ class MultiheadSelfAttention(nn.Module):
         self.sow("intermediates", "aqr_l1", coord_check_l1(q))
         self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
-        s = jnp.einsum("bhid,bhjd->bhij", q, k) / self.hps.d_head
+        s = jnp.einsum("bhid,bhjd->bhij", q, k) / jnp.array([self.hps.d_head], q.dtype)
         chex.assert_trees_all_equal_dtypes(s, jnp.array([0.0], dtype=self.hps.dtype))
         # s = sharding_constraint(s, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
