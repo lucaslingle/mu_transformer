@@ -34,10 +34,10 @@ from ml_collections import config_flags
 
 from mu_transformer.data import get_dataset
 from mu_transformer.data import get_tokenizer
+from mu_transformer.model import MESH_AXES
 from mu_transformer.model import Transformer
 from mu_transformer.model import TransformerConfig
 from mu_transformer.shard import get_namedsharding
-from mu_transformer.shard import MESH_AXES
 from mu_transformer.shard import sharding_constraint
 from mu_transformer.shard import to_global_array
 from mu_transformer.sow import split_coord_checks
