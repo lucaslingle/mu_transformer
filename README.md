@@ -1,11 +1,12 @@
 # Mu-Transformer
 
-Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
+Proof-of-concept transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
 
-- Supports distributed training on TPU pod slices and GPU clusters. 
+- Supports distributed training on TPU pod slices. 
 - Supports data parallelism and tensor parallelism.
-- Supports any HuggingFace dataset and any tokenizer.
+- Supports any HuggingFace text dataset and tokenizer.
 - Simple, flexible configuration.
+- Passes the wider-is-better-throughout-training and coordinate-checking tests. 
 
 ## Installation
 
@@ -18,10 +19,6 @@ cd mu_transformer;
 
 #### CPU-Only
 pip3 install -e '.[cpu]'; 
-
-#### Nvidia GPU, CUDA 11
-pip3 install -e '.[cuda11]' \
-    -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html;
 
 #### Cloud TPU VM
 pip3 install -e '.[tpu]' \

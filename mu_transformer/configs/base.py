@@ -48,7 +48,7 @@ def get_base_config():
     config.adam_b2 = 0.95
     config.adam_eps = 1e-8
     config.adam_mu_dtype = jnp.bfloat16
-    config.wd_lam = 0.1  # weight decay coeff, multiplied by master lr * schedule
+    config.wd_lam = 0.01  # weight decay coeff, multiplied by master lr * schedule
 
     # periodic action settings
     config.n_print_step = 100  # print every
