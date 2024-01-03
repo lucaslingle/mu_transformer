@@ -125,7 +125,7 @@ class FractionalRotaryEncoding(nn.Module):
         rotary, skip = jnp.split(x, np.array([x.shape[-1] // 4]), axis=-1)
         rotary = sharding_constraint(rotary, MESH_AXES["RPNN"], self.global_mesh)
         skip = sharding_constraint(skip, MESH_AXES["RPNN"], self.global_mesh)
-        rotary = RotaryEncoding(self.rotary_base)(rotary)
+        rotary = RotaryEncoding(self.rotary_base, self.global_mesh)(rotary)
         x = jnp.concatenate([rotary, skip], axis=-1)
         x = sharding_constraint(x, MESH_AXES["RPNN"], self.global_mesh)
         return x
