@@ -116,7 +116,6 @@ def grad_transform_factory():
         b2=FLAGS.config.adam_b2,
         eps=FLAGS.config.adam_eps,
         mu_dtype=FLAGS.config.dtype,
-        weight_decay=jnp.array([0.0], dtype=FLAGS.config.dtype),  # done later
     )
     lr = FLAGS.config.lr_max
     wd = FLAGS.config.wd_lam
@@ -127,20 +126,20 @@ def grad_transform_factory():
         optax.multi_transform(
             {
                 # embeddings and de-embeddings
-                "w_ei": optax.adamw(lr, **kws),  # table 3, col 1
-                "w_eo": optax.adamw(lr / dm, **kws),  # table 3, col2
+                "w_ei": optax.adam(lr, **kws),  # table 3, col 1
+                "w_eo": optax.adam(lr / dm, **kws),  # table 3, col2
                 # attention projections
-                "w_aq": optax.adamw(lr / dm, **kws),  # table 3, col3
-                "w_ak": optax.adamw(lr / dm, **kws),  # table 3, col3
-                "w_av": optax.adamw(lr / dm, **kws),  # table 3, col3
-                "w_ao": optax.adamw(lr / dm, **kws),  # table 3, col3; assumes dm=nh*dh
+                "w_aq": optax.adam(lr / dm, **kws),  # table 3, col3
+                "w_ak": optax.adam(lr / dm, **kws),  # table 3, col3
+                "w_av": optax.adam(lr / dm, **kws),  # table 3, col3
+                "w_ao": optax.adam(lr / dm, **kws),  # table 3, col3; assumes dm=nh*dh
                 # feed-forward projections
-                "w_fi": optax.adamw(lr / dm, **kws),  # table 3, col3
-                "w_fo": optax.adamw(lr / dff, **kws),  # table 3, col3
+                "w_fi": optax.adam(lr / dm, **kws),  # table 3, col3
+                "w_fo": optax.adam(lr / dff, **kws),  # table 3, col3
             },
             param_labels=param_label_fn,
         ),
-        optax.add_decayed_weights(-lr * wd),  # mult by master lr * schedule; not width
+        optax.add_decayed_weights(-lr * wd),
         optax.scale_by_schedule(schedule_factory()),
     )
 
