@@ -161,7 +161,6 @@ class MultiheadSelfAttention(nn.Module):
             D=self.hps.d_head,
             H=self.hps.d_model // self.hps.d_head,
         )
-        chex.assert_shape(x, shapes["BTM"])
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
 
@@ -194,15 +193,9 @@ class MultiheadSelfAttention(nn.Module):
         )
 
         # todo: maybe use dot general instead of einsum? need to see if it's faster
-        q = jnp.einsum(
-            "bim,hmd->bhid", x, wq, preferred_element_type=self.hps.dtype
-        )  # noqa
-        k = jnp.einsum(
-            "bim,hmd->bhid", x, wk, preferred_element_type=self.hps.dtype
-        )  # noqa
-        v = jnp.einsum(
-            "bim,hmd->bhid", x, wv, preferred_element_type=self.hps.dtype
-        )  # noqa
+        q = jnp.einsum("bim,hmd->bhid", x, wq.astype(self.hps.dtype))
+        k = jnp.einsum("bim,hmd->bhid", x, wk.astype(self.hps.dtype))
+        v = jnp.einsum("bim,hmd->bhid", x, wv.astype(self.hps.dtype))
         q = sharding_constraint(q, MESH_AXES["RPNN"], self.global_mesh)
         k = sharding_constraint(k, MESH_AXES["RPNN"], self.global_mesh)
         v = sharding_constraint(v, MESH_AXES["RPNN"], self.global_mesh)
@@ -217,10 +210,7 @@ class MultiheadSelfAttention(nn.Module):
         self.sow("intermediates", "aqr_l1", coord_check_l1(q))
         self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
-        s = jnp.einsum(
-            "bhid,bhjd->bhij", q, k, preferred_element_type=self.hps.dtype
-        )  # noqa
-        s /= jnp.array([self.hps.d_head], q.dtype)
+        s = jnp.einsum("bhid,bhjd->bhij", q, k) / jnp.array([self.hps.d_head], q.dtype)
         s = sharding_constraint(s, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
 
@@ -231,15 +221,11 @@ class MultiheadSelfAttention(nn.Module):
         p = sharding_constraint(p, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "ap_l1", coord_check_l1(p))
 
-        o = jnp.einsum(
-            "bhij,bhjd->bhid", p, v, preferred_element_type=self.hps.dtype
-        )  # noqa
+        o = jnp.einsum("bhij,bhjd->bhid", p, v)
         o = sharding_constraint(o, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "ao_l1", coord_check_l1(o))
 
-        r = jnp.einsum(
-            "bhid,hdm->bim", o, wo, preferred_element_type=self.hps.dtype
-        )  # noqa
+        r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.hps.dtype))
         r = sharding_constraint(r, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "ar_l1", coord_check_l1(r))
         return r
@@ -251,16 +237,17 @@ class MultiLayerPerceptron(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        dm = self.hps.d_model
-        dff = self.hps.d_model * self.hps.ff_multiple
-        shapes = Dimensions(B=x.shape[0], T=self.hps.sequence_len, M=dm, F=dff)
-
+        shapes = Dimensions(
+            B=x.shape[0],
+            T=self.hps.sequence_len,
+            M=self.hps.d_model,
+            F=self.hps.d_model * self.hps.ff_multiple,
+        )
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        chex.assert_shape(x, shapes["BTM"])
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
 
-        w1_init = init.normal(dm**-0.5)
-        w2_init = init.normal(dff**-0.5)
+        w1_init = init.normal(self.hps.d_model**-0.5)
+        w2_init = init.normal((self.hps.d_model * self.hps.ff_multiple) ** -0.5)
         w1 = self.param(
             "w_fi",
             nn.with_partitioning(w1_init, MESH_AXES["CP"], self.global_mesh),
@@ -274,14 +261,8 @@ class MultiLayerPerceptron(nn.Module):
             self.hps.param_dtype,
         )
 
-        x = jax.lax.dot_general(
-            lhs=x,
-            rhs=w1,  # noqa
-            dimension_numbers=(((2,), (0,)), ((), ())),
-            preferred_element_type=self.hps.dtype,
-        )
+        x = jnp.einsum("btm,mf->btf", x, w1.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["RNP"], self.global_mesh)
-        chex.assert_shape(x, shapes["BTF"])
         self.sow("intermediates", "fp_l1", coord_check_l1(x))
 
         x = getattr(jax.nn, self.hps.act_name)(x)
@@ -289,17 +270,10 @@ class MultiLayerPerceptron(nn.Module):
         if self.hps.act_square:
             x = jnp.square(x)
             x = sharding_constraint(x, MESH_AXES["RNP"], self.global_mesh)
-        chex.assert_shape(x, shapes["BTF"])
         self.sow("intermediates", "fa_l1", coord_check_l1(x))
 
-        x = jax.lax.dot_general(
-            lhs=x,
-            rhs=w2,  # noqa
-            dimension_numbers=(((2,), (0,)), ((), ())),
-            preferred_element_type=self.hps.dtype,
-        )
+        x = jnp.einsum("btf,fm->btm", x, w2.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        chex.assert_shape(x, shapes["BTM"])
         self.sow("intermediates", "fr_l1", coord_check_l1(x))
         return x
 
@@ -330,16 +304,14 @@ class Transformer(nn.Module):
             V=self.hps.n_vocab,
         )
         x = sharding_constraint(x, MESH_AXES["RN"], self.global_mesh)
-        chex.assert_shape(x, shapes["BT"])
 
         e_init = init.normal(1.0)  # table 8 purple
         w_emb = self.param(
             "w_emb",
-            nn.with_partitioning(e_init, MESH_AXES["NN"], self.global_mesh),  # no shard
+            nn.with_partitioning(e_init, MESH_AXES["NN"], self.global_mesh),
             shapes["VM"],
             self.hps.param_dtype,
         )
-        chex.assert_shape(w_emb, shapes["VM"])  # noqa
 
         x = jnp.take_along_axis(
             w_emb.astype(self.hps.dtype)[None, ...],  # 1VM
@@ -347,7 +319,6 @@ class Transformer(nn.Module):
             axis=1,
         )
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        chex.assert_shape(x, shapes["BTM"])
 
         x, _ = nn.scan(
             nnp.remat(TransformerBlock),
@@ -358,23 +329,13 @@ class Transformer(nn.Module):
             metadata_params={nn.PARTITION_NAME: None},
         )(hps=self.hps, global_mesh=self.global_mesh)(x, None)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        chex.assert_shape(x, shapes["BTM"])
 
         x = RMSNorm()(x)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        chex.assert_shape(x, shapes["BTM"])
 
         x /= jnp.array([self.hps.d_model], dtype=self.hps.dtype)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        chex.assert_shape(x, shapes["BTM"])
 
-        chex.assert_shape(w_emb, shapes["VM"])  # noqa
-        x = jax.lax.dot_general(
-            lhs=x,
-            rhs=w_emb,  # noqa
-            dimension_numbers=(((2,), (1,)), ((), ())),
-            preferred_element_type=jnp.float32,
-        )
-        # x = jnp.einsum("btd,vd->btv", x, w_emb)
+        x = jnp.einsum("btd,vd->btv", x, w_emb.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         return x
