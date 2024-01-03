@@ -323,6 +323,6 @@ class Transformer(nn.Module):
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
         # todo: dot general
-        x = jnp.einsum("btd,dv->btv", x, w_out.astype(jnp.float32))
+        x = jnp.einsum("btd,dv->btv", x, w_out.unbox().astype(jnp.float32))
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         return x
