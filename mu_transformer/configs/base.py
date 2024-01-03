@@ -18,9 +18,7 @@ from ml_collections import config_dict
 def get_base_config():
     config = config_dict.ConfigDict()
 
-    # basics
-    config.param_dtype = jnp.bfloat16  # cast to higher precision if necessary
-    config.dtype = jnp.bfloat16
+    # plotting/logging
     config.sow_intermediates = True
 
     # huggingface tokenizer and dataset settings
@@ -32,12 +30,15 @@ def get_base_config():
     config.sequence_len = 512
 
     # architecture
+    config.param_dtype = jnp.bfloat16  # maybe change to higher precision
+    config.dtype = jnp.bfloat16
+    config.output_logits_dtype = jnp.bfloat16  # same
     config.n_layer = 24
     config.d_head = 256
     config.ff_multiple = 4
     config.rotary_base = 10_000
-    config.act_name = "gelu"  # any activation defined jax.nn
-    config.act_square = False  # activation squaring
+    config.act_name = "relu"  # any activation defined in jax.nn
+    config.act_square = True  # activation squaring
 
     # optimization
     config.tokens_per_global_batch = 2**16
@@ -45,7 +46,8 @@ def get_base_config():
     config.lr_max = 0.3  # master lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
     config.adam_b2 = 0.95
-    config.adam_eps = 1e-8  # used by adam only
+    config.adam_eps = 1e-8
+    config.adam_mu_dtype = jnp.bfloat16
     config.wd_lam = 0.1  # weight decay coeff, multiplied by master lr * schedule
 
     # periodic action settings

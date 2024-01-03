@@ -36,6 +36,7 @@ MESH_AXES = Dimensions(R="rows", C="columns", P="planes", N=None)
 class TransformerConfig:
     param_dtype: Any
     dtype: Any
+    output_logits_dtype: Any
     sequence_len: int
     d_model: int
     d_head: int
@@ -344,6 +345,6 @@ class Transformer(nn.Module):
         x = RMSNorm()(x)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
-        x = jnp.einsum("btm,mv->btv", x, w_out.astype(self.hps.dtype))  # todo: float32?
+        x = jnp.einsum("btm,mv->btv", x, w_out.astype(self.hps.output_logits_dtype))
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         return x
