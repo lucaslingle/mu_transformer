@@ -36,6 +36,8 @@ def to_global_array(array, global_mesh):
     )
     # now use jax.make_array_from_single_device_arrays
     global_shape = (jax.process_count() * array.shape[0], array.shape[1])
-    sharding = get_namedsharding(axis_names=("rows", None), device_mesh=global_mesh)
+    sharding = get_namedsharding(
+        axis_names=(global_mesh.axis_names,), device_mesh=global_mesh
+    )
     arr = jax.make_array_from_single_device_arrays(global_shape, sharding, arrays)
     return arr
