@@ -431,7 +431,9 @@ def eval_loop(params, n_eval_step=None):
         stats = jtu.tree_map(lambda a: jax.device_get(a).item(), stats)
         stats = jax.block_until_ready(stats)  # slows a bit, but makes printout accurate
         if acc is not None:
-            acc = jtu.tree_map(lambda a, b: a + b, stats, acc)
+            acc = jtu.tree_map(
+                lambda a, b: (i / (i + 1)) * a + (1 / (i + 1)) * b, acc, stats
+            )
         else:
             acc = stats
         if n_eval_step is not None:
