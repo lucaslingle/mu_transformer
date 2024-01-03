@@ -20,8 +20,8 @@ def get_config():
 
     # mesh
     config.n_mesh_rows = 4
-    config.n_mesh_cols = 8
-    config.n_mesh_planes = 4
+    config.n_mesh_cols = 4
+    config.n_mesh_planes = 8
 
     # width
     config.d_model = 4096
