@@ -308,13 +308,13 @@ class PredictionHead(nn.Module):
         o_init = init.zeros  # appendix d.2
         w_out = self.param(
             "w_eo",
-            nn.with_partitioning(o_init, MESH_AXES["NN"], self.global_mesh),
+            nn.with_partitioning(o_init, MESH_AXES["CN"], self.global_mesh),
             [self.hps.d_model, self.hps.n_vocab],
             self.hps.param_dtype,
         )
-        x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
+        x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         x = RMSNorm()(x)
-        x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
+        x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         x = jnp.einsum("btm,mv->btv", x, w_out.astype(self.hps.output_logits_dtype))
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         return x
