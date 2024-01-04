@@ -139,7 +139,6 @@ def grad_transform_factory():
             },
             param_labels=param_label_fn,
         ),
-        optax.add_decayed_weights(-lr * wd),
         optax.scale_by_schedule(schedule_factory()),
     )
 
