@@ -334,7 +334,6 @@ def train_loop():
         split_name="train",
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
-        shuffle=True,
     )
     batch_iter = get_dataset(start_step=start_step, **batch_iter_kwargs)
 
@@ -421,8 +420,6 @@ def eval_loop(params, n_eval_step=None):
         split_name="val" if FLAGS.mode == "train" else FLAGS.mode,
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
-        start_step=0,
-        shuffle=False,
     )
 
     start_time = time.perf_counter()

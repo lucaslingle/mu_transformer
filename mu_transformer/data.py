@@ -54,9 +54,6 @@ def get_dataset(
     split_name: str,
     batch_size: int,
     sequence_len: int,
-    start_step: int,
-    shuffle: bool,
-    shuffle_buffer_size: int = 1024,
 ) -> Iterator[Mapping[str, np.ndarray]]:
 
     # get shard info
@@ -130,12 +127,6 @@ def get_dataset(
             ds = ds.skip(batch_size * 200)
         else:
             raise NotImplementedError("Unrecognized split name")
-
-    # shuffle the training split
-    if shuffle:
-        assert split_name == "train"
-        shuffle_seed = start_step + (10**9) * pindex
-        ds = ds.shuffle(seed=shuffle_seed, buffer_size=shuffle_buffer_size)
 
     # convert to iterator, batch examples to the desired batch size per host.
     ds_iter = ds.iter(batch_size=batch_size, drop_last_batch=True)
