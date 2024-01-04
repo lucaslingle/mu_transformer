@@ -37,13 +37,13 @@ def get_base_config():
     config.d_head = 256
     config.ff_multiple = 4
     config.rotary_base = 10_000
-    config.act_name = "gelu"  # any activation defined in jax.nn
+    config.act_name = "relu"  # any activation defined in jax.nn
     config.act_square = False  # activation squaring
 
     # optimization
     config.tokens_per_global_batch = 2**18
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
-    config.lr_max = 0.3  # master lr; scaled by mu-parameterization adam, schedule
+    config.lr_max = 10.0  # master lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
     config.adam_b2 = 0.98
     config.adam_eps = 1e-9
@@ -51,10 +51,10 @@ def get_base_config():
 
     # periodic action settings
     config.n_print_step = 100  # print every
-    config.n_save_step = 5_000  # checkpoint every
+    config.n_save_step = 1_000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
-    config.n_warmup_step = 10_000  # warmup steps during pretraining
-    config.n_pretrain_step = 125_000  # pretraining steps
+    config.n_warmup_step = 1_000  # warmup steps during pretraining
+    config.n_pretrain_step = 10_000  # pretraining steps
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
 
     return config
