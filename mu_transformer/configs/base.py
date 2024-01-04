@@ -32,7 +32,7 @@ def get_base_config():
     # architecture
     config.param_dtype = jnp.float32
     config.dtype = jnp.bfloat16
-    config.output_logits_dtype = jnp.float32
+    config.output_logits_dtype = jnp.bfloat16
     config.n_layer = 12
     config.d_head = 256
     config.ff_multiple = 4
