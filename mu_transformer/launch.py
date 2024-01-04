@@ -118,7 +118,6 @@ def grad_transform_factory():
         mu_dtype=FLAGS.config.adam_mu_dtype,
     )
     lr = FLAGS.config.lr_max
-    wd = FLAGS.config.wd_lam
     dm = FLAGS.config.d_model
     dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
     return optax.chain(
@@ -474,18 +473,18 @@ def main(argv):
     assert FLAGS.config.d_model % FLAGS.config.d_head == 0
     n_device = jax.device_count()
     n_example = global_batch_size_factory()
+    d_model = FLAGS.config.d_model
     n_head = FLAGS.config.d_model // FLAGS.config.d_head
-    n_layer = FLAGS.config.n_layer
     n_row = FLAGS.config.n_mesh_rows
     n_col = FLAGS.config.n_mesh_cols
     n_plane = FLAGS.config.n_mesh_planes
     assert n_row * n_col * n_plane == n_device
     assert n_example >= n_device  # dataloader quirk
     assert n_example % n_row == 0  # parallelize batch across rows
-    assert n_head >= n_col  # parallelize hidden activations across columns
-    assert n_head % n_col == 0
-    assert n_layer >= n_plane  # parallelize layers across planes
-    assert n_layer % n_plane == 0
+    assert d_model >= n_col  # parallelize layers across columns
+    assert d_model % n_col == 0
+    assert n_head >= n_plane  # parallelize hidden activations across planes
+    assert n_head % n_plane == 0
     try:
         jax.distributed.initialize()
     except Exception:
