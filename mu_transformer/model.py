@@ -20,7 +20,7 @@ import jax
 import jax.nn.initializers as init
 import jax.numpy as jnp
 from flax import struct
-from flax.linen import partitioning
+from flax.linen import partitioning as nnp
 
 from mu_transformer.dims import Dimensions
 from mu_transformer.shard import sharding_constraint
@@ -276,44 +276,59 @@ class TransformerBlock(nn.Module):
         return x, None
 
 
-class Transformer(nn.Module):
+class Embedding(nn.Module):
     hps: TransformerConfig
     global_mesh: jax.sharding.Mesh
 
     @nn.compact
     def __call__(self, x):
-        shapes = Dimensions(
-            B=x.shape[0],
-            T=self.hps.sequence_len,
-            M=self.hps.d_model,
-            V=self.hps.n_vocab,
-        )
-        x = sharding_constraint(x, MESH_AXES["RN"], self.global_mesh)
-
         e_init = init.normal(1.0)  # appendix b.1
-        o_init = init.zeros  # appendix d.2
         w_emb = self.param(
             "w_ei",
             nn.with_partitioning(e_init, MESH_AXES["NN"], self.global_mesh),
-            shapes["VM"],
+            [self.hps.n_vocab, self.hps.d_model],
             self.hps.param_dtype,
         )
-        w_out = self.param(
-            "w_eo",
-            nn.with_partitioning(o_init, MESH_AXES["NN"], self.global_mesh),
-            shapes["MV"],
-            self.hps.param_dtype,
-        )
-
+        x = sharding_constraint(x, MESH_AXES["RN"], self.global_mesh)
         x = jnp.take_along_axis(
             w_emb.astype(self.hps.dtype)[None, ...],  # 1VM
             x[..., None],  # BT1
             axis=1,
         )
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+        return x
 
+
+class PredictionHead(nn.Module):
+    hps: TransformerConfig
+    global_mesh: jax.sharding.Mesh
+
+    @nn.compact
+    def __call__(self, x):
+        o_init = init.zeros  # appendix d.2
+        w_out = self.param(
+            "w_eo",
+            nn.with_partitioning(o_init, MESH_AXES["NN"], self.global_mesh),
+            [self.hps.d_model, self.hps.n_vocab],
+            self.hps.param_dtype,
+        )
+        x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
+        x = RMSNorm()(x)
+        x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
+        x = jnp.einsum("btm,mv->btv", x, w_out.astype(self.hps.output_logits_dtype))
+        x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
+        return x
+
+
+class Transformer(nn.Module):
+    hps: TransformerConfig
+    global_mesh: jax.sharding.Mesh
+
+    @nn.compact
+    def __call__(self, x):
+        x = nnp.remat(Embedding)(self.hps, self.global_mesh)(x)
         x, _ = nn.scan(
-            partitioning.remat(TransformerBlock),
+            nnp.remat(TransformerBlock),
             length=self.hps.n_layer,
             variable_axes=dict(params=0, intermediates=0),
             variable_broadcast=False,
@@ -321,10 +336,5 @@ class Transformer(nn.Module):
             metadata_params={nn.PARTITION_NAME: None},
         )(hps=self.hps, global_mesh=self.global_mesh)(x, None)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-
-        x = RMSNorm()(x)
-        x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
-
-        x = jnp.einsum("btm,mv->btv", x, w_out.astype(self.hps.output_logits_dtype))
-        x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
+        x = nnp.remat(PredictionHead)(self.hps, self.global_mesh)(x)
         return x
