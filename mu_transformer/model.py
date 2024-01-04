@@ -300,7 +300,7 @@ class Transformer(nn.Module):
         )
         w_out = self.param(
             "w_eo",
-            nn.with_partitioning(o_init, MESH_AXES["CN"], self.global_mesh),
+            nn.with_partitioning(o_init, MESH_AXES["NN"], self.global_mesh),
             shapes["MV"],
             self.hps.param_dtype,
         )
@@ -323,7 +323,7 @@ class Transformer(nn.Module):
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
 
         x = RMSNorm()(x)
-        x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+        x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
 
         x = jnp.einsum("btm,mv->btv", x, w_out.astype(self.hps.output_logits_dtype))
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)

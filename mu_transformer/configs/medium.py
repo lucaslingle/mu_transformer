@@ -19,8 +19,8 @@ def get_config():
     config.model_size = "medium"
 
     # mesh
-    config.n_mesh_rows = 8
-    config.n_mesh_cols = 1
+    config.n_mesh_rows = 4
+    config.n_mesh_cols = 2
     config.n_mesh_planes = 1
 
     # width
