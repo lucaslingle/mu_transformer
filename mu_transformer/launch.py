@@ -335,7 +335,7 @@ def train_loop():
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
     )
-    batch_iter = get_dataset(start_step=start_step, **batch_iter_kwargs)
+    batch_iter = get_dataset(**batch_iter_kwargs)
 
     logging.log(log_level, "Starting training loop...")
     best_val_loss = float("inf")
@@ -350,7 +350,7 @@ def train_loop():
         try:
             batch = next(batch_iter)
         except StopIteration:
-            batch_iter = get_dataset(start_step=step, **batch_iter_kwargs)
+            batch_iter = get_dataset(**batch_iter_kwargs)
             batch = next(batch_iter)
 
         # distribute local batch arrays to global batch arrays
