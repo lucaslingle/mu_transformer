@@ -481,7 +481,7 @@ def main(argv):
     assert n_row * n_col * n_plane == n_device
     assert n_example >= n_device  # dataloader quirk
     assert n_example % n_row == 0  # parallelize batch across rows
-    assert d_model >= n_col  # parallelize layers across columns
+    assert d_model >= n_col  # parallelize residuals across columns
     assert d_model % n_col == 0
     assert n_head >= n_plane  # parallelize hidden activations across planes
     assert n_head % n_plane == 0
