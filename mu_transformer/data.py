@@ -54,6 +54,7 @@ def get_dataset(
     split_name: str,
     batch_size: int,
     sequence_len: int,
+    stream_data: bool,
 ) -> Iterator[Mapping[str, np.ndarray]]:
 
     # get shard info
@@ -84,7 +85,7 @@ def get_dataset(
         hfds_identifier,
         hfds_config,
         split=hfds_split,
-        streaming=True,
+        streaming=stream_data,
     )
 
     # shard by host, then tokenize the host's shard only

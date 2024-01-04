@@ -20,6 +20,7 @@ def get_base_config():
 
     # plotting/logging
     config.sow_intermediates = True
+    config.stream_data = True  # BE CAREFUL: if False, a very large download may occur!!
 
     # huggingface tokenizer and dataset settings
     config.hftr_tokenizer_name = "GPT2TokenizerFast"
@@ -30,9 +31,9 @@ def get_base_config():
     config.sequence_len = 512
 
     # architecture
-    config.param_dtype = jnp.float32
-    config.dtype = jnp.bfloat16
-    config.output_logits_dtype = jnp.bfloat16  # for bfloat16 grads. we use fp32 @ test
+    config.param_dtype = jnp.float32  # master copy of weights in fp32
+    config.dtype = jnp.bfloat16  # weights and activations are in bfloat16 on fwd/bwd
+    config.output_logits_dtype = jnp.bfloat16  # for bfloat16 grad; is fp32 during eval
     config.n_layer = 12
     config.d_head = 256
     config.ff_multiple = 4
