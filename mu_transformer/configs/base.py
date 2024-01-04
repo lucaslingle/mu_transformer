@@ -41,12 +41,12 @@ def get_base_config():
     config.act_square = False  # activation squaring
 
     # optimization
-    config.tokens_per_global_batch = 2**17
+    config.tokens_per_global_batch = 2**18
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
-    config.lr_max = 0.03  # master lr; scaled by mu-parameterization adam, schedule
+    config.lr_max = 0.3  # master lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
-    config.adam_b2 = 0.95
-    config.adam_eps = 1e-8
+    config.adam_b2 = 0.98
+    config.adam_eps = 1e-9
     config.adam_mu_dtype = jnp.bfloat16
 
     # periodic action settings
