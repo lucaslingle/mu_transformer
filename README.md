@@ -1,12 +1,12 @@
 # Mu-Transformer
 
-Proof-of-concept transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
+Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
 
 - Supports distributed training on TPU pod slices. 
 - Supports data parallelism and tensor parallelism.
 - Supports any HuggingFace text dataset and tokenizer.
 - Simple, flexible configuration.
-- Passes the wider-is-better-throughout-training and coordinate-checking tests. 
+- Passes the correctness tests: *wider is better throughout training* and *coordinate checking*. 
 
 ## Installation
 

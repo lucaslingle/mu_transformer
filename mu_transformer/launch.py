@@ -63,11 +63,12 @@ def tokenizer_factory():
     )
 
 
-@functools.lru_cache(maxsize=1)
-def transformer_config_factory():
+@functools.lru_cache(maxsize=2)
+def transformer_config_factory(is_train):
     return TransformerConfig.create(
         **vars(FLAGS.config)["_fields"],
         n_vocab=tokenizer_factory().vocab_size,
+        is_train=is_train,
     )
 
 
@@ -118,7 +119,6 @@ def grad_transform_factory():
         mu_dtype=FLAGS.config.adam_mu_dtype,
     )
     lr = FLAGS.config.lr_max
-    wd = FLAGS.config.wd_lam
     dm = FLAGS.config.d_model
     dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
     return optax.chain(
@@ -139,7 +139,6 @@ def grad_transform_factory():
             },
             param_labels=param_label_fn,
         ),
-        optax.add_decayed_weights(-lr * wd),
         optax.scale_by_schedule(schedule_factory()),
     )
 
@@ -161,7 +160,7 @@ def train_state_factory(rng_init):
     # based on https://flax.readthedocs.io/en/latest/guides/parallel_training/flax_on_pjit.html#the-output-s-sharding  # noqa
     model_cls = Transformer
     optimizer_cls = grad_transform_factory()
-    config = transformer_config_factory()
+    config = transformer_config_factory(is_train=True)
     global_mesh = global_mesh_factory()
 
     prng_sharding = get_namedsharding(axis_names=(None,), device_mesh=global_mesh)
@@ -288,7 +287,7 @@ def train_step(state, batch):
     (_, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(
         state.params,
         batch=batch,
-        config=transformer_config_factory(),
+        config=transformer_config_factory(is_train=True),
         global_mesh=global_mesh_factory(),
     )
     # no extra mean anywhere, we already have the sharded all-device mean gradient!
@@ -336,9 +335,8 @@ def train_loop():
         split_name="train",
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
-        shuffle=True,
     )
-    batch_iter = get_dataset(start_step=start_step, **batch_iter_kwargs)
+    batch_iter = get_dataset(**batch_iter_kwargs)
 
     logging.log(log_level, "Starting training loop...")
     best_val_loss = float("inf")
@@ -353,7 +351,7 @@ def train_loop():
         try:
             batch = next(batch_iter)
         except StopIteration:
-            batch_iter = get_dataset(start_step=step, **batch_iter_kwargs)
+            batch_iter = get_dataset(**batch_iter_kwargs)
             batch = next(batch_iter)
 
         # distribute local batch arrays to global batch arrays
@@ -394,7 +392,7 @@ def eval_step(params, batch):
     _, metrics = loss_fn(
         params=params,
         batch=batch,
-        config=transformer_config_factory(),
+        config=transformer_config_factory(is_train=False),
         global_mesh=global_mesh_factory(),
     )
     return metrics
@@ -423,8 +421,6 @@ def eval_loop(params, n_eval_step=None):
         split_name="val" if FLAGS.mode == "train" else FLAGS.mode,
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
-        start_step=0,
-        shuffle=False,
     )
 
     start_time = time.perf_counter()
@@ -475,18 +471,18 @@ def main(argv):
     assert FLAGS.config.d_model % FLAGS.config.d_head == 0
     n_device = jax.device_count()
     n_example = global_batch_size_factory()
+    d_model = FLAGS.config.d_model
     n_head = FLAGS.config.d_model // FLAGS.config.d_head
-    n_layer = FLAGS.config.n_layer
     n_row = FLAGS.config.n_mesh_rows
     n_col = FLAGS.config.n_mesh_cols
     n_plane = FLAGS.config.n_mesh_planes
     assert n_row * n_col * n_plane == n_device
     assert n_example >= n_device  # dataloader quirk
     assert n_example % n_row == 0  # parallelize batch across rows
-    assert n_head >= n_col  # parallelize hidden activations across columns
-    assert n_head % n_col == 0
-    assert n_layer >= n_plane  # parallelize layers across planes
-    assert n_layer % n_plane == 0
+    assert d_model >= n_col  # parallelize layers across columns
+    assert d_model % n_col == 0
+    assert n_head >= n_plane  # parallelize hidden activations across planes
+    assert n_head % n_plane == 0
     try:
         jax.distributed.initialize()
     except Exception:
