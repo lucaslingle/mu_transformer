@@ -63,11 +63,12 @@ def tokenizer_factory():
     )
 
 
-@functools.lru_cache(maxsize=1)
-def transformer_config_factory():
+@functools.lru_cache(maxsize=2)
+def transformer_config_factory(is_train):
     return TransformerConfig.create(
         **vars(FLAGS.config)["_fields"],
         n_vocab=tokenizer_factory().vocab_size,
+        is_train=is_train,
     )
 
 
@@ -159,7 +160,7 @@ def train_state_factory(rng_init):
     # based on https://flax.readthedocs.io/en/latest/guides/parallel_training/flax_on_pjit.html#the-output-s-sharding  # noqa
     model_cls = Transformer
     optimizer_cls = grad_transform_factory()
-    config = transformer_config_factory()
+    config = transformer_config_factory(is_train=True)
     global_mesh = global_mesh_factory()
 
     prng_sharding = get_namedsharding(axis_names=(None,), device_mesh=global_mesh)
@@ -286,7 +287,7 @@ def train_step(state, batch):
     (_, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(
         state.params,
         batch=batch,
-        config=transformer_config_factory(),
+        config=transformer_config_factory(is_train=True),
         global_mesh=global_mesh_factory(),
     )
     # no extra mean anywhere, we already have the sharded all-device mean gradient!
@@ -391,7 +392,7 @@ def eval_step(params, batch):
     _, metrics = loss_fn(
         params=params,
         batch=batch,
-        config=transformer_config_factory(),
+        config=transformer_config_factory(is_train=False),
         global_mesh=global_mesh_factory(),
     )
     return metrics

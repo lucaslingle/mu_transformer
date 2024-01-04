@@ -45,6 +45,7 @@ class TransformerConfig:
     rotary_base: int
     act_name: str
     act_square: bool
+    is_train: bool
 
     @classmethod
     def create(cls, **kwargs):
@@ -315,7 +316,11 @@ class PredictionHead(nn.Module):
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         x = RMSNorm()(x)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        x = jnp.einsum("btm,mv->btv", x, w_out.astype(self.hps.output_logits_dtype))
+        if self.hps.is_train:
+            output_logits_dtype = self.hps.output_logits_dtype
+        else:
+            output_logits_dtype = self.hps.param_dtype
+        x = jnp.einsum("btm,mv->btv", x, w_out.astype(output_logits_dtype))
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         return x
 
