@@ -352,6 +352,7 @@ def train_loop():
         try:
             batch = next(batch_iter)
         except StopIteration:
+            logging.log(log_level, f"Starting new epoch at step {step}...")
             batch_iter = get_dataset(**batch_iter_kwargs)
             batch = next(batch_iter)
 
