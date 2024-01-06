@@ -44,14 +44,18 @@ from mu_transformer.sow import split_coord_checks
 
 
 FLAGS = flags.FLAGS
+MODES = ["train", "val", "test"]
+VERBOSITIES = ["debug", "info", "warning", "error", "fatal"]
+
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
 flags.DEFINE_string("workdir", None, "Working directory (local or GCS)")
-flags.DEFINE_enum("mode", None, ["train", "val", "test"], "Mode")
+flags.DEFINE_enum("mode", None, MODES, "Mode")
 flags.DEFINE_integer("seed", 0, "Experiment seed")
 flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
 flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
 flags.DEFINE_string("loading_name", None, "Model name to load; None = use autogen")
 flags.DEFINE_string("saving_name", None, "Model name to save; None = use autogen")
+flags.DEFINE_enum("verbosity", "info", VERBOSITIES, "Verbosity level for logger")
 flags.mark_flags_as_required(["config", "workdir", "mode"])
 
 
@@ -356,33 +360,38 @@ def train_loop():
             logging.debug(log_level, f"Starting new epoch at step {step}...")
             batch_iter = get_dataset(**batch_iter_kwargs)
             batch = next(batch_iter)
+
         logging.debug("Got batch...")
-        inputs = batch["inputs"]  # todo: remove when done debugging
-        targets = batch["targets"]  # todo: remove when done debugging
-        loss_mask = batch["loss_mask"]  # todo: remove when done debugging
-        logging.debug(f"Inputs shape (local): {inputs.shape}")
-        logging.debug(f"targets shape (local): {targets.shape}")
-        logging.debug(f"Loss mask shape (local): {loss_mask.shape}")
+        if logging.get_verbosity() == 1:
+            inputs = batch["inputs"]
+            targets = batch["targets"]
+            loss_mask = batch["loss_mask"]
+            logging.debug(f"Inputs shape (local): {inputs.shape}")
+            logging.debug(f"targets shape (local): {targets.shape}")
+            logging.debug(f"Loss mask shape (local): {loss_mask.shape}")
 
         # distribute local batch arrays to global batch arrays
         logging.debug("Distributing batch to global array...")
         batch = jtu.tree_map(lambda y: to_global_array(y, global_mesh), batch)
-        jax.block_until_ready(batch)  # todo: remove when done debugging
-        logging.debug("Finished distributing batch to global array...")
+        if logging.get_verbosity() == 1:
+            jax.block_until_ready(batch)
+            logging.debug("Finished distributing batch to global array...")
 
-        inputs = batch["inputs"]  # todo: remove when done debugging
-        targets = batch["targets"]  # todo: remove when done debugging
-        loss_mask = batch["loss_mask"]  # todo: remove when done debugging
-        logging.debug(f"Inputs shape (global): {inputs.shape}")
-        logging.debug(f"targets shape (global): {targets.shape}")
-        logging.debug(f"Loss mask shape (global): {loss_mask.shape}")
+        if logging.get_verbosity() == 1:
+            inputs = batch["inputs"]
+            targets = batch["targets"]
+            loss_mask = batch["loss_mask"]
+            logging.debug(f"Inputs shape (global): {inputs.shape}")
+            logging.debug(f"targets shape (global): {targets.shape}")
+            logging.debug(f"Loss mask shape (global): {loss_mask.shape}")
 
         # run a training step
         logging.debug("Starting train step...")
         state, metrics = train_step(state, batch)
-        state = jax.block_until_ready(state)  # todo: remove when done debugging
-        metrics = jax.block_until_ready(metrics)  # todo: remove when done debugging
-        logging.debug("Finished train step...")
+        if logging.get_verbosity() == 1:
+            state = jax.block_until_ready(state)
+            metrics = jax.block_until_ready(metrics)
+            logging.debug("Finished train step...")
 
         # occasionally print metrics
         if step % FLAGS.config.n_print_step == 0:
@@ -459,19 +468,52 @@ def eval_loop(params, n_eval_step=None):
     start_time = time.perf_counter()
     for i, batch in enumerate(batch_iter):
         logging.info(f"eval step {i}...")
+
+        logging.debug("Got batch...")
+        if logging.get_verbosity() == 1:
+            inputs = batch["inputs"]
+            targets = batch["targets"]
+            loss_mask = batch["loss_mask"]
+            logging.debug(f"Inputs shape (local): {inputs.shape}")
+            logging.debug(f"targets shape (local): {targets.shape}")
+            logging.debug(f"Loss mask shape (local): {loss_mask.shape}")
+
+        # distribute local batch arrays to global batch arrays
+        logging.debug("Distributing batch to global array...")
         batch = jtu.tree_map(lambda y: to_global_array(y, global_mesh), batch)
+        if logging.get_verbosity() == 1:
+            jax.block_until_ready(batch)
+            logging.debug("Finished distributing batch to global array...")
+
+        if logging.get_verbosity() == 1:
+            inputs = batch["inputs"]
+            targets = batch["targets"]
+            loss_mask = batch["loss_mask"]
+            logging.debug(f"Inputs shape (global): {inputs.shape}")
+            logging.debug(f"targets shape (global): {targets.shape}")
+            logging.debug(f"Loss mask shape (global): {loss_mask.shape}")
+
+        logging.debug("Starting eval step...")
         stats = eval_step(params=params, batch=batch)
         stats = jtu.tree_map(lambda a: jax.device_get(a).item(), stats)
         stats = jax.block_until_ready(stats)  # slows a bit, but makes printout accurate
+        logging.debug("Finished eval step...")
+
+        logging.debug("Starting accumulation step...")
         if acc is not None:
             acc = jtu.tree_map(
                 lambda a, b: (i / (i + 1)) * a + (1 / (i + 1)) * b, acc, stats
             )
         else:
             acc = stats
+        if logging.get_verbosity() == 1:
+            acc = jax.block_until_ready(acc)
+            logging.debug("Finished accumulation step...")
+
         if n_eval_step is not None:
             if i + 1 == n_eval_step:
                 break
+
     logging.debug("Eval loop finished...")
     logging.debug("Computing eval metrics...")
     acc = jax.block_until_ready(acc)
@@ -487,8 +529,7 @@ def eval_loop(params, n_eval_step=None):
 
 def main(argv):
     del argv
-    logging.set_verbosity(logging.DEBUG)
-
+    logging.set_verbosity(FLAGS.verbosity)
     logging.info("=== Start of main() ===")
     logging.info("JAX process: %d / %d", jax.process_index(), jax.process_count())
     logging.info("=== Flags: ===")
@@ -499,6 +540,7 @@ def main(argv):
     logging.info(f"wb_run: {FLAGS.wb_run}")
     logging.info(f"loading_name: {FLAGS.loading_name}")
     logging.info(f"saving_name: {FLAGS.saving_name}")
+    logging.info(f"verbosity: {FLAGS.verbosity}")
     logging.info("=== Config: ===")
     for k, v in vars(FLAGS.config)["_fields"].items():
         logging.info(f"{k}: {v}")
