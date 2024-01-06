@@ -350,22 +350,46 @@ def train_loop():
     for step in range(start_step, n_total_step + 1):
         # get next batch, and reset at epoch end.
         try:
+            logging.info("Getting next batch from existing epoch...")
             batch = next(batch_iter)
         except StopIteration:
             logging.log(log_level, f"Starting new epoch at step {step}...")
             batch_iter = get_dataset(**batch_iter_kwargs)
             batch = next(batch_iter)
+        logging.info("Got batch...")
+        inputs = batch["inputs"]  # todo: remove when done debugging
+        targets = batch["targets"]  # todo: remove when done debugging
+        loss_mask = batch["loss_mask"]  # todo: remove when done debugging
+        logging.info(f"Inputs shape (local): {inputs.shape}")
+        logging.info(f"targets shape (local): {targets.shape}")
+        logging.info(f"Loss mask shape (local): {loss_mask.shape}")
 
         # distribute local batch arrays to global batch arrays
+        logging.info("Distributing batch to global array...")
         batch = jtu.tree_map(lambda y: to_global_array(y, global_mesh), batch)
+        jax.block_until_ready(batch)  # todo: remove when done debugging
+        logging.info("Finished distributing batch to global array...")
+
+        inputs = batch["inputs"]  # todo: remove when done debugging
+        targets = batch["targets"]  # todo: remove when done debugging
+        loss_mask = batch["loss_mask"]  # todo: remove when done debugging
+        logging.info(f"Inputs shape (global): {inputs.shape}")
+        logging.info(f"targets shape (global): {targets.shape}")
+        logging.info(f"Loss mask shape (global): {loss_mask.shape}")
+
         # run a training step
+        logging.info("Starting train step...")
         state, metrics = train_step(state, batch)
+        state = jax.block_until_ready(state)  # todo: remove when done debugging
+        metrics = jax.block_until_ready(metrics)  # todo: remove when done debugging
+        logging.info("Finished train step...")
 
         # occasionally print metrics
         if step % FLAGS.config.n_print_step == 0:
             state = jax.block_until_ready(state)
             metrics = jtu.tree_map(lambda a: jax.device_get(a).item(), metrics)
             metrics = jax.block_until_ready(metrics)
+            logging.info("Starting print action...")
             end_time = time.perf_counter()
             sec_per_step = (end_time - start_time) / FLAGS.config.n_print_step
             essentials = {
@@ -379,14 +403,18 @@ def train_loop():
                 metrics.update(essentials)
                 wandb.log(metrics)
             start_time = end_time
+            logging.info("Done with print action...")
 
         # occasionally perform an evaluation and save a checkpoint on improvement
         if (step % FLAGS.config.n_save_step == 0) or step == n_total_step:
             state = jax.block_until_ready(state)
+            logging.info("Starting evaluation action...")
             val_metrics = eval_loop(state.params, n_eval_step=FLAGS.config.n_eval_step)
             if best_val_loss > val_metrics["loss_avg"]:
+                logging.info("Validation loss improved...")
                 do_save(save_checkpoint_mgr, step, state)
                 best_val_loss = val_metrics["loss_avg"]
+            logging.info("Done with evaluation action...")
 
 
 @jax.jit
@@ -442,7 +470,8 @@ def eval_loop(params, n_eval_step=None):
         if n_eval_step is not None:
             if i + 1 == n_eval_step:
                 break
-
+    logging.info("Eval loop finished...")
+    logging.info("Computing eval metrics...")
     acc = jax.block_until_ready(acc)
     end_time = time.perf_counter()
     eval_metrics = dict(
@@ -450,6 +479,7 @@ def eval_loop(params, n_eval_step=None):
         secs_per_step=(end_time - start_time) / (i + 1),
         **acc,
     )
+    logging.info("Finished computing eval metrics...")
     return eval_metrics
 
 
