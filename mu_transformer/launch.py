@@ -44,18 +44,14 @@ from mu_transformer.sow import split_coord_checks
 
 
 FLAGS = flags.FLAGS
-MODES = ["train", "val", "test"]
-VERBOSITIES = ["debug", "info", "warning", "error", "fatal"]
-
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
 flags.DEFINE_string("workdir", None, "Working directory (local or GCS)")
-flags.DEFINE_enum("mode", None, MODES, "Mode")
+flags.DEFINE_enum("mode", None, ["train", "val", "test"], "Mode")
 flags.DEFINE_integer("seed", 0, "Experiment seed")
 flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
 flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
 flags.DEFINE_string("loading_name", None, "Model name to load; None = use autogen")
 flags.DEFINE_string("saving_name", None, "Model name to save; None = use autogen")
-flags.DEFINE_enum("verbosity", "info", VERBOSITIES, "Verbosity level for logger")
 flags.mark_flags_as_required(["config", "workdir", "mode"])
 
 
@@ -529,7 +525,6 @@ def eval_loop(params, n_eval_step=None):
 
 def main(argv):
     del argv
-    logging.set_verbosity(FLAGS.verbosity)
     logging.info("=== Start of main() ===")
     logging.info("JAX process: %d / %d", jax.process_index(), jax.process_count())
     logging.info("=== Flags: ===")
