@@ -454,10 +454,12 @@ def eval_loop(params, n_eval_step=None):
         stream_data=FLAGS.config.stream_data,
     )
 
-    start_time = time.perf_counter()
+    global_mesh = global_mesh_factory()
     acc = None
+    start_time = time.perf_counter()
     for i, batch in enumerate(batch_iter):
         logging.info(f"eval step {i}...")
+        batch = jtu.tree_map(lambda y: to_global_array(y, global_mesh), batch)
         stats = eval_step(params=params, batch=batch)
         stats = jtu.tree_map(lambda a: jax.device_get(a).item(), stats)
         stats = jax.block_until_ready(stats)  # slows a bit, but makes printout accurate
