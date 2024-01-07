@@ -526,6 +526,11 @@ def eval_loop(params, n_eval_step=None):
 
 def main(argv):
     del argv
+    try:
+        jax.distributed.initialize()
+    except Exception:
+        logging.warning("Jax distributed did not init successfully.")
+
     logging.info("=== Start of main() ===")
     logging.info(f"Python version: {sys.version}")
     logging.info(f"JAX process: {jax.process_index()} / {jax.process_count()}")
@@ -557,10 +562,6 @@ def main(argv):
     assert d_model % n_col == 0
     assert n_head >= n_plane  # parallelize hidden activations across planes
     assert n_head % n_plane == 0
-    try:
-        jax.distributed.initialize()
-    except Exception:
-        logging.warning("Jax distributed did not init successfully.")
 
     if FLAGS.mode == "train":
         train_loop()
