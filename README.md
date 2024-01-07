@@ -15,10 +15,11 @@ To proceed, install [Pipx](https://github.com/pypa/pipx) and [Poetry](https://gi
 ```
 git clone https://github.com/lucaslingle/mu_transformer.git;
 cd mu_transformer;
-poetry install --with cpu  # on CPU
-poetry install --with cpu  # on Cloud TPU VM
+poetry install --with cpu  # CPU
+poetry install --with tpu  # Cloud TPU VM
 ```
-On Cloud TPU VM, Pipx and Poetry can be installed via ```./tpu_setup.sh```. 
+- On Cloud TPU VMs, Pipx and Poetry can be installed via ```./tpu_setup.sh```.
+- On Cloud TPU VMs, you may need to write ```~/.local/bin/poetry``` when invoking Poetry. 
 
 ## Basics
 
