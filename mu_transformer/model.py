@@ -157,7 +157,7 @@ class MultiheadSelfAttention(nn.Module):
         kv_init = init.normal(self.hps.d_model**-0.5)
         # normal, var 1/fan_in; table 3 with nh*dh=dm.
         # also, discretionary variance multiplier 1/2l for depth transfer (radford).
-        o_init = init.normal((2 * self.n_layer * self.hps.d_model) ** -0.5)
+        o_init = init.normal((2 * self.hps.n_layer * self.hps.d_model) ** -0.5)
         wq = self.param(
             "w_aq",
             nn.with_partitioning(q_init, MESH_AXES["PCN"], self.global_mesh),
