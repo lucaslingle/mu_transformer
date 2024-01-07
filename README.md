@@ -45,7 +45,7 @@ poetry run python3 mu_transformer/launch.py \
     --workdir=/tmp/workdir \
     --config.lr_max=0.123;
 ```
-You may need to override the ```n_mesh_rows```, ```n_mesh_cols```, ```n_mesh_planes``` settings so that their product matches the total number of available devices. 
+In particular, you may need to override the ```n_mesh_rows```, ```n_mesh_cols```, ```n_mesh_planes``` settings so that their product matches the total number of available devices. These three settings correspond to sharding directions for the batch, residual and hidden axes, respectively.  
 
 ### Data and tokenizer
 
