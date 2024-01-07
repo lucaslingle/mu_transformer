@@ -21,6 +21,8 @@ poetry install --with tpu  # Cloud TPU VM
 - On Cloud TPU VMs, Pipx and Poetry can be installed via ```./tpu_setup.sh```.
 - On Cloud TPU VMs, you may need to write ```~/.local/bin/poetry``` when invoking Poetry. 
 
+You may wish to use tmux or similar to allow training on cloud hosts without staying logged in. 
+
 ## Basics
 
 ### Default config
