@@ -18,7 +18,7 @@ cd mu_transformer;
 poetry install --with cpu  # on CPU
 poetry install --with cpu  # on Cloud TPU VM
 ```
-On Cloud TPU VM, Pipx and Poetry can be installed via ```./tpu_setup.sh;```
+On Cloud TPU VM, Pipx and Poetry can be installed via ```./tpu_setup.sh```. 
 
 ## Basics
 
@@ -29,7 +29,7 @@ To train a tiny model on OpenWebText for 10K steps, you can run
 poetry run python3 mu_transformer/launch.py \
     --config=mu_transformer/configs/tiny.py \
     --mode=train \
-    --workdir=workdir;
+    --workdir=/tmp/workdir;
 ```
 A series of model configs, each increasing model size by about 4x, are provided.   
 Settings follow ```base.py```, with exception of width and mesh sizes. 
@@ -41,7 +41,7 @@ Setting overrides are supported via command line
 poetry run python3 mu_transformer/launch.py \
     --config=mu_transformer/configs/tiny.py \
     --mode=train \
-    --workdir=workdir \
+    --workdir=/tmp/workdir \
     --config.lr_max=0.123;
 ```
 You may need to override the ```n_mesh_rows```, ```n_mesh_cols```, ```n_mesh_planes``` settings so that their product matches the total number of available devices. 
@@ -54,7 +54,7 @@ For instance, to use the [T5 tokenizer](https://huggingface.co/docs/transformers
 poetry run python3 mu_transformer/launch.py \
     --config=mu_transformer/configs/tiny.py \
     --mode=train \
-    --workdir=workdir \
+    --workdir=/tmp/workdir \
     --config.hftr_tokenizer_name=T5TokenizerFast \
     --config.hftr_tokenizer_shortname=t5-base \
     --config.hfds_identifier=c4 \
