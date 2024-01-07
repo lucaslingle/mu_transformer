@@ -151,9 +151,13 @@ class MultiheadSelfAttention(nn.Module):
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
 
-        q_init = init.zeros  # zero init; appdx d.2
-        kv_init = init.normal(self.hps.d_model**-0.5)  # normal, var 1/fan_in; table 3
-        o_init = init.normal(self.hps.d_model**-0.5)  # normal, var 1/fan_in = 1 / m
+        # zero init; appdx d.2
+        q_init = init.zeros
+        # normal, var 1/fan_in; table 3
+        kv_init = init.normal(self.hps.d_model**-0.5)
+        # normal, var 1/fan_in; table 3 with nh*dh=dm.
+        # also, discretionary variance multiplier 1/2l for depth transfer (radford).
+        o_init = init.normal((2 * self.n_layer * self.hps.d_model) ** -0.5)
         wq = self.param(
             "w_aq",
             nn.with_partitioning(q_init, MESH_AXES["PCN"], self.global_mesh),
@@ -232,8 +236,13 @@ class MultiLayerPerceptron(nn.Module):
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
 
+        # table 3
         w1_init = init.normal(self.hps.d_model**-0.5)
-        w2_init = init.normal((self.hps.d_model * self.hps.ff_multiple) ** -0.5)
+        # table 3 with dff = dm * ff_multiple
+        # discretionary variance multiplier 1 / 2l for depth transfer (radford)
+        w2_init = init.normal(
+            (2 * self.hps.n_layer * self.hps.d_model * self.hps.ff_multiple) ** -0.5
+        )
         w1 = self.param(
             "w_fi",
             nn.with_partitioning(w1_init, MESH_AXES["CP"], self.global_mesh),
