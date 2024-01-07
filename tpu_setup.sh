@@ -7,3 +7,4 @@ python3 -m pip install --user pipx;
 python3 -m pipx ensurepath;
 "$HOME"/.local/bin/pipx install poetry;
 "$HOME"/.local/bin/poetry install --with tpu;
+set +e;
