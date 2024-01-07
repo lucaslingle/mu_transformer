@@ -527,7 +527,7 @@ def eval_loop(params, n_eval_step=None):
 def main(argv):
     del argv
     logging.info("=== Start of main() ===")
-    logging.info(f"Python version: {sys.version}")
+    logging.info(f"Python version: {sys.version.__repr__()}")
     try:
         jax.distributed.initialize()
     except Exception as e:
