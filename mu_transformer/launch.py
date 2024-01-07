@@ -13,6 +13,7 @@
 # limitations under the License.
 import functools
 import re
+import sys
 import time
 
 import flax.linen as nn
@@ -526,7 +527,8 @@ def eval_loop(params, n_eval_step=None):
 def main(argv):
     del argv
     logging.info("=== Start of main() ===")
-    logging.info("JAX process: %d / %d", jax.process_index(), jax.process_count())
+    logging.info(f"Python version: {sys.version}")
+    logging.info(f"JAX process: {jax.process_index()} / {jax.process_count()}")
     logging.info("=== Flags: ===")
     logging.info(f"workdir: {FLAGS.workdir}")
     logging.info(f"mode: {FLAGS.mode}")
