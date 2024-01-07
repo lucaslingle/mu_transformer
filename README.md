@@ -33,19 +33,27 @@ poetry run python3 mu_transformer/launch.py \
     --workdir=/tmp/workdir;
 ```
 A series of model configs, each increasing model size by about 4x, are provided.   
-Settings follow ```base.py```, with exception of width and mesh sizes. 
+Settings follow ```base.py```, with exception of width and mesh sizes.
+
+The tiny model should be a sufficient proxy for hyperparameter search. 
+However, you may wish to change the batch size, sequence length, number of layers, and training steps to match your target setting. 
 
 ### CLI overrides
 
-Setting overrides are supported via command line
+Setting overrides are supported via command line. Here are some examples:
 ```
 poetry run python3 mu_transformer/launch.py \
     --config=mu_transformer/configs/tiny.py \
     --mode=train \
     --workdir=/tmp/workdir \
-    --config.lr_max=0.123;
+    --config.tokens_per_global_batch=131072 \
+    --config.sequence_len=1024 \
+    --config.n_layer=24 \
+    --config.n_pretrain_step=125000 \
+    --config.n_warmup_step=10000 \
+    --config.lr_max=0.03;
 ```
-In particular, you may need to override the ```n_mesh_rows```, ```n_mesh_cols```, ```n_mesh_planes``` settings so that their product matches the total number of available devices. These three settings correspond to sharding directions for the batch, residual and hidden axes, respectively.  
+You may also need to override the ```n_mesh_rows```, ```n_mesh_cols```, ```n_mesh_planes``` settings so that their product matches the total number of available devices. These three settings correspond to sharding directions for the batch, residual and hidden axes, respectively.  
 
 ### Data and tokenizer
 
