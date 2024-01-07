@@ -27,7 +27,7 @@ On a Cloud TPU VM, we recommend installing via Poetry as follows:
 ```
 git clone https://github.com/lucaslingle/mu_transformer.git;
 cd mu_transformer;
-source tpu_setup.sh;
+./tpu_setup.sh;
 ```
 All Python commands should then be prefaced with ```~/.local/bin/poetry run```.
 
