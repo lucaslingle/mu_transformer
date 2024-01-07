@@ -24,16 +24,16 @@ tensorflow = "2.12.1"
 tqdm = "4.66.1"
 wandb = "^0.16.1"
 
-[tool.poetry.extras.cpu.dependencies]
+[tool.poetry.group.cpu.dependencies]
 jax = "0.4.23"
 jaxlib = "0.4.23"
 
-[tool.poetry.extras.tpu.dependencies]
+[tool.poetry.group.tpu.dependencies]
 libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20231213-py3-none-any.whl" }
 jax = {extras = ["tpu"], version = "0.4.23"}
 jaxlib = "0.4.23"
 
-[tool.poetry.extras.dev.dependencies]
+[tool.poetry.group.dev.dependencies]
 pre-commit = "^3.6.0"
 pytest-cov = "^4.1.0"
 pytest = "^7.4.4"
