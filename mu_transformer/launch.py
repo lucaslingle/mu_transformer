@@ -526,13 +526,14 @@ def eval_loop(params, n_eval_step=None):
 
 def main(argv):
     del argv
-    try:
-        jax.distributed.initialize()
-    except Exception:
-        logging.warning("Jax distributed did not init successfully.")
-
     logging.info("=== Start of main() ===")
     logging.info(f"Python version: {sys.version}")
+    try:
+        jax.distributed.initialize()
+    except Exception as e:
+        logging.warning("Jax distributed did not init successfully.")
+        logging.warning("Exception was:")
+        logging.warning(e)
     logging.info(f"JAX process: {jax.process_index()} / {jax.process_count()}")
     logging.info("=== Flags: ===")
     logging.info(f"workdir: {FLAGS.workdir}")

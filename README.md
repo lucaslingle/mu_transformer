@@ -11,67 +11,43 @@ Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466)
 
 ## Installation
 
-### Installation via pip
-
-We require Python 3.9 for compatibility with all dependencies.   
-On TPU VM, it can be installed as follows:
-```
-sudo apt update;
-sudo apt install python3-venv -y;
-sudo apt install python3.8-venv -y;
-sudo apt install python3.9-venv -y;
-```
-
-General installation can then be performed with
-```
-pip3 install --upgrade pip;
-git clone https://github.com/lucaslingle/mu_transformer.git;
-cd mu_transformer;
-
-#### CPU-Only
-pip3 install -e '.[cpu]'; 
-
-#### Cloud TPU VM
-pip3 install -e '.[tpu]' \
-    -f https://storage.googleapis.com/jax-releases/libtpu_releases.html;
-```
-
-### Installation via poetry
-
-You need to install [Pipx](https://github.com/pypa/pipx) and [Poetry](https://github.com/python-poetry/poetry) if they're not installed. 
-
-On a Cloud TPU VM, you can do this via
-```
-python3 -m pip install --user pipx;
-python3 -m pipx ensurepath;
-~/.local/bin/pipx install poetry;
-```
-
-General installation can then be performed with
-```
-git clone https://github.com/lucaslingle/mu_transformer.git;
-cd mu_transformer;
+We require Python 3.9 for compatibility with all dependencies. 
 
 ### CPU
-~/.local/bin/poetry install --with cpu;
-
-### Cloud TPU VM
-~/.local/bin/poetry install --with tpu;
+Installation can be performed with
+```
+git clone https://github.com/lucaslingle/mu_transformer.git;
+cd mu_transformer;
+pip3 install --upgrade pip;
+pip3 install -e '.[cpu]';  #### CPU-Only 
 ```
 
-## Examples
+### TPU
+On a Cloud TPU VM, we recommend installing via Poetry as follows: 
+```
+git clone https://github.com/lucaslingle/mu_transformer.git;
+cd mu_transformer;
+source tpu_setup.sh;
+```
+All Python commands should then be prefaced with ```~/.local/bin/poetry run```.
 
-To train with the default config applied to a tiny model, you can run
+## Basics
+
+### Default config
+
+To train a tiny model on OpenWebText for 10K steps, you can run
 ```
 python3 mu_transformer/launch.py \
     --config=mu_transformer/configs/tiny.py \
     --mode=train \
     --workdir=workdir;
 ```
-A series of model configs, each increasing model size by about 4x, are provided.  
+A series of model configs, each increasing model size by about 4x, are provided.   
 Settings follow ```base.py```, with exception of width and mesh sizes. 
 
-Settings overrides are supported via command line
+### CLI overrides
+
+Setting overrides are supported via command line
 ```
 python3 mu_transformer/launch.py \
     --config=mu_transformer/configs/tiny.py \
@@ -79,6 +55,9 @@ python3 mu_transformer/launch.py \
     --workdir=workdir \
     --config.lr_max=0.123;
 ```
+You may need to override the ```n_mesh_rows```, ```n_mesh_cols```, ```n_mesh_planes``` settings so that their product matches the total number of available devices. 
+
+### Data and tokenizer
 
 This project supports any HuggingFace text dataset and tokenizer out-of-the-box.  
 For instance, to use the [T5 tokenizer](https://huggingface.co/docs/transformers/model_doc/t5#transformers.T5TokenizerFast) and [C4 dataset](https://huggingface.co/datasets/c4), you can write
