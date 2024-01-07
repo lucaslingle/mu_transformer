@@ -65,6 +65,10 @@ poetry run python3 mu_transformer/launch.py \
     --config.hfds_datacol=text;
 ```
 
+### Logging to w&b
+
+To enable logging to [Weights and Biases](https://wandb.ai/), you can run with ```--wb_enabled=True```.  
+
 ## Acknowledgements
 
 This project was supported by Cloud TPUs from Google's TPU Research Cloud (TRC).
