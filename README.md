@@ -21,8 +21,6 @@ poetry install --with tpu  # Cloud TPU VM
 - On Cloud TPU VMs, Pipx and Poetry can be installed via ```./tpu_setup.sh```.
 - On Cloud TPU VMs, you may need to write ```~/.local/bin/poetry``` when invoking Poetry. 
 
-You may wish to use tmux or similar to allow training on cloud hosts without staying logged in. 
-
 ## Basics
 
 ### Default config
@@ -67,7 +65,11 @@ poetry run python3 mu_transformer/launch.py \
 
 ### Logging to w&b
 
-To enable logging to [Weights and Biases](https://wandb.ai/), you can run with ```--wb_enabled=True```.  
+To enable logging to [Weights and Biases](https://wandb.ai/), you can run with ```--wb_enabled=True```.
+
+### Training daemon
+
+You can use [tmux](https://github.com/tmux/tmux) to allow training on cloud hosts without staying logged in.
 
 ## Acknowledgements
 
