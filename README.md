@@ -11,25 +11,14 @@ Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466)
 
 ## Installation
 
-We require Python 3.9 for compatibility with all dependencies. 
-
-### CPU
-Installation can be performed with
+To proceed, install [Pipx](https://github.com/pypa/pipx) and [Poetry](https://github.com/python-poetry/poetry). Then run
 ```
 git clone https://github.com/lucaslingle/mu_transformer.git;
 cd mu_transformer;
-pip3 install --upgrade pip;
-pip3 install -e '.[cpu]';  #### CPU-Only 
+poetry install --with cpu  # on CPU
+poetry install --with cpu  # on Cloud TPU VM
 ```
-
-### TPU
-On a Cloud TPU VM, we recommend installing via Poetry as follows: 
-```
-git clone https://github.com/lucaslingle/mu_transformer.git;
-cd mu_transformer;
-./tpu_setup.sh;
-```
-All Python commands should then be prefaced with ```~/.local/bin/poetry run```.
+On Cloud TPU VM, Pipx and Poetry can be installed via ```./tpu_setup.sh;```
 
 ## Basics
 
@@ -37,7 +26,7 @@ All Python commands should then be prefaced with ```~/.local/bin/poetry run```.
 
 To train a tiny model on OpenWebText for 10K steps, you can run
 ```
-python3 mu_transformer/launch.py \
+poetry run python3 mu_transformer/launch.py \
     --config=mu_transformer/configs/tiny.py \
     --mode=train \
     --workdir=workdir;
@@ -49,7 +38,7 @@ Settings follow ```base.py```, with exception of width and mesh sizes.
 
 Setting overrides are supported via command line
 ```
-python3 mu_transformer/launch.py \
+poetry run python3 mu_transformer/launch.py \
     --config=mu_transformer/configs/tiny.py \
     --mode=train \
     --workdir=workdir \
@@ -62,7 +51,7 @@ You may need to override the ```n_mesh_rows```, ```n_mesh_cols```, ```n_mesh_pla
 This project supports any HuggingFace text dataset and tokenizer out-of-the-box.  
 For instance, to use the [T5 tokenizer](https://huggingface.co/docs/transformers/model_doc/t5#transformers.T5TokenizerFast) and [C4 dataset](https://huggingface.co/datasets/c4), you can write
 ```
-python3 mu_transformer/launch.py \
+poetry run python3 mu_transformer/launch.py \
     --config=mu_transformer/configs/tiny.py \
     --mode=train \
     --workdir=workdir \
