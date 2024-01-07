@@ -11,8 +11,18 @@ Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466)
 
 ## Installation
 
-It is recommended to install the python dependencies in a virtual environment such as venv, pipenv, or miniconda. 
-After activating the environment, install as follows:
+### Installation via pip
+
+We require Python 3.9 for compatibility with all dependencies.   
+On TPU VM, it can be installed as follows:
+```
+sudo apt update;
+sudo apt install python3-venv -y;
+sudo apt install python3.8-venv -y;
+sudo apt install python3.9-venv -y;
+```
+
+General installation can then be performed with
 ```
 pip3 install --upgrade pip;
 git clone https://github.com/lucaslingle/mu_transformer.git;
@@ -25,7 +35,29 @@ pip3 install -e '.[cpu]';
 pip3 install -e '.[tpu]' \
     -f https://storage.googleapis.com/jax-releases/libtpu_releases.html;
 ```
-To install via pipenv, write ```pipenv install ...```. 
+
+### Installation via poetry
+
+You need to install [Pipx](https://github.com/pypa/pipx) and [Poetry](https://github.com/python-poetry/poetry) if they're not installed. 
+
+On a Cloud TPU VM, you can do this via
+```
+python3 -m pip install --user pipx;
+python3 -m pipx ensurepath;
+~/.local/bin/pipx install poetry;
+```
+
+General installation can then be performed with
+```
+git clone https://github.com/lucaslingle/mu_transformer.git;
+cd mu_transformer;
+
+### CPU
+~/.local/bin/poetry install --with cpu;
+
+### Cloud TPU VM
+~/.local/bin/poetry install --with tpu;
+```
 
 ## Examples
 
