@@ -27,7 +27,9 @@ def get_base_config():
     config.hfds_identifier = "skylion007/openwebtext"
     config.hfds_config = None
     config.hfds_datacol = "text"
-    config.hfds_stream_data = True  # for better perf, should cache preprocessed data
+    config.hfds_stream_data = (
+        True  # todo: https://huggingface.co/docs/datasets/filesystems
+    )
     config.sequence_len = 512
 
     # architecture
