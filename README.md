@@ -10,7 +10,6 @@
 
 Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
 
-Highlights:
 - Passes the correctness tests: *wider is better throughout training* and *coordinate checking*.
 - Supports any HuggingFace text dataset and tokenizer.
 - Supports distributed training on TPU pod slices. 
