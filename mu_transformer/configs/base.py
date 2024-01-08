@@ -27,7 +27,7 @@ def get_base_config():
     config.hfds_identifier = "skylion007/openwebtext"
     config.hfds_config = None
     config.hfds_datacol = "text"
-    config.hfds_stream_data = True  # be careful: if False, a large download may occur!!
+    config.hfds_stream_data = True
     config.sequence_len = 512
 
     # architecture
