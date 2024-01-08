@@ -1,8 +1,9 @@
+
 # Mu-Transformer
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-000000.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Pre-commit: enabled](https://img.shields.io/badge/pre--commit-enabled-000000?logo=pre-commit&logoColor=white)](https://pre-commit.com/)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![License: Apache 2.0](https://img.shields.io/badge/License:-Apache_2.0-000000?labelColor=black)](https://opensource.org/licenses/Apache-2.0)
+[![Pre-commit: enabled](https://img.shields.io/badge/pre--commit:-enabled-000000?logo=pre-commit&logoColor=white&labelColor=black)](https://pre-commit.com/)
+[![Code style: black](https://img.shields.io/badge/code%20style:-black-000000?labelColor=black)](https://github.com/psf/black)
 <a href="https://wandb.ai/lucaslingle/mu_transformer/workspace?workspace=user-lucaslingle">
     <img src="https://img.shields.io/badge/Weights_&_Biases-000000?style=for-the-badge&logo=WeightsAndBiases&logoColor=yellow"  height="20" />
 </a>
