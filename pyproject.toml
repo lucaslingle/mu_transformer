@@ -1,0 +1,43 @@
+[tool.poetry]
+name = "mu-transformer"
+version = "0.1.0"
+description = "Transformer with Mu-Parameterization, implemented in Jax/Flax."
+authors = ["Lucas Dax Lingle <lucasdaxlingle@gmail.com>"]
+license = "Apache License 2.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.10.dev0"
+flax = "0.7.5"
+etils = "1.5.0"
+absl-py = "2.0.0"
+ml-collections = "0.1.1"
+chex = "0.1.7"
+transformers = "4.36.2"
+datasets = "2.16.1"
+huggingface-hub = "0.20.2"
+numpy = "1.23.5"
+optax = "0.1.7"
+orbax-checkpoint = "0.4.8"
+requests = "^2.31.0"
+tensorflow = "2.12.1"
+tqdm = "4.66.1"
+wandb = "^0.16.1"
+
+[tool.poetry.group.cpu.dependencies]
+jax = "0.4.23"
+jaxlib = "0.4.23"
+
+[tool.poetry.group.tpu.dependencies]
+libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20231213-py3-none-any.whl" }
+jax = {extras = ["tpu"], version = "0.4.23"}
+jaxlib = "0.4.23"
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^3.6.0"
+pytest-cov = "^4.1.0"
+pytest = "^7.4.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

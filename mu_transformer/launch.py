@@ -13,6 +13,7 @@
 # limitations under the License.
 import functools
 import re
+import sys
 import time
 
 import flax.linen as nn
@@ -304,8 +305,8 @@ def train_step(state, batch):
 
 def train_loop():
     log_level = logging.INFO
-    logging.log(log_level, "Entering train loop function...")
-    logging.log(log_level, "Creating W&B connection...")
+    logging.info("Entering train loop function...")
+    logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
             project="mu_transformer",
@@ -314,11 +315,11 @@ def train_loop():
             mode="online" if FLAGS.wb_enabled else "disabled",
             id=FLAGS.wb_run,
         )
-    logging.log(log_level, "Creating RNGs...")
+    logging.info("Creating RNGs...")
     rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
     rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())
 
-    logging.log(log_level, "Creating train state...")
+    logging.info("Creating train state...")
     load_checkpoint_mgr = checkpoint_manager_factory(option="load")
     state = train_state_factory(rng_init)
     if load_checkpoint_mgr.latest_step() is not None:
@@ -326,20 +327,20 @@ def train_loop():
     start_step = load_checkpoint_mgr.latest_step() or 0
     del load_checkpoint_mgr
 
-    logging.log(log_level, "Creating dataset...")
+    logging.info("Creating dataset...")
     batch_iter_kwargs = dict(
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,
+        hfds_stream_data=FLAGS.config.hfds_stream_data,
         hftr_tokenizer=tokenizer_factory(),
         split_name="train",
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
-        stream_data=FLAGS.config.stream_data,
     )
     batch_iter = get_dataset(**batch_iter_kwargs)
 
-    logging.log(log_level, "Starting training loop...")
+    logging.info("Starting training loop...")
     best_val_loss = float("inf")
     val_metrics = dict()
     global_mesh = global_mesh_factory()
@@ -350,21 +351,51 @@ def train_loop():
     for step in range(start_step, n_total_step + 1):
         # get next batch, and reset at epoch end.
         try:
+            logging.debug("Getting next batch from existing epoch...")
             batch = next(batch_iter)
         except StopIteration:
+            logging.debug(log_level, f"Starting new epoch at step {step}...")
             batch_iter = get_dataset(**batch_iter_kwargs)
             batch = next(batch_iter)
 
+        logging.debug("Got batch...")
+        if logging.get_verbosity() == 1:
+            inputs = batch["inputs"]
+            targets = batch["targets"]
+            loss_mask = batch["loss_mask"]
+            logging.debug(f"Inputs shape (local): {inputs.shape}")
+            logging.debug(f"targets shape (local): {targets.shape}")
+            logging.debug(f"Loss mask shape (local): {loss_mask.shape}")
+
         # distribute local batch arrays to global batch arrays
+        logging.debug("Distributing batch to global array...")
         batch = jtu.tree_map(lambda y: to_global_array(y, global_mesh), batch)
+        if logging.get_verbosity() == 1:
+            jax.block_until_ready(batch)
+            logging.debug("Finished distributing batch to global array...")
+
+        if logging.get_verbosity() == 1:
+            inputs = batch["inputs"]
+            targets = batch["targets"]
+            loss_mask = batch["loss_mask"]
+            logging.debug(f"Inputs shape (global): {inputs.shape}")
+            logging.debug(f"targets shape (global): {targets.shape}")
+            logging.debug(f"Loss mask shape (global): {loss_mask.shape}")
+
         # run a training step
+        logging.debug("Starting train step...")
         state, metrics = train_step(state, batch)
+        if logging.get_verbosity() == 1:
+            state = jax.block_until_ready(state)
+            metrics = jax.block_until_ready(metrics)
+            logging.debug("Finished train step...")
 
         # occasionally print metrics
         if step % FLAGS.config.n_print_step == 0:
             state = jax.block_until_ready(state)
             metrics = jtu.tree_map(lambda a: jax.device_get(a).item(), metrics)
             metrics = jax.block_until_ready(metrics)
+            logging.debug("Starting print action...")
             end_time = time.perf_counter()
             sec_per_step = (end_time - start_time) / FLAGS.config.n_print_step
             essentials = {
@@ -378,14 +409,18 @@ def train_loop():
                 metrics.update(essentials)
                 wandb.log(metrics)
             start_time = end_time
+            logging.debug("Done with print action...")
 
         # occasionally perform an evaluation and save a checkpoint on improvement
         if (step % FLAGS.config.n_save_step == 0) or step == n_total_step:
             state = jax.block_until_ready(state)
+            logging.debug("Starting evaluation action...")
             val_metrics = eval_loop(state.params, n_eval_step=FLAGS.config.n_eval_step)
             if best_val_loss > val_metrics["loss_avg"]:
+                logging.info("Validation loss improved...")
                 do_save(save_checkpoint_mgr, step, state)
                 best_val_loss = val_metrics["loss_avg"]
+            logging.debug("Done with evaluation action...")
 
 
 @jax.jit
@@ -418,30 +453,66 @@ def eval_loop(params, n_eval_step=None):
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,
+        hfds_stream_data=FLAGS.config.hfds_stream_data,
         hftr_tokenizer=tokenizer_factory(),
         split_name="val" if FLAGS.mode == "train" else FLAGS.mode,
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
-        stream_data=FLAGS.config.stream_data,
     )
 
-    start_time = time.perf_counter()
+    global_mesh = global_mesh_factory()
     acc = None
+    start_time = time.perf_counter()
     for i, batch in enumerate(batch_iter):
         logging.info(f"eval step {i}...")
+
+        logging.debug("Got batch...")
+        if logging.get_verbosity() == 1:
+            inputs = batch["inputs"]
+            targets = batch["targets"]
+            loss_mask = batch["loss_mask"]
+            logging.debug(f"Inputs shape (local): {inputs.shape}")
+            logging.debug(f"targets shape (local): {targets.shape}")
+            logging.debug(f"Loss mask shape (local): {loss_mask.shape}")
+
+        # distribute local batch arrays to global batch arrays
+        logging.debug("Distributing batch to global array...")
+        batch = jtu.tree_map(lambda y: to_global_array(y, global_mesh), batch)
+        if logging.get_verbosity() == 1:
+            jax.block_until_ready(batch)
+            logging.debug("Finished distributing batch to global array...")
+
+        if logging.get_verbosity() == 1:
+            inputs = batch["inputs"]
+            targets = batch["targets"]
+            loss_mask = batch["loss_mask"]
+            logging.debug(f"Inputs shape (global): {inputs.shape}")
+            logging.debug(f"targets shape (global): {targets.shape}")
+            logging.debug(f"Loss mask shape (global): {loss_mask.shape}")
+
+        logging.debug("Starting eval step...")
         stats = eval_step(params=params, batch=batch)
         stats = jtu.tree_map(lambda a: jax.device_get(a).item(), stats)
         stats = jax.block_until_ready(stats)  # slows a bit, but makes printout accurate
+        logging.debug("Finished eval step...")
+
+        logging.debug("Starting accumulation step...")
         if acc is not None:
             acc = jtu.tree_map(
                 lambda a, b: (i / (i + 1)) * a + (1 / (i + 1)) * b, acc, stats
             )
         else:
             acc = stats
+        if logging.get_verbosity() == 1:
+            acc = jax.block_until_ready(acc)
+            logging.debug("Finished accumulation step...")
+
         if n_eval_step is not None:
             if i + 1 == n_eval_step:
                 break
 
+    logging.debug("Eval loop finished...")
+    logging.debug("Computing eval metrics...")
     acc = jax.block_until_ready(acc)
     end_time = time.perf_counter()
     eval_metrics = dict(
@@ -449,15 +520,21 @@ def eval_loop(params, n_eval_step=None):
         secs_per_step=(end_time - start_time) / (i + 1),
         **acc,
     )
+    logging.debug("Finished computing eval metrics...")
     return eval_metrics
 
 
 def main(argv):
     del argv
-    logging.set_verbosity(logging.INFO)
-
     logging.info("=== Start of main() ===")
-    logging.info("JAX process: %d / %d", jax.process_index(), jax.process_count())
+    logging.info(f"Python version: {sys.version.__repr__()}")
+    try:
+        jax.distributed.initialize()
+    except Exception as e:
+        logging.warning("Jax distributed did not init successfully.")
+        logging.warning("Exception was:")
+        logging.warning(e)
+    logging.info(f"JAX process: {jax.process_index()} / {jax.process_count()}")
     logging.info("=== Flags: ===")
     logging.info(f"workdir: {FLAGS.workdir}")
     logging.info(f"mode: {FLAGS.mode}")
@@ -466,6 +543,7 @@ def main(argv):
     logging.info(f"wb_run: {FLAGS.wb_run}")
     logging.info(f"loading_name: {FLAGS.loading_name}")
     logging.info(f"saving_name: {FLAGS.saving_name}")
+    logging.info(f"verbosity: {FLAGS.verbosity}")
     logging.info("=== Config: ===")
     for k, v in vars(FLAGS.config)["_fields"].items():
         logging.info(f"{k}: {v}")
@@ -481,14 +559,10 @@ def main(argv):
     assert n_row * n_col * n_plane == n_device
     assert n_example >= n_device  # dataloader quirk
     assert n_example % n_row == 0  # parallelize batch across rows
-    assert d_model >= n_col  # parallelize layers across columns
+    assert d_model >= n_col  # parallelize residuals across columns
     assert d_model % n_col == 0
     assert n_head >= n_plane  # parallelize hidden activations across planes
     assert n_head % n_plane == 0
-    try:
-        jax.distributed.initialize()
-    except Exception:
-        logging.warning("Jax distributed did not init successfully.")
 
     if FLAGS.mode == "train":
         train_loop()
