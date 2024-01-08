@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import functools
+import os.path as osp
 import re
 import sys
 import time
 
 import flax.linen as nn
+import jax
 import jax.experimental.mesh_utils as jmu
 import jax.numpy as jnp
-import jax.profiler  # !
 import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
@@ -27,7 +28,6 @@ import wandb
 from absl import app
 from absl import flags
 from absl import logging
-from etils import epath
 from flax import traverse_util
 from flax.training import orbax_utils
 from flax.training import train_state as train_utils
@@ -218,10 +218,14 @@ def modelname_factory(option):
     raise NotImplementedError(f"Unrecognized option {option}")
 
 
-def checkpoint_manager_factory(option):
+def modeldir_factory(option, suffix):
     model_name = modelname_factory(option)
+    return osp.join(FLAGS.workdir, model_name, suffix)
+
+
+def checkpoint_manager_factory(option):
     return ocp.CheckpointManager(
-        directory=epath.Path(FLAGS.workdir) / model_name / "checkpoints",
+        directory=modeldir_factory(option, "checkpoints"),
         checkpointers=ocp.Checkpointer(ocp.PyTreeCheckpointHandler()),
         options=ocp.CheckpointManagerOptions(
             create=True,
@@ -417,7 +421,7 @@ def train_loop():
             if jax.process_index() == 0 and step == FLAGS.config.n_save_step:
                 assert FLAGS.config.n_save_step > FLAGS.config.n_print_step
                 logging.info("Starting profiler trace...")
-                jax.profiler.start_trace(f"{FLAGS.workdir}/tensorboard/")
+                jax.profiler.start_trace(modeldir_factory("save", "tensorboard"))
             logging.debug("Done with evaluation action...")
 
 

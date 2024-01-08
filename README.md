@@ -87,16 +87,15 @@ To enable logging to [Weights and Biases](https://wandb.ai/), you can run with `
 
 You can use [tmux](https://github.com/tmux/tmux) to allow training on cloud hosts without staying logged in.
 
-### Profiling
+### Profiling remotely
 
-we capture a profiler trace between steps ```n_save_step``` and ```2 * n_save_step```, viewable in tensorboard.  
-You can view it by running the following command in a separate shell:
+We capture a profiler trace between steps ```n_save_step``` and ```2 * n_save_step```, viewable in tensorboard. You can view it by running the following command in a separate shell:
 ```
-poetry run tensorboard --logdir=/tmp/workdir/tensorboard
+poetry run tensorboard --logdir=/tmp/workdir/model_name/tensorboard
 ```
-The correct logdir is the tensorboard subdirectory of your workdir. 
-If running remotely, you must also set up port forwarding as described [here](https://jax.readthedocs.io/en/latest/profiling.html#remote-profiling). 
-To browse the profile trace, go to ```http://localhost:6006```. 
+The correct logdir is a tensorboard subdirectory of your workdir. 
+If running remotely, you will need to set up port forwarding to view the trace, as described [here](https://jax.readthedocs.io/en/latest/profiling.html#remote-profiling). 
+To browse the trace, go to ```http://localhost:6006```. 
 
 ## Acknowledgements
 
