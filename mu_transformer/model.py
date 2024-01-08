@@ -148,7 +148,7 @@ class MultiheadSelfAttention(nn.Module):
             D=self.hps.d_head,
             H=self.hps.d_model // self.hps.d_head,
         )
-        x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
+        x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
 
         # zero init; appdx d.2
