@@ -17,9 +17,9 @@ import sys
 import time
 
 import flax.linen as nn
-import jax
 import jax.experimental.mesh_utils as jmu
 import jax.numpy as jnp
+import jax.profiler  # !
 import jax.tree_util as jtu
 import optax
 import orbax.checkpoint as ocp
@@ -309,7 +309,7 @@ def train_loop():
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer",
+            project="mu_transformer_private",
             config=vars(FLAGS.config)["_fields"],
             resume="never" if FLAGS.wb_run is None else "must",
             mode="online" if FLAGS.wb_enabled else "disabled",
@@ -345,6 +345,7 @@ def train_loop():
     val_metrics = dict()
     global_mesh = global_mesh_factory()
     save_checkpoint_mgr = checkpoint_manager_factory(option="save")
+    log_level_is_debug = logging.get_verbosity() == 1
     start_time = time.perf_counter()
     # the user should set n_finetune_step > 0 if and only if currently fine-tuning.
     n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
@@ -357,38 +358,26 @@ def train_loop():
             logging.debug(log_level, f"Starting new epoch at step {step}...")
             batch_iter = get_dataset(**batch_iter_kwargs)
             batch = next(batch_iter)
-
         logging.debug("Got batch...")
-        if logging.get_verbosity() == 1:
-            inputs = batch["inputs"]
-            targets = batch["targets"]
-            loss_mask = batch["loss_mask"]
-            logging.debug(f"Inputs shape (local): {inputs.shape}")
-            logging.debug(f"targets shape (local): {targets.shape}")
-            logging.debug(f"Loss mask shape (local): {loss_mask.shape}")
+        logging.debug("Inputs shape (local): {0}".format(batch["inputs"].shape))
+        logging.debug("Targets shape (local): {0}".format(batch["targets"].shape))
+        logging.debug("Loss mask shape (local): {0}".format(batch["loss_mask"].shape))
 
         # distribute local batch arrays to global batch arrays
         logging.debug("Distributing batch to global array...")
         batch = jtu.tree_map(lambda y: to_global_array(y, global_mesh), batch)
-        if logging.get_verbosity() == 1:
-            jax.block_until_ready(batch)
-            logging.debug("Finished distributing batch to global array...")
-
-        if logging.get_verbosity() == 1:
-            inputs = batch["inputs"]
-            targets = batch["targets"]
-            loss_mask = batch["loss_mask"]
-            logging.debug(f"Inputs shape (global): {inputs.shape}")
-            logging.debug(f"targets shape (global): {targets.shape}")
-            logging.debug(f"Loss mask shape (global): {loss_mask.shape}")
+        batch = jax.block_until_ready(batch) if log_level_is_debug else batch
+        logging.debug("Finished distributing batch to global array...")
+        logging.debug("Inputs shape (global): {0}".format(batch["inputs"].shape))
+        logging.debug("Targets shape (global): {0}".format(batch["targets"].shape))
+        logging.debug("Loss mask shape (global): {0}".format(batch["loss_mask"].shape))
 
         # run a training step
         logging.debug("Starting train step...")
         state, metrics = train_step(state, batch)
-        if logging.get_verbosity() == 1:
-            state = jax.block_until_ready(state)
-            metrics = jax.block_until_ready(metrics)
-            logging.debug("Finished train step...")
+        state = jax.block_until_ready(state) if log_level_is_debug else state
+        metrics = jax.block_until_ready(metrics) if log_level_is_debug else metrics
+        logging.debug("Finished train step...")
 
         # occasionally print metrics
         if step % FLAGS.config.n_print_step == 0:
@@ -414,12 +403,21 @@ def train_loop():
         # occasionally perform an evaluation and save a checkpoint on improvement
         if (step % FLAGS.config.n_save_step == 0) or step == n_total_step:
             state = jax.block_until_ready(state)
+            # stop profiler
+            if jax.process_index() == 0 and step == 2 * FLAGS.config.n_save_step:
+                logging.info("Stopping profiler trace...")
+                jax.profiler.stop_trace()
             logging.debug("Starting evaluation action...")
             val_metrics = eval_loop(state.params, n_eval_step=FLAGS.config.n_eval_step)
             if best_val_loss > val_metrics["loss_avg"]:
                 logging.info("Validation loss improved...")
                 do_save(save_checkpoint_mgr, step, state)
                 best_val_loss = val_metrics["loss_avg"]
+            # start profiler
+            if jax.process_index() == 0 and step == FLAGS.config.n_save_step:
+                assert FLAGS.config.n_save_step > FLAGS.config.n_print_step
+                logging.info("Starting profiler trace...")
+                jax.profiler.start_trace(f"{FLAGS.workdir}/tensorboard/")
             logging.debug("Done with evaluation action...")
 
 

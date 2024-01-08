@@ -23,8 +23,8 @@ To proceed, install [Pipx](https://github.com/pypa/pipx) and [Poetry](https://gi
 ```
 git clone https://github.com/lucaslingle/mu_transformer.git;
 cd mu_transformer;
-poetry install --with cpu  # CPU
-poetry install --with tpu  # Cloud TPU VM
+poetry install --with cpu --without tpu;  # CPU
+poetry install --with tpu;                # Cloud TPU VM
 ```
 - On Cloud TPU VMs, Pipx and Poetry can be installed via ```./tpu_setup.sh```.
 - On Cloud TPU VMs, you may need to write ```~/.local/bin/poetry``` when invoking Poetry. 
@@ -83,9 +83,20 @@ poetry run python3 mu_transformer/launch.py \
 
 To enable logging to [Weights and Biases](https://wandb.ai/), you can run with ```--wb_enabled=True```.
 
-### Training daemon
+### Training remotely
 
 You can use [tmux](https://github.com/tmux/tmux) to allow training on cloud hosts without staying logged in.
+
+### Profiling
+
+we capture a profiler trace between steps ```n_save_step``` and ```2 * n_save_step```, viewable in tensorboard.  
+You can view it by running the following command in a separate shell:
+```
+poetry run tensorboard --logdir=/tmp/workdir/tensorboard
+```
+The correct logdir is the tensorboard subdirectory of your workdir. 
+If running remotely, you must also set up port forwarding as described [here](https://jax.readthedocs.io/en/latest/profiling.html#remote-profiling). 
+To browse the profile trace, go to ```http://localhost:6006```. 
 
 ## Acknowledgements
 
