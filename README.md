@@ -73,7 +73,8 @@ poetry run python3 mu_transformer/launch.py \
 
 ### Logging to w&b
 
-To enable logging to [Weights and Biases](https://wandb.ai/), you can run with ```--wb_enabled=True```.
+To enable logging to [Weights and Biases](https://wandb.ai/), you can run with ```--wb_enabled=True```.  
+You may also need to export your API key beforehand as detailed [here](https://docs.wandb.ai/guides/track/environment-variables). 
 
 ### Training daemon
 
