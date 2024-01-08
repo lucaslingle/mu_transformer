@@ -1,6 +1,8 @@
 
 # Mu-Transformer
 
+Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
+
 [![License: Apache 2.0](https://img.shields.io/badge/License:-Apache_2.0-FFFFFF?labelColor=FFFFFF&style=flat-square)](https://opensource.org/licenses/Apache-2.0)
 [![Pre-commit: enabled](https://img.shields.io/badge/Pre--Commit:-Enabled-FFFFFF?logo=pre-commit&logoColor=black&labelColor=FFFFFF&style=flat-square)](https://pre-commit.com/)
 [![Code style: black](https://img.shields.io/badge/Code%20Style:-Black-FFFFFF?labelColor=FFFFFF&style=flat-square)](https://github.com/psf/black)
@@ -8,8 +10,7 @@
     <img src="https://img.shields.io/badge/Weights_&_Biases-FFFFFF?style=for-the-badge&logo=WeightsAndBiases&logoColor=yellow&labelColor=FFFFFF"  height="20" />
 </a>
 
-Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
-
+Highlights:
 - Passes the correctness tests: *wider is better throughout training* and *coordinate checking*.
 - Supports any HuggingFace text dataset and tokenizer.
 - Supports distributed training on TPU pod slices. 
