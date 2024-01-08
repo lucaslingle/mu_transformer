@@ -85,7 +85,7 @@ def get_dataset(
         hfds_identifier,
         hfds_config,
         split=hfds_split,
-        streaming=stream_data,
+        streaming=hfds_stream_data,
     )
 
     # shard by host, then tokenize the host's shard only
