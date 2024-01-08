@@ -332,11 +332,11 @@ def train_loop():
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,
+        hfds_stream_data=FLAGS.config.hfds_stream_data,
         hftr_tokenizer=tokenizer_factory(),
         split_name="train",
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
-        stream_data=FLAGS.config.stream_data,
     )
     batch_iter = get_dataset(**batch_iter_kwargs)
 
@@ -453,11 +453,11 @@ def eval_loop(params, n_eval_step=None):
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,
+        hfds_stream_data=FLAGS.config.hfds_stream_data,
         hftr_tokenizer=tokenizer_factory(),
         split_name="val" if FLAGS.mode == "train" else FLAGS.mode,
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
-        stream_data=FLAGS.config.stream_data,
     )
 
     global_mesh = global_mesh_factory()

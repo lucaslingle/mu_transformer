@@ -18,9 +18,8 @@ from ml_collections import config_dict
 def get_base_config():
     config = config_dict.ConfigDict()
 
-    # plotting/logging
+    # logging/plotting
     config.sow_intermediates = True
-    config.stream_data = True  # BE CAREFUL: if False, a very large download may occur!!
 
     # huggingface tokenizer and dataset settings
     config.hftr_tokenizer_name = "GPT2TokenizerFast"
@@ -28,6 +27,7 @@ def get_base_config():
     config.hfds_identifier = "skylion007/openwebtext"
     config.hfds_config = None
     config.hfds_datacol = "text"
+    config.hfds_stream_data = True  # note: if False, a very large download may occur
     config.sequence_len = 512
 
     # architecture

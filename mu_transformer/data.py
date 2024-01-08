@@ -50,11 +50,11 @@ def get_dataset(
     hfds_identifier: str,
     hfds_config: str,
     hfds_datacol: str,
+    hfds_stream_data: bool,
     hftr_tokenizer: hftr.PreTrainedTokenizerFast,
     split_name: str,
     batch_size: int,
     sequence_len: int,
-    stream_data: bool,
 ) -> Iterator[Mapping[str, np.ndarray]]:
 
     # get shard info
