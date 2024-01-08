@@ -95,7 +95,7 @@ poetry run tensorboard --logdir=/tmp/workdir/model_name/tensorboard
 ```
 The correct logdir is a tensorboard subdirectory of your workdir. 
 If running remotely, you will need to set up port forwarding to view the trace, as described [here](https://jax.readthedocs.io/en/latest/profiling.html#remote-profiling). 
-To browse the trace, go to ```http://localhost:6006```. 
+To browse the trace, go to ```http://localhost:6006```, navigate to the profile tab, and select 'trace viewer' from the tools list. 
 
 ## Acknowledgements
 
