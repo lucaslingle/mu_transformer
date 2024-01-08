@@ -5,7 +5,7 @@
 [![Pre-commit: enabled](https://img.shields.io/badge/Pre--Commit:-Enabled-F3FAFF?logo=pre-commit&logoColor=black&labelColor=DFF2FF&style=flat-square)](https://pre-commit.com/)
 [![Code style: black](https://img.shields.io/badge/Code%20Style:-Black-F3FAFF?labelColor=DFF2FF&style=flat-square)](https://github.com/psf/black)
 <a href="https://wandb.ai/lucaslingle/mu_transformer/workspace?workspace=user-lucaslingle">
-    <img src="https://img.shields.io/badge/Weights_&_Biases-F3FAFF?style=for-the-badge&logo=WeightsAndBiases&logoColor=yellow"  height="20" />
+    <img src="https://img.shields.io/badge/Weights_&_Biases-F3FAFF?style=for-the-badge&logo=WeightsAndBiases&logoColor=black&labelColor=DFF2FF"  height="20" />
 </a>
 
 Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
