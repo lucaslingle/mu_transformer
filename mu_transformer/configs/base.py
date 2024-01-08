@@ -27,9 +27,7 @@ def get_base_config():
     config.hfds_identifier = "skylion007/openwebtext"
     config.hfds_config = None
     config.hfds_datacol = "text"
-    config.hfds_stream_data = (
-        True  # todo: https://huggingface.co/docs/datasets/filesystems
-    )
+    config.hfds_stream_data = True  # we currently require large local download if False
     config.sequence_len = 512
 
     # architecture
