@@ -1,9 +1,9 @@
 
 # Mu-Transformer
 
-[![License: Apache 2.0](https://img.shields.io/badge/License:-Apache_2.0-DFF2FF?labelColor=ADD8E6&style=flat-square)](https://opensource.org/licenses/Apache-2.0)
-[![Pre-commit: enabled](https://img.shields.io/badge/Pre--Commit:-Enabled-DFF2FF?logo=pre-commit&logoColor=black&labelColor=ADD8E6&style=flat-square)](https://pre-commit.com/)
-[![Code style: black](https://img.shields.io/badge/Code%20Style:-Black-DFF2FF?labelColor=ADD8E6&style=flat-square)](https://github.com/psf/black)
+[![License: Apache 2.0](https://img.shields.io/badge/License:-Apache_2.0-DFF2FF?labelColor=A3D5FF&style=flat-square)](https://opensource.org/licenses/Apache-2.0)
+[![Pre-commit: enabled](https://img.shields.io/badge/Pre--Commit:-Enabled-DFF2FF?logo=pre-commit&logoColor=black&labelColor=A3D5FF&style=flat-square)](https://pre-commit.com/)
+[![Code style: black](https://img.shields.io/badge/Code%20Style:-Black-DFF2FF?labelColor=A3D5FF&style=flat-square)](https://github.com/psf/black)
 <a href="https://wandb.ai/lucaslingle/mu_transformer/workspace?workspace=user-lucaslingle">
     <img src="https://img.shields.io/badge/Weights_&_Biases-DFF2FF?style=for-the-badge&logo=WeightsAndBiases&logoColor=yellow"  height="20" />
 </a>
