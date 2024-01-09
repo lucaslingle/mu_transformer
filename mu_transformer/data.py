@@ -51,6 +51,7 @@ def get_dataset(
     hfds_config: str,
     hfds_datacol: str,
     hfds_stream_data: bool,
+    hfds_buffer_size: int,
     hftr_tokenizer: hftr.PreTrainedTokenizerFast,
     split_name: str,
     batch_size: int,
@@ -109,13 +110,13 @@ def get_dataset(
     ds = ds.map(
         shard_by_host,
         batched=True,
-        batch_size=1024 * jax.process_count(),
+        batch_size=hfds_buffer_size * jax.process_count(),
         remove_columns=list(ds.column_names),
     )
     ds = ds.map(
         tokenize,
         batched=True,
-        batch_size=1024,
+        batch_size=hfds_buffer_size,
     )
 
     # automatically split the training split if there aren't any other provided splits

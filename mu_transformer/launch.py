@@ -337,6 +337,7 @@ def train_loop():
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,
         hfds_stream_data=FLAGS.config.hfds_stream_data,
+        hfds_buffer_size=FLAGS.config.hfds_buffer_size,
         hftr_tokenizer=tokenizer_factory(),
         split_name="train",
         batch_size=global_batch_size_factory() // jax.process_count(),
@@ -421,7 +422,10 @@ def train_loop():
             if jax.process_index() == 0 and step == FLAGS.config.n_save_step:
                 assert FLAGS.config.n_save_step > FLAGS.config.n_print_step
                 logging.info("Starting profiler trace...")
-                jax.profiler.start_trace(modeldir_factory("save", "tensorboard"))
+                jax.profiler.start_trace(
+                    log_dir=modeldir_factory("save", "tensorboard"),
+                    create_perfetto_trace=True,  # writes extra trace file for perfetto
+                )
             logging.debug("Done with evaluation action...")
 
 
@@ -456,6 +460,7 @@ def eval_loop(params, n_eval_step=None):
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,
         hfds_stream_data=FLAGS.config.hfds_stream_data,
+        hfds_buffer_size=FLAGS.config.hfds_buffer_size,
         hftr_tokenizer=tokenizer_factory(),
         split_name="val" if FLAGS.mode == "train" else FLAGS.mode,
         batch_size=global_batch_size_factory() // jax.process_count(),

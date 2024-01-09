@@ -28,6 +28,7 @@ def get_base_config():
     config.hfds_config = None
     config.hfds_datacol = "text"
     config.hfds_stream_data = True  # we currently require large local download if False
+    config.hfds_buffer_size = 1024  # example buffer length for batched tokenization
     config.sequence_len = 512
 
     # architecture
