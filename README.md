@@ -23,8 +23,8 @@ To proceed, install [Pipx](https://github.com/pypa/pipx) and [Poetry](https://gi
 ```
 git clone https://github.com/lucaslingle/mu_transformer.git;
 cd mu_transformer;
-poetry install --with cpu  # CPU
-poetry install --with tpu  # Cloud TPU VM
+poetry install --with cpu --without tpu;  # CPU
+poetry install --with tpu;                # Cloud TPU VM
 ```
 - On Cloud TPU VMs, Pipx and Poetry can be installed via ```./tpu_setup.sh```.
 - On Cloud TPU VMs, you may need to write ```~/.local/bin/poetry``` when invoking Poetry. 
@@ -83,9 +83,14 @@ poetry run python3 mu_transformer/launch.py \
 
 To enable logging to [Weights and Biases](https://wandb.ai/), you can run with ```--wb_enabled=True```.
 
-### Training daemon
+### Training remotely
 
-You can use [tmux](https://github.com/tmux/tmux) to allow training on cloud hosts without staying logged in.
+To allow training on cloud hosts without staying logged in, you can use a detached [tmux](https://github.com/tmux/tmux) session. 
+
+### Profiling
+
+We capture a profile trace from step ```n_save_step``` to ```2 * n_save_step```. 
+The trace is saved to a subdirectory of the workdir, and ends with ```.trace.json.gz```. To visualize the trace, upload it to ```https://ui.perfetto.dev```. 
 
 ## Acknowledgements
 
