@@ -23,7 +23,6 @@ requests = "^2.31.0"
 tensorflow = "2.12.1"
 tqdm = "4.66.1"
 wandb = "^0.16.1"
-tensorboard-plugin-profile = "2.15.0"
 
 [tool.poetry.group.cpu.dependencies]
 jax = {extras = ["cpu"], version = "0.4.23"}
