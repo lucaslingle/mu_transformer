@@ -423,7 +423,7 @@ def train_loop():
                 assert FLAGS.config.n_save_step > FLAGS.config.n_print_step
                 logging.info("Starting profiler trace...")
                 jax.profiler.start_trace(
-                    log_dir=modeldir_factory("save", "tensorboard"),
+                    log_dir=modeldir_factory("save", "profiling"),
                     create_perfetto_trace=True,  # writes extra trace file for perfetto
                 )
             logging.debug("Done with evaluation action...")
