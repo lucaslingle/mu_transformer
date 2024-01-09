@@ -219,8 +219,7 @@ def modelname_factory(option):
 
 
 def modeldir_factory(option, suffix):
-    model_name = modelname_factory(option)
-    return osp.join(FLAGS.workdir, model_name, suffix)
+    return osp.join(FLAGS.workdir, modelname_factory(option), suffix)
 
 
 def checkpoint_manager_factory(option):
@@ -423,7 +422,7 @@ def train_loop():
                 assert FLAGS.config.n_save_step > FLAGS.config.n_print_step
                 logging.info("Starting profiler trace...")
                 jax.profiler.start_trace(
-                    log_dir=modeldir_factory("save", "profiling"),
+                    log_dir=modeldir_factory("save", "logging"),
                     create_perfetto_trace=True,  # writes extra trace file for perfetto
                 )
             logging.debug("Done with evaluation action...")
