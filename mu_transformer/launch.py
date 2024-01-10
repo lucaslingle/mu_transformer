@@ -49,11 +49,11 @@ config_flags.DEFINE_config_file("config", None, "Configuration file", lock_confi
 flags.DEFINE_string("workdir", None, "Working directory (local or GCS)")
 flags.DEFINE_enum("mode", None, ["train", "val", "test"], "Mode")
 flags.DEFINE_integer("seed", 0, "Experiment seed")
-flags.DEFINE_boolean("wb_enabled", None, "Log to W&B")
+flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
 flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
 flags.DEFINE_string("loading_name", None, "Model name to load; None = use autogen")
 flags.DEFINE_string("saving_name", None, "Model name to save; None = use autogen")
-flags.mark_flags_as_required(["config", "workdir", "mode", "wb_enabled"])
+flags.mark_flags_as_required(["config", "workdir", "mode"])
 
 
 @functools.lru_cache(maxsize=1)
