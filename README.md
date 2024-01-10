@@ -26,7 +26,7 @@ cd mu_transformer;
 poetry install --with cpu --without tpu;  # CPU
 poetry install --with tpu;                # Cloud TPU VM
 ```
-- On Cloud TPU VMs, Pipx and Poetry can be installed via ```./tpu_setup.sh```.
+- On Cloud TPU VMs, Pipx and Poetry can be installed via ```tpu_setup.sh;```.
 - On Cloud TPU VMs, you may need to write ```~/.local/bin/poetry``` when invoking Poetry. 
 
 ## Basics
