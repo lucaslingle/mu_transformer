@@ -407,24 +407,24 @@ def train_loop():
         # occasionally perform an evaluation and save a checkpoint on improvement
         if (step % FLAGS.config.n_save_step == 0) or step == n_total_step:
             state = jax.block_until_ready(state)
-            # # stop profiler
-            # if jax.process_index() == 0 and step == 2 * FLAGS.config.n_save_step:
-            #     logging.info("Stopping profiler trace...")
-            #     jax.profiler.stop_trace()
+            # stop profiler
+            if jax.process_index() == 0 and step == 2 * FLAGS.config.n_save_step:
+                logging.info("Stopping profiler trace...")
+                jax.profiler.stop_trace()
             logging.debug("Starting evaluation action...")
             val_metrics = eval_loop(state.params, n_eval_step=FLAGS.config.n_eval_step)
             if best_val_loss > val_metrics["loss_avg"]:
                 logging.info("Validation loss improved...")
                 do_save(save_checkpoint_mgr, step, state)
                 best_val_loss = val_metrics["loss_avg"]
-            # # start profiler
-            # if jax.process_index() == 0 and step == FLAGS.config.n_save_step:
-            #     assert FLAGS.config.n_save_step > FLAGS.config.n_print_step
-            #     logging.info("Starting profiler trace...")
-            #     jax.profiler.start_trace(
-            #         log_dir=modeldir_factory("save", "logging"),
-            #         create_perfetto_trace=True,  # writes extra trace file for perfetto
-            #     )
+            # start profiler
+            if jax.process_index() == 0 and step == FLAGS.config.n_save_step:
+                assert FLAGS.config.n_save_step > FLAGS.config.n_print_step
+                logging.info("Starting profiler trace...")
+                jax.profiler.start_trace(
+                    log_dir=modeldir_factory("save", "logging"),
+                    # create_perfetto_trace=True,  # write extra trace file for perfetto
+                )
             logging.debug("Done with evaluation action...")
 
 
