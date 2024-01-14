@@ -87,12 +87,10 @@ To enable logging to [Weights and Biases](https://wandb.ai/), you can run with `
 
 To allow training on cloud hosts without staying logged in, you can use a detached [tmux](https://github.com/tmux/tmux) session. 
 
-<!-- 
-### Profiling
+### Performance profiling
 
 We capture a profile trace from step ```n_save_step``` to ```2 * n_save_step```. 
 The trace is saved to a subdirectory of the workdir, and ends with ```.trace.json.gz```. To visualize the trace, upload it to ```https://ui.perfetto.dev```. 
--->
 
 ## Acknowledgements
 
