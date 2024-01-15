@@ -122,6 +122,14 @@ def grad_transform_factory():
     lr = FLAGS.config.lr_max
     dm = FLAGS.config.d_model
     dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
+    # adam optimizer for standard parametrization
+    if not FLAGS.config.use_mup:
+        return optax.chain(
+            optax.clip_by_global_norm(FLAGS.config.grad_clip),
+            optax.adam(lr, **kws),
+            optax.scale_by_schedule(schedule_factory()),
+        )
+    # adam optimizer for mu-parametrization
     return optax.chain(
         optax.clip_by_global_norm(FLAGS.config.grad_clip),
         optax.multi_transform(
