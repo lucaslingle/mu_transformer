@@ -35,6 +35,7 @@ def get_base_config():
     config.param_dtype = jnp.float32  # master copy of weights in fp32
     config.dtype = jnp.bfloat16  # weights and activations are in bfloat16 on fwd/bwd
     config.output_logits_dtype = jnp.bfloat16  # for bfloat16 grad; is fp32 during eval
+    config.use_mup = True  # use mu-parameterization or standard parametrization?
     config.n_layer = 12
     config.d_head = 256
     config.ff_multiple = 4
