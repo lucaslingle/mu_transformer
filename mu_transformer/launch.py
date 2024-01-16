@@ -206,10 +206,14 @@ def global_batch_size_factory():
 def automatic_modelname_factory():
     dataset_name = FLAGS.config.hfds_identifier.split("/")[-1].lower()
     assert re.search(r"^[a-zA-Z0-9-_]+$", dataset_name) is not None  # ^=start, $=end.
+    lr = str(FLAGS.config.lr_max).split(".")
+    assert len(lr) == 2
     parts = [
         "mutransformer",
+        "mup" if FLAGS.config.use_mup else "sp",
         dataset_name,
         FLAGS.config.model_size,
+        f"a{lr[0]}point{lr[1]}",
         f"b{global_batch_size_factory()}",
         f"t{FLAGS.config.sequence_len}",
         f"s{FLAGS.config.n_pretrain_step}",
