@@ -126,7 +126,11 @@ def write_dataset_to_memmmap(
     # whatever the official split we're working with happens to be,
     # need to shard by host and drop remainder
     dataset_info = list(hfds.get_dataset_infos(hfds_identifier).values())[0]
-    full_len = dataset_info.splits.get(hfds_split).num_examples
+    try:
+        full_len = dataset_info.splits.get(hfds_split).num_examples
+    except AttributeError as e:
+        logging.error("You're using a bad dataset, it has no num_examples metadata...")
+        raise e
     sharded_full_len = (full_len // pcount) * pcount
     ds = ds.take(sharded_full_len)
 
