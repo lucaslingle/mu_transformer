@@ -69,9 +69,10 @@ def get_dataset(
 
     # get available splits, and pick one.
     hfds_splits_set = set(hfds.get_dataset_split_names(hfds_identifier))
-    if len(hfds_splits_set) == 1:
-        # if only one split is available, we'll do this split ourselves later.
-        hfds_split = set(y for y in hfds_splits_set).pop()
+    if len(hfds_splits_set) != 3:
+        # we'll split the training data later, since there aren't enough provided splits
+        hfds_split = "train"
+        assert hfds_split in hfds_splits_set
     elif split_name in hfds_splits_set:
         # use user-provided split name if possible
         hfds_split = split_name
@@ -90,16 +91,11 @@ def get_dataset(
     )
 
     # shard by host, then tokenize the host's shard only
-    assert "content_" not in set(ds.column_names)
-
-    def shard_by_host(examples):
+    def processing_fn(examples):
         examples = examples[hfds_datacol]
         examples = [e for i, e in enumerate(examples) if i % pcount == pindex]
-        return {"content_": examples}
-
-    def tokenize(examples):
         targets = hftr_tokenizer(
-            examples["content_"],
+            examples,
             padding="max_length",
             truncation=True,
             max_length=sequence_len,
@@ -108,19 +104,14 @@ def get_dataset(
         return {"inputs": inputs, "targets": targets}
 
     ds = ds.map(
-        shard_by_host,
+        processing_fn,
         batched=True,
         batch_size=hfds_buffer_size * jax.process_count(),
         remove_columns=list(ds.column_names),
     )
-    ds = ds.map(
-        tokenize,
-        batched=True,
-        batch_size=hfds_buffer_size,
-    )
 
-    # automatically split the training split if there aren't any other provided splits
-    if len(hfds_splits_set) == 1:
+    # automatically split the training split if there aren't enough provided splits
+    if len(hfds_splits_set) != 3:
         if split_name == "val":
             ds = ds.take(batch_size * 100)
         elif split_name == "test":
