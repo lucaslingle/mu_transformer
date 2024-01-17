@@ -13,8 +13,6 @@
 # limitations under the License.
 import os.path as osp
 import posixpath
-from typing import Iterator
-from typing import Mapping
 from typing import Optional
 
 import datasets as hfds
@@ -53,6 +51,11 @@ def get_tokenizer(
 
 def get_shard_fname(workdir, identifier, split_name, pindex):
     return posixpath.join(workdir, "data", identifier, f"{split_name}-{pindex}.bin")
+
+
+def get_arr_dtype(vocab_size):
+    assert vocab_size < 65_000
+    return np.uint16
 
 
 # todo: maybe fix up the splitting logic to use the official vat/test split as test,
@@ -150,11 +153,10 @@ def write_dataset_to_memmmap(
 
     n_shard_tokens = sharded_split_len * sequence_len
     n_write_iters = n_shard_tokens // hfds_buffer_size
-    output_fp = get_shard_fname(workdir, hfds_identifier, hfds_split, pindex)
+    local_fp = posixpath.join("/tmp/", posixpath.split(output_fp)[-1])
 
-    assert hftr_tokenizer.vocab_size < 60_000
-    arr_dtype = np.uint16
-    arr = np.memmap(output_fp, dtype=arr_dtype, mode="w+", shape=(n_shard_tokens,))
+    arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
+    arr = np.memmap(local_fp, dtype=arr_dtype, mode="w+", shape=(n_shard_tokens,))
     idx = 0
     for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {output_fp} with memmap"):
         batch = next(ds)
@@ -162,12 +164,15 @@ def write_dataset_to_memmmap(
         arr[idx : idx + len(arr_batch)] = arr_batch
         idx += len(arr_batch)
     arr.flush()
+
+    cloud_fs.upload(local_fp, output_fp)
     return output_fp
 
 
 def read_dataset_to_memmmap(
     gc_project: str,
     hfds_identifier: str,
+    hftr_tokenizer: hftr.PreTrainedTokenizerFast,
     split_name: str,
     pindex: int,
     workdir: str,
@@ -181,7 +186,8 @@ def read_dataset_to_memmmap(
         cloud_fs.download(input_fp, local_fp)
 
     logging.info(f"Reading with np.memmap...")
-    arr = np.memmap(local_fp, dtype=np.uint16, mode="r")
+    arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
+    arr = np.memmap(local_fp, dtype=arr_dtype, mode="r")
     return arr
 
 
@@ -218,6 +224,7 @@ def get_dataset(
     arr = read_dataset_to_memmmap(
         gc_project=gc_project,
         hfds_identifier=hfds_identifier,
+        hftr_tokenizer=hftr_tokenizer,
         split_name=split_name,
         pindex=pindex,
         workdir=workdir,
