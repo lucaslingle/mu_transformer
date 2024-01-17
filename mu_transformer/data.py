@@ -151,22 +151,25 @@ def write_dataset_to_memmmap(
     else:
         sharded_split_len = sharded_full_len
 
-    # we can now guarantee the sharded_split_len is the same on all hosts
+    # all shards will have the same length.
+    # now in addition, we will drop any partial batch from the shard
+    sharded_split_len = (sharded_split_len // hfds_buffer_size) * hfds_buffer_size
+
+    # we can guarantee the sharded_split_len is the same on all hosts
     # so make an iterator and write to memmapped file
+    ds = ds.iter(batch_size=hfds_buffer_size, drop_last_batch=False)
+    local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
+
     n_shard_tokens = sharded_split_len * sequence_len
     n_write_iters = n_shard_tokens // (hfds_buffer_size * sequence_len)
     logging.debug(f"n_shard_tokens: {n_shard_tokens}")
     logging.debug(f"n_write_iters: {n_write_iters}")
-
-    ds = ds.iter(batch_size=hfds_buffer_size, drop_last_batch=True)
-    local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
-
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
     arr = np.memmap(local_fp, dtype=arr_dtype, mode="w+", shape=(n_shard_tokens,))
     idx = 0
     for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {local_fp} with memmap"):
         batch = next(ds)["ids"]
-        arr_batch = np.array(batch, dtype=arr_dtype).view(-1)
+        arr_batch = np.array(batch, dtype=arr_dtype).reshape(-1)
         arr[idx : idx + (hfds_buffer_size * sequence_len)] = arr_batch
         idx += hfds_buffer_size * sequence_len
     arr.flush()
