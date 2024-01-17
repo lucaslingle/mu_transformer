@@ -170,7 +170,7 @@ def write_dataset_to_memmmap(
         logging.debug(f"batch.shape: {batch.shape}")
         arr_batch = np.array(batch, astype=arr_dtype)
         arr[idx : idx + hfds_buffer_size] = arr_batch
-        idx += len(arr_batch)
+        idx += hfds_buffer_size
     arr.flush()
 
     cloud_fs.upload(local_fp, cloud_fp)
