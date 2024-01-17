@@ -166,7 +166,7 @@ def write_dataset_to_memmmap(
     idx = 0
     for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {local_fp} with memmap"):
         batch = next(ds)["ids"]
-        arr_batch = np.array(batch, astype=arr_dtype)
+        arr_batch = np.array(batch, dtype=arr_dtype)
         arr[idx : idx + hfds_buffer_size] = arr_batch
         idx += hfds_buffer_size
     arr.flush()
