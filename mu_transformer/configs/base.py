@@ -24,10 +24,10 @@ def get_base_config():
     # huggingface tokenizer and dataset settings
     config.hftr_tokenizer_name = "GPT2TokenizerFast"
     config.hftr_tokenizer_shortname = "gpt2"
-    config.hfds_identifier = "Skylion007/openwebtext"
+    # config.hfds_identifier = "Skylion007/openwebtext"
+    config.hfds_identifier = "roneneldan/TinyStories"
     config.hfds_config = None
     config.hfds_datacol = "text"
-    config.hfds_stream_data = True  # we currently require large local download if False
     config.hfds_buffer_size = 1024  # example buffer length for batched tokenization
     config.sequence_len = 512
 

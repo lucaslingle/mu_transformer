@@ -22,6 +22,7 @@ import jax
 import jax.experimental.mesh_utils as jmu
 import jax.numpy as jnp
 import jax.tree_util as jtu
+import numpy as np
 import optax
 import orbax.checkpoint as ocp
 import wandb
@@ -33,7 +34,9 @@ from flax.training import orbax_utils
 from flax.training import train_state as train_utils
 from ml_collections import config_flags
 
+from mu_transformer.data import get_batch
 from mu_transformer.data import get_dataset
+from mu_transformer.data import get_loss_mask
 from mu_transformer.data import get_tokenizer
 from mu_transformer.model import MESH_AXES
 from mu_transformer.model import Transformer
@@ -46,8 +49,9 @@ from mu_transformer.sow import split_coord_checks
 
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
-flags.DEFINE_string("workdir", None, "Working directory (local or GCS)")
-flags.DEFINE_enum("mode", None, ["train", "val", "test"], "Mode")
+flags.DEFINE_string("workdir", None, "Working directory (currently must be GCS)")
+flags.DEFINE_string("gc_project", None, "Google Cloud project ID (todo: make optional)")
+flags.DEFINE_enum("mode", None, ["train", "validation", "test"], "Mode")
 flags.DEFINE_integer("seed", 0, "Experiment seed")
 flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
 flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
@@ -69,6 +73,9 @@ def transformer_config_factory(is_train):
     return TransformerConfig.create(
         **vars(FLAGS.config)["_fields"],
         n_vocab=tokenizer_factory().vocab_size,
+        bos_token_id=tokenizer_factory().bos_token_id,
+        eos_token_id=tokenizer_factory().eos_token_id,
+        pad_token_id=tokenizer_factory().pad_token_id,
         is_train=is_train,
     )
 
@@ -276,8 +283,9 @@ def l2norm_pytree(x):
 
 
 def loss_fn(params, batch, config, global_mesh):
+    batch = sharding_constraint(batch, MESH_AXES["RN"], global_mesh)
     init_args = [config, global_mesh]
-    apply_args = [{"params": params}, batch["inputs"]]
+    apply_args = [{"params": params}, batch]  # tokens shifted internally by model
     if FLAGS.config.sow_intermediates:
         logits, mv = Transformer(*init_args).apply(*apply_args, mutable="intermediates")
         sown = traverse_util.flatten_dict(mv["intermediates"])
@@ -287,13 +295,15 @@ def loss_fn(params, batch, config, global_mesh):
     else:
         logits = Transformer(*init_args).apply(*apply_args)
         sown = dict()
-    targets = sharding_constraint(batch["targets"], MESH_AXES["RN"], global_mesh)
-    terms = optax.softmax_cross_entropy_with_integer_labels(
-        logits=logits, labels=targets
+    terms = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=batch)
+    terms = sharding_constraint(terms, MESH_AXES["RN"], global_mesh)
+    mask = get_loss_mask(
+        batch, pad_token_id=config.pad_token_id, eos_token_id=config.eos_token_id
     )
+    mask = sharding_constraint(mask, MESH_AXES["RN"], global_mesh)
     metrics = dict(
-        loss_term_avg=jnp.mean(batch["loss_mask"] * terms),
-        loss_mask_avg=jnp.mean(batch["loss_mask"]),
+        loss_term_avg=jnp.mean(mask * terms),
+        loss_mask_avg=jnp.mean(mask),
     )
     return metrics["loss_term_avg"], dict(**metrics, **sown)
 
@@ -343,18 +353,20 @@ def train_loop():
     del load_checkpoint_mgr
 
     logging.info("Creating dataset...")
-    batch_iter_kwargs = dict(
+    batch_iter = get_dataset(
+        gc_project=FLAGS.gc_project,
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,
-        hfds_stream_data=FLAGS.config.hfds_stream_data,
         hfds_buffer_size=FLAGS.config.hfds_buffer_size,
         hftr_tokenizer=tokenizer_factory(),
         split_name="train",
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
+        pcount=jax.process_count(),
+        pindex=jax.process_index(),
+        workdir=FLAGS.workdir,
     )
-    batch_iter = get_dataset(**batch_iter_kwargs)
 
     logging.info("Starting training loop...")
     best_val_loss = float("inf")
@@ -381,7 +393,7 @@ def train_loop():
 
         # distribute local batch arrays to global batch arrays
         logging.debug("Distributing batch to global array...")
-        batch = jtu.tree_map(lambda y: to_global_array(y, global_mesh), batch)
+        batch = to_global_array(batch, global_mesh)
         batch = jax.block_until_ready(batch) if log_level_is_debug else batch
         logging.debug("Finished distributing batch to global array...")
         logging.debug("Inputs shape (global): {0}".format(batch["inputs"].shape))
@@ -467,15 +479,18 @@ def eval_loop(params, n_eval_step=None):
 
     logging.info("Creating dataset...")
     batch_iter = get_dataset(
+        gc_project=FLAGS.gc_project,
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,
-        hfds_stream_data=FLAGS.config.hfds_stream_data,
         hfds_buffer_size=FLAGS.config.hfds_buffer_size,
         hftr_tokenizer=tokenizer_factory(),
-        split_name="val" if FLAGS.mode == "train" else FLAGS.mode,
+        split_name="validation" if FLAGS.mode == "train" else FLAGS.mode,
         batch_size=global_batch_size_factory() // jax.process_count(),
         sequence_len=FLAGS.config.sequence_len,
+        pcount=jax.process_count(),
+        pindex=jax.process_index(),
+        workdir=FLAGS.workdir,
     )
 
     global_mesh = global_mesh_factory()
@@ -495,7 +510,7 @@ def eval_loop(params, n_eval_step=None):
 
         # distribute local batch arrays to global batch arrays
         logging.debug("Distributing batch to global array...")
-        batch = jtu.tree_map(lambda y: to_global_array(y, global_mesh), batch)
+        batch = to_global_array(batch, global_mesh)
         if logging.get_verbosity() == 1:
             jax.block_until_ready(batch)
             logging.debug("Finished distributing batch to global array...")
@@ -584,7 +599,7 @@ def main(argv):
 
     if FLAGS.mode == "train":
         train_loop()
-    elif FLAGS.mode in {"val", "test"}:
+    elif FLAGS.mode in {"validation", "test"}:
         eval_metrics = eval_loop(params=None, n_eval_step=None)
         eval_loss = eval_metrics["loss_avg"]
         logging.info(f"Eval metrics: {eval_metrics}")
