@@ -169,7 +169,7 @@ def write_dataset_to_memmmap(
         batch = next(ds)["ids"]
         logging.debug(f"batch:\n{batch}")
         logging.debug(f"batch.shape: {batch.shape}")
-        arr_batch = np.concatenate(batch["ids"])
+        arr_batch = np.concatenate(batch)
         arr[idx : idx + len(arr_batch)] = arr_batch
         idx += len(arr_batch)
     arr.flush()
