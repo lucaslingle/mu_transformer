@@ -18,6 +18,7 @@ from typing import Optional
 import datasets as hfds
 import gcsfs
 import jax
+import jax.numpy as jnp
 import numpy as np
 import tqdm
 import transformers as hftr
@@ -253,11 +254,11 @@ def get_batch(arr, batch_size, sequence_len, step):  # batch size per host
 def get_loss_mask(batch, *, pad_token_id, eos_token_id):
     # loss mask that allows training on first occurring eos/pad token as a target,
     # even if eos_token_id == pad_token_id
-    loss_mask = np.logical_or(
-        np.equal(batch, pad_token_id),
-        np.equal(batch, eos_token_id),
+    loss_mask = jnp.logical_or(
+        jnp.equal(batch, pad_token_id),
+        jnp.equal(batch, eos_token_id),
     )
-    loss_mask = np.logical_not(loss_mask)
-    loss_mask = np.pad(loss_mask[:, 0:-1], ((0, 0), (1, 0)), constant_values=True)
-    loss_mask = np.cumprod(loss_mask, axis=-1)  # mask everything after the first eos
+    loss_mask = jnp.logical_not(loss_mask)
+    loss_mask = jnp.pad(loss_mask[:, 0:-1], ((0, 0), (1, 0)), constant_values=True)
+    loss_mask = jnp.cumprod(loss_mask, axis=-1)  # mask everything after the first eos
     return loss_mask
