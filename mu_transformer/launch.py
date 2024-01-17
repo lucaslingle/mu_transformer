@@ -353,7 +353,8 @@ def train_loop():
     del load_checkpoint_mgr
 
     logging.info("Creating dataset...")
-    batch_iter = get_dataset(
+    batch_size = global_batch_size_factory() // jax.process_count()
+    dataset_shard = get_dataset(
         gc_project=FLAGS.gc_project,
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
@@ -361,7 +362,7 @@ def train_loop():
         hfds_buffer_size=FLAGS.config.hfds_buffer_size,
         hftr_tokenizer=tokenizer_factory(),
         split_name="train",
-        batch_size=global_batch_size_factory() // jax.process_count(),
+        batch_size=batch_size,
         sequence_len=FLAGS.config.sequence_len,
         pcount=jax.process_count(),
         pindex=jax.process_index(),
@@ -378,27 +379,30 @@ def train_loop():
     # the user should set n_finetune_step > 0 if and only if currently fine-tuning.
     n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
     for step in range(start_step, n_total_step + 1):
+        logging.debug(f"Training step {step}...")
         # get next batch, and reset at epoch end.
-        try:
-            logging.debug("Getting next batch from existing epoch...")
-            batch = next(batch_iter)
-        except StopIteration:
-            logging.debug(log_level, f"Starting new epoch at step {step}...")
-            batch_iter = get_dataset(**batch_iter_kwargs)
-            batch = next(batch_iter)
+        # try:
+        #     logging.debug("Getting next batch from existing epoch...")
+        #     batch = next(batch_iter)
+        # except StopIteration:
+        #     logging.debug(log_level, f"Starting new epoch at step {step}...")
+        #     batch_iter = get_dataset(**batch_iter_kwargs)
+        #     batch = next(batch_iter)
+        batch = get_batch(
+            dataset_shard,
+            batch_size=batch_size,
+            sequence_len=FLAGS.config.sequence_len,
+            step=step,
+        )
         logging.debug("Got batch...")
-        logging.debug("Inputs shape (local): {0}".format(batch["inputs"].shape))
-        logging.debug("Targets shape (local): {0}".format(batch["targets"].shape))
-        logging.debug("Loss mask shape (local): {0}".format(batch["loss_mask"].shape))
+        logging.debug(f"Batch shape (local): {batch.shape}")
 
         # distribute local batch arrays to global batch arrays
         logging.debug("Distributing batch to global array...")
         batch = to_global_array(batch, global_mesh)
         batch = jax.block_until_ready(batch) if log_level_is_debug else batch
         logging.debug("Finished distributing batch to global array...")
-        logging.debug("Inputs shape (global): {0}".format(batch["inputs"].shape))
-        logging.debug("Targets shape (global): {0}".format(batch["targets"].shape))
-        logging.debug("Loss mask shape (global): {0}".format(batch["loss_mask"].shape))
+        logging.debug(f"Batch shape (global): {batch.shape}")
 
         # run a training step
         logging.debug("Starting train step...")
@@ -478,7 +482,8 @@ def eval_loop(params, n_eval_step=None):
         del state
 
     logging.info("Creating dataset...")
-    batch_iter = get_dataset(
+    batch_size = global_batch_size_factory() // jax.process_count()  # per host
+    dataset_shard = get_dataset(
         gc_project=FLAGS.gc_project,
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
@@ -486,7 +491,7 @@ def eval_loop(params, n_eval_step=None):
         hfds_buffer_size=FLAGS.config.hfds_buffer_size,
         hftr_tokenizer=tokenizer_factory(),
         split_name="validation" if FLAGS.mode == "train" else FLAGS.mode,
-        batch_size=global_batch_size_factory() // jax.process_count(),
+        batch_size=batch_size,
         sequence_len=FLAGS.config.sequence_len,
         pcount=jax.process_count(),
         pindex=jax.process_index(),
@@ -495,33 +500,25 @@ def eval_loop(params, n_eval_step=None):
 
     global_mesh = global_mesh_factory()
     acc = None
+    log_level_is_debug = logging.get_verbosity() == 1
     start_time = time.perf_counter()
-    for i, batch in enumerate(batch_iter):
+    for i in range(dataset_shard.shape[0] // batch_size):
         logging.info(f"eval step {i}...")
-
+        batch = get_batch(
+            dataset_shard,
+            batch_size=batch_size,
+            sequence_len=FLAGS.config.sequence_len,
+            step=i,
+        )
         logging.debug("Got batch...")
-        if logging.get_verbosity() == 1:
-            inputs = batch["inputs"]
-            targets = batch["targets"]
-            loss_mask = batch["loss_mask"]
-            logging.debug(f"Inputs shape (local): {inputs.shape}")
-            logging.debug(f"targets shape (local): {targets.shape}")
-            logging.debug(f"Loss mask shape (local): {loss_mask.shape}")
+        logging.debug(f"Batch shape (local): {batch.shape}")
 
         # distribute local batch arrays to global batch arrays
         logging.debug("Distributing batch to global array...")
         batch = to_global_array(batch, global_mesh)
-        if logging.get_verbosity() == 1:
-            jax.block_until_ready(batch)
-            logging.debug("Finished distributing batch to global array...")
-
-        if logging.get_verbosity() == 1:
-            inputs = batch["inputs"]
-            targets = batch["targets"]
-            loss_mask = batch["loss_mask"]
-            logging.debug(f"Inputs shape (global): {inputs.shape}")
-            logging.debug(f"targets shape (global): {targets.shape}")
-            logging.debug(f"Loss mask shape (global): {loss_mask.shape}")
+        batch = jax.block_until_ready(batch) if log_level_is_debug else batch
+        logging.debug("Finished distributing batch to global array...")
+        logging.debug(f"Batch shape (global): {batch.shape}")
 
         logging.debug("Starting eval step...")
         stats = eval_step(params=params, batch=batch)
