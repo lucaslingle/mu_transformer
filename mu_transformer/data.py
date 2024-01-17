@@ -158,7 +158,6 @@ def write_dataset_to_memmmap(
     logging.debug(f"n_shard_tokens: {n_shard_tokens}")
     logging.debug(f"n_write_iters: {n_write_iters}")
 
-    ds = ds.with_format("numpy")
     ds = ds.iter(batch_size=hfds_buffer_size, drop_last_batch=True)
     local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
 
@@ -169,8 +168,8 @@ def write_dataset_to_memmmap(
         batch = next(ds)["ids"]
         logging.debug(f"batch:\n{batch}")
         logging.debug(f"batch.shape: {batch.shape}")
-        arr_batch = np.concatenate(batch)
-        arr[idx : idx + len(arr_batch)] = arr_batch
+        arr_batch = np.array(batch)
+        arr[idx : idx + hfds_buffer_size] = arr_batch
         idx += len(arr_batch)
     arr.flush()
 
