@@ -154,7 +154,7 @@ def write_dataset_to_memmmap(
     # we can now guarantee the sharded_split_len is the same on all hosts
     # so make an iterator and write to memmapped file
     n_shard_tokens = sharded_split_len * sequence_len
-    n_write_iters = n_shard_tokens // hfds_buffer_size
+    n_write_iters = n_shard_tokens // (hfds_buffer_size * sequence_len)
     logging.debug(f"n_shard_tokens: {n_shard_tokens}")
     logging.debug(f"n_write_iters: {n_write_iters}")
 
@@ -166,9 +166,9 @@ def write_dataset_to_memmmap(
     idx = 0
     for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {local_fp} with memmap"):
         batch = next(ds)["ids"]
-        arr_batch = np.array(batch, dtype=arr_dtype)
-        arr[idx : idx + hfds_buffer_size] = arr_batch
-        idx += hfds_buffer_size
+        arr_batch = np.array(batch, dtype=arr_dtype).view(-1)
+        arr[idx : idx + (hfds_buffer_size * sequence_len)] = arr_batch
+        idx += hfds_buffer_size * sequence_len
     arr.flush()
 
     cloud_fs.upload(local_fp, cloud_fp)
