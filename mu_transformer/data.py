@@ -76,11 +76,11 @@ def write_dataset_to_memmmap(
     pindex: int,
     workdir: str,
 ) -> str:
-    output_fp = get_shard_fname(workdir, hfds_identifier, split_name, pindex)
+    cloud_fp = get_shard_fname(workdir, hfds_identifier, split_name, pindex)
     cloud_fs = gcsfs.GCSFileSystem(project=gc_project)
-    if cloud_fs.exists(output_fp):
+    if cloud_fs.exists(cloud_fp):
         logging.info("Mem-mapped file already exists on GCS, skipping write...")
-        return output_fp
+        return cloud_fp
 
     # get tokenizer info
     assert hftr_tokenizer.is_fast
@@ -125,7 +125,8 @@ def write_dataset_to_memmmap(
 
     # whatever the official split we're working with happens to be,
     # need to shard by host and drop remainder
-    full_len = ds.info.splits.get(hfds_split).num_examples
+    dataset_info = list(hfds.get_dataset_infos(hfds_identifier).values())[0]
+    full_len = dataset_info.splits.get(hfds_split).num_examples
     sharded_full_len = (full_len // pcount) * pcount
     ds = ds.take(sharded_full_len)
 
@@ -153,20 +154,20 @@ def write_dataset_to_memmmap(
 
     n_shard_tokens = sharded_split_len * sequence_len
     n_write_iters = n_shard_tokens // hfds_buffer_size
-    local_fp = posixpath.join("/tmp/", posixpath.split(output_fp)[-1])
+    local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
 
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
     arr = np.memmap(local_fp, dtype=arr_dtype, mode="w+", shape=(n_shard_tokens,))
     idx = 0
-    for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {output_fp} with memmap"):
+    for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {local_fp} with memmap"):
         batch = next(ds)
         arr_batch = np.concatenate(batch["ids"])
         arr[idx : idx + len(arr_batch)] = arr_batch
         idx += len(arr_batch)
     arr.flush()
 
-    cloud_fs.upload(local_fp, output_fp)
-    return output_fp
+    cloud_fs.upload(local_fp, cloud_fp)
+    return cloud_fp
 
 
 def read_dataset_to_memmmap(
@@ -177,13 +178,13 @@ def read_dataset_to_memmmap(
     pindex: int,
     workdir: str,
 ) -> np.ndarray:
-    input_fp = get_shard_fname(workdir, hfds_identifier, split_name, pindex)
+    cloud_fp = get_shard_fname(workdir, hfds_identifier, split_name, pindex)
     cloud_fs = gcsfs.GCSFileSystem(project=gc_project)
 
-    local_fp = posixpath.join("/tmp/", posixpath.split(input_fp)[-1])
+    local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
     if not osp.exists(local_fp):
-        logging.info(f"Downloading {input_fp} to {local_fp}")
-        cloud_fs.download(input_fp, local_fp)
+        logging.info(f"Downloading {cloud_fp} to {local_fp}")
+        cloud_fs.download(cloud_fp, local_fp)
 
     logging.info(f"Reading with np.memmap...")
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
