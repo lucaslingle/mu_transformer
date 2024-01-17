@@ -153,11 +153,13 @@ def write_dataset_to_memmmap(
 
     # we can now guarantee the sharded_split_len is the same on all hosts
     # so make an iterator and write to memmapped file
-    ds = ds.with_format("numpy")
-    ds = ds.iter(batch_size=hfds_buffer_size, drop_last_batch=True)
-
     n_shard_tokens = sharded_split_len * sequence_len
-    n_write_iters = n_shard_tokens // hfds_buffer_size
+    n_write_iters = 1024
+    logging.debug(f"n_shard_tokens: {n_shard_tokens}")
+    logging.debug(f"n_write_iters: {n_write_iters}")
+
+    ds = ds.with_format("numpy")
+    ds = ds.iter(batch_size=(n_shard_tokens // n_write_iters), drop_last_batch=True)
     local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
 
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
@@ -165,6 +167,8 @@ def write_dataset_to_memmmap(
     idx = 0
     for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {local_fp} with memmap"):
         batch = next(ds)
+        logging.debug(f"batch:\n{batch}")
+        logging.debug(f"batch.shape: {batch.shape}")
         arr_batch = np.concatenate(batch["ids"])
         arr[idx : idx + len(arr_batch)] = arr_batch
         idx += len(arr_batch)
