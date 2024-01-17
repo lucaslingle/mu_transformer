@@ -166,7 +166,7 @@ def write_dataset_to_memmmap(
     arr = np.memmap(local_fp, dtype=arr_dtype, mode="w+", shape=(n_shard_tokens,))
     idx = 0
     for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {local_fp} with memmap"):
-        batch = next(ds)
+        batch = next(ds)["ids"]
         logging.debug(f"batch:\n{batch}")
         logging.debug(f"batch.shape: {batch.shape}")
         arr_batch = np.concatenate(batch["ids"])
