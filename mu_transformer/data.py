@@ -260,6 +260,13 @@ def get_batch(arr, batch_size, sequence_len, step):  # batch size per host
     return batch
 
 
+def count_batches(arr, batch_size, sequence_len):
+    assert arr.ndim == 1
+    count = arr.shape[0]
+    assert count % (batch_size * sequence_len) == 0
+    return count // (batch_size * sequence_len)
+
+
 def get_loss_mask(batch, *, pad_token_id, eos_token_id):
     # loss mask that allows training on first occurring eos/pad token as a target,
     # even if eos_token_id == pad_token_id

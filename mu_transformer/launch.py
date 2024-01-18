@@ -34,6 +34,7 @@ from flax.training import orbax_utils
 from flax.training import train_state as train_utils
 from ml_collections import config_flags
 
+from mu_transformer.data import count_batches
 from mu_transformer.data import get_batch
 from mu_transformer.data import get_dataset
 from mu_transformer.data import get_loss_mask
@@ -502,7 +503,7 @@ def eval_loop(params, n_eval_step=None):
     acc = None
     log_level_is_debug = logging.get_verbosity() == 1
     start_time = time.perf_counter()
-    for i in range(dataset_shard.shape[0] // (batch_size * FLAGS.config.sequence_len)):
+    for i in range(count_batches(dataset_shard, batch_size, FLAGS.config.sequence_len)):
         logging.info(f"eval step {i}...")
         batch = get_batch(
             dataset_shard,
