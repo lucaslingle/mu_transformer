@@ -154,9 +154,9 @@ def write_dataset_to_memmmap(
     else:
         sharded_split_count = sharded_canonical_count
 
-    # all shards will have the same length.
-    # now in addition, we will drop any partial buffer from the shard,
-    # so that the np.memmap does not store a section of all zeros on the last iter.
+    # note that currently the shards on all hosts have the same example count.
+    # in addition, we want this example count to be divisible by the batch size per host
+    # and by the write buffer size.
     write_buffer_size = hfds_buffer_size
     lcm = math.lcm(write_buffer_size, batch_size)
     writable_count = (sharded_split_count // lcm) * lcm
