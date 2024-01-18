@@ -63,7 +63,7 @@ def get_arr_dtype(vocab_size):
 #   if only one of them is provided.
 #   can then use a subset of official training split for validation,
 #   if an official validation split is not available.
-def write_dataset_to_memmmap(
+def write_dataset_to_memmap(
     gc_project: str,
     hfds_identifier: str,
     hfds_config: str,
@@ -188,7 +188,7 @@ def write_dataset_to_memmmap(
     return cloud_fp
 
 
-def read_dataset_to_memmmap(
+def read_dataset_to_memmap(
     gc_project: str,
     hfds_identifier: str,
     hftr_tokenizer: hftr.PreTrainedTokenizerFast,
@@ -223,8 +223,8 @@ def get_dataset(
     pindex: int,
     workdir: str,
 ) -> np.ndarray:
-    logging.info("Calling write_dataset_to_memmmap...")
-    _ = write_dataset_to_memmmap(
+    logging.info("Calling write_dataset_to_memmap...")
+    _ = write_dataset_to_memmap(
         gc_project=gc_project,
         hfds_identifier=hfds_identifier,
         hfds_config=hfds_config,
@@ -238,8 +238,8 @@ def get_dataset(
         pindex=pindex,
         workdir=workdir,
     )
-    logging.info("Calling read_dataset_to_memmmap...")
-    arr = read_dataset_to_memmmap(
+    logging.info("Calling read_dataset_to_memmap...")
+    arr = read_dataset_to_memmap(
         gc_project=gc_project,
         hfds_identifier=hfds_identifier,
         hftr_tokenizer=hftr_tokenizer,
