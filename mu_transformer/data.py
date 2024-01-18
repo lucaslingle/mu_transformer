@@ -253,7 +253,10 @@ def get_dataset(
 def get_batch(arr, batch_size, sequence_len, step):  # batch size per host
     # todo: support shuffle indices
     chunk_size = batch_size * sequence_len
-    batch = arr[chunk_size * step : chunk_size * (step + 1)]
+    n_chunks = arr.shape[0] // chunk_size
+    assert arr.shape[0] == n_chunks * chunk_size
+    folded_step = step % n_chunks
+    batch = arr[chunk_size * folded_step : chunk_size * (folded_step + 1)]
     batch = np.reshape(batch, [batch_size, sequence_len])
     batch = batch.astype(np.int32)
     return batch
