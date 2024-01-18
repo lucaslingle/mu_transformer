@@ -201,9 +201,8 @@ def read_dataset_to_memmmap(
     cloud_fs = gcsfs.GCSFileSystem(project=gc_project)
 
     local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
-    if not osp.exists(local_fp):
-        logging.info(f"Downloading {cloud_fp} to {local_fp}")
-        cloud_fs.download(cloud_fp, local_fp)
+    logging.info(f"Downloading {cloud_fp} to {local_fp}")
+    cloud_fs.download(cloud_fp, local_fp)
 
     logging.info(f"Reading with np.memmap...")
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
