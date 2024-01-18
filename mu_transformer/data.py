@@ -128,51 +128,56 @@ def write_dataset_to_memmmap(
     # need to shard by host and drop remainder
     dataset_info = list(hfds.get_dataset_infos(hfds_identifier).values())[0]
     try:
-        full_len = dataset_info.splits.get(hfds_split).num_examples
+        canonical_count = dataset_info.splits.get(hfds_split).num_examples
     except AttributeError as e:
         logging.error("You're using a bad dataset, it has no num_examples metadata...")
         raise e
-    sharded_full_len = (full_len // pcount) * pcount
-    ds = ds.take(sharded_full_len)
+    sharded_canonical_count = (canonical_count // pcount) * pcount
+    ds = ds.take(sharded_canonical_count)
 
+    # if need be, split the training set into train/validation/test.
+    # also, store the count for what's selected
     if hfds_splits_set != {"train", "validation", "test"}:
-        # if need be, split the training set into train/validation/test
-        sharded_val_len = batch_size * 100
+        sharded_val_count = batch_size * 100
         if split_name == "validation":
-            sharded_split_len = sharded_val_len
-            ds = ds.take(sharded_val_len)
+            sharded_split_count = sharded_val_count
+            ds = ds.take(sharded_split_count)
         elif split_name == "test":
-            sharded_split_len = sharded_val_len
-            ds = ds.skip(sharded_val_len).take(sharded_val_len)
+            sharded_split_count = sharded_val_count
+            ds = ds.skip(sharded_val_count).take(sharded_val_count)
         elif split_name == "train":
-            sharded_split_len = sharded_full_len - 2 * sharded_val_len
-            ds = ds.skip(2 * sharded_val_len)
+            sharded_split_count = sharded_canonical_count - 2 * sharded_val_count
+            ds = ds.skip(2 * sharded_val_count)
         else:
             raise NotImplementedError("Unrecognized split name")
     else:
-        sharded_split_len = sharded_full_len
+        sharded_split_count = sharded_canonical_count
 
     # all shards will have the same length.
-    # now in addition, we will drop any partial batch from the shard
-    sharded_split_len = (sharded_split_len // hfds_buffer_size) * hfds_buffer_size
+    # now in addition, we will drop any partial buffer from the shard,
+    # so that the np.memmap does not store a section of all zeros on the last iter.
+    write_buffer_size = min(sharded_split_count, hfds_buffer_size)
+    writable_count = (sharded_split_count // write_buffer_size) * write_buffer_size
 
-    # we can guarantee the sharded_split_len is the same on all hosts
-    # so make an iterator and write to memmapped file
-    ds = ds.iter(batch_size=hfds_buffer_size, drop_last_batch=False)
-    local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
+    # so make an iterator
+    ds = ds.iter(batch_size=write_buffer_size, drop_last_batch=False)
 
-    n_shard_tokens = sharded_split_len * sequence_len
-    n_write_iters = n_shard_tokens // (hfds_buffer_size * sequence_len)
+    # write to memmapped file
+    n_shard_tokens = writable_count * sequence_len
+    n_write_tokens_per_iter = write_buffer_size * sequence_len
+    n_write_iters = writable_count // write_buffer_size
     logging.debug(f"n_shard_tokens: {n_shard_tokens}")
+    logging.debug(f"n_write_tokens_per_iter: {n_write_tokens_per_iter}")
     logging.debug(f"n_write_iters: {n_write_iters}")
+    local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
     arr = np.memmap(local_fp, dtype=arr_dtype, mode="w+", shape=(n_shard_tokens,))
     idx = 0
     for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {local_fp} with memmap"):
         batch = next(ds)["ids"]
         arr_batch = np.array(batch, dtype=arr_dtype).reshape(-1)
-        arr[idx : idx + (hfds_buffer_size * sequence_len)] = arr_batch
-        idx += hfds_buffer_size * sequence_len
+        arr[idx : idx + n_write_tokens_per_iter] = arr_batch
+        idx += n_write_tokens_per_iter
     arr.flush()
 
     cloud_fs.upload(local_fp, cloud_fp)
