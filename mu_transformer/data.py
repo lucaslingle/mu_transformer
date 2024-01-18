@@ -26,9 +26,6 @@ import transformers as hftr
 from absl import logging
 
 
-LOCAL_DATA_DIR = "/tmp/mu_transformer_datasets/"
-
-
 def get_tokenizer(
     cls_name: str,
     short_name: Optional[str] = None,
@@ -177,7 +174,7 @@ def write_dataset_to_memmmap(
     logging.info(f"n_shard_tokens: {n_shard_tokens}")
     logging.info(f"n_write_tokens_per_iter: {n_write_tokens_per_iter}")
     logging.info(f"n_write_iters: {n_write_iters}")
-    local_fp = get_shard_fp(LOCAL_DATA_DIR, hfds_identifier, split_name, pindex)
+    local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
     arr = np.memmap(local_fp, dtype=arr_dtype, mode="w+", shape=(n_shard_tokens,))
     idx = 0
@@ -204,7 +201,7 @@ def read_dataset_to_memmmap(
     cloud_fp = get_shard_fp(workdir, hfds_identifier, split_name, pindex)
     cloud_fs = gcsfs.GCSFileSystem(project=gc_project)
 
-    local_fp = get_shard_fp(LOCAL_DATA_DIR, hfds_identifier, split_name, pindex)
+    local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
     if not osp.exists(local_fp):
         logging.info(f"Downloading {cloud_fp} to {local_fp}")
         cloud_fs.download(cloud_fp, local_fp)
