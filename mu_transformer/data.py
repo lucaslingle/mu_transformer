@@ -115,7 +115,6 @@ def write_dataset_to_memmmap(
             truncation=True,
             max_length=sequence_len,
         )["input_ids"]
-        # inputs = [[bos_id, *e[0:-1]] for e in targets]
         return {"ids": ids}
 
     ds = ds.map(
@@ -130,9 +129,9 @@ def write_dataset_to_memmmap(
     dataset_info = list(hfds.get_dataset_infos(hfds_identifier).values())[0]
     try:
         canonical_count = dataset_info.splits.get(hfds_split).num_examples
-    except AttributeError as e:
+    except AttributeError as exep:
         logging.error("You're using a bad dataset, it has no num_examples metadata...")
-        raise e
+        raise exep
     sharded_canonical_count = (canonical_count // pcount) * pcount
     ds = ds.take(sharded_canonical_count)
 
