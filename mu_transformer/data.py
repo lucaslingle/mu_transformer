@@ -202,7 +202,7 @@ def read_dataset_to_memmmap(
 
     local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
     logging.info(f"Downloading {cloud_fp} to {local_fp}")
-    cloud_fs.download(cloud_fp, local_fp)
+    cloud_fs.download(cloud_fp, local_fp)  # always overwrite local; may have diff cfg
 
     logging.info(f"Reading with np.memmap...")
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
