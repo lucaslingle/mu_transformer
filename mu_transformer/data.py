@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 import os.path as osp
 import posixpath
 from typing import Optional
@@ -156,9 +157,12 @@ def write_dataset_to_memmmap(
     # all shards will have the same length.
     # now in addition, we will drop any partial buffer from the shard,
     # so that the np.memmap does not store a section of all zeros on the last iter.
-    write_buffer_size = min(sharded_split_count, hfds_buffer_size)
-    writable_count = (sharded_split_count // write_buffer_size) * write_buffer_size
-    writable_count = (writable_count // batch_size) * batch_size
+    write_buffer_size = hfds_buffer_size
+    lcm = math.lcm(write_buffer_size, batch_size)
+    writable_count = (sharded_split_count // lcm) * lcm
+    assert writable_count > 0
+    assert writable_count % batch_size == 0
+    assert writable_count % write_buffer_size == 0
 
     # so make an iterator
     ds = ds.iter(batch_size=write_buffer_size, drop_last_batch=False)
