@@ -94,7 +94,7 @@ def write_dataset_to_memmmap(
     else:
         logging.info(f"hfds_splits_set: {hfds_splits_set}")
         hfds_split = split_name
-    assert split_name in hfds_splits_set
+    assert hfds_split in hfds_splits_set
 
     # load dataset lazily
     ds = hfds.load_dataset(
