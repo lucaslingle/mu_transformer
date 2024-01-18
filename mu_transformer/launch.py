@@ -502,7 +502,7 @@ def eval_loop(params, n_eval_step=None):
     acc = None
     log_level_is_debug = logging.get_verbosity() == 1
     start_time = time.perf_counter()
-    for i in range(dataset_shard.shape[0] // batch_size):
+    for i in range(dataset_shard.shape[0] // (batch_size * FLAGS.config.sequence_len)):
         logging.info(f"eval step {i}...")
         batch = get_batch(
             dataset_shard,
