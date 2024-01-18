@@ -158,6 +158,7 @@ def write_dataset_to_memmmap(
     # so that the np.memmap does not store a section of all zeros on the last iter.
     write_buffer_size = min(sharded_split_count, hfds_buffer_size)
     writable_count = (sharded_split_count // write_buffer_size) * write_buffer_size
+    writable_count = (writable_count // batch_size) * batch_size
 
     # so make an iterator
     ds = ds.iter(batch_size=write_buffer_size, drop_last_batch=False)
