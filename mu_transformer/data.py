@@ -167,9 +167,9 @@ def write_dataset_to_memmmap(
     n_shard_tokens = writable_count * sequence_len
     n_write_tokens_per_iter = write_buffer_size * sequence_len
     n_write_iters = writable_count // write_buffer_size
-    logging.debug(f"n_shard_tokens: {n_shard_tokens}")
-    logging.debug(f"n_write_tokens_per_iter: {n_write_tokens_per_iter}")
-    logging.debug(f"n_write_iters: {n_write_iters}")
+    logging.info(f"n_shard_tokens: {n_shard_tokens}")
+    logging.info(f"n_write_tokens_per_iter: {n_write_tokens_per_iter}")
+    logging.info(f"n_write_iters: {n_write_iters}")
     local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
     arr = np.memmap(local_fp, dtype=arr_dtype, mode="w+", shape=(n_shard_tokens,))
@@ -181,6 +181,7 @@ def write_dataset_to_memmmap(
         idx += n_write_tokens_per_iter
     arr.flush()
 
+    logging.info(f"Uploading {local_fp} to {cloud_fp}")
     cloud_fs.upload(local_fp, cloud_fp)
     return cloud_fp
 
