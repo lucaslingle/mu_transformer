@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Optional
+
 import jax.numpy as jnp
 from ml_collections import config_dict
 
@@ -38,9 +40,10 @@ def get_base_config():
     config.n_layer = 12
     config.d_head = 256
     config.ff_multiple = 4
-    config.rotary_base = 10_000
+    config.rotary_base = 10_000  # can be zero to use NoPE instead of RoPE
     config.act_name = "relu"  # any activation defined in jax.nn
     config.act_square = False  # activation squaring
+    config.norm_eps = 1e-8
 
     # optimization
     config.tokens_per_global_batch = 2**18

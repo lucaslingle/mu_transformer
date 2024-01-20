@@ -26,7 +26,6 @@ from mu_transformer.dims import Dimensions
 from mu_transformer.shard import sharding_constraint
 from mu_transformer.sow import coord_check_l1
 
-EPSILON = 1e-8
 INFTY_APPROX = 1e30
 MESH_AXES = Dimensions(R="rows", C="columns", P="planes", N=None)
 
@@ -43,6 +42,7 @@ class TransformerConfig:
     rotary_base: int
     act_name: str
     act_square: bool
+    norm_eps: float
     n_layer: int
     n_vocab: int
     bos_token_id: int
@@ -58,9 +58,11 @@ class TransformerConfig:
 
 
 class RMSNorm(nn.Module):
+    hps: TransformerConfig
+
     @nn.compact
     def __call__(self, x):
-        eps = jnp.array([EPSILON], dtype=x.dtype)
+        eps = jnp.array([self.hps.norm_eps], dtype=x.dtype)
         ms = jnp.mean(jnp.square(x), axis=-1)
         rms = jnp.sqrt(ms + eps)
         return x / rms[..., None]
@@ -196,12 +198,13 @@ class MultiheadSelfAttention(nn.Module):
         self.sow("intermediates", "ak_l1", coord_check_l1(k))
         self.sow("intermediates", "av_l1", coord_check_l1(v))
 
-        q = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(q)
-        k = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(k)
-        q = sharding_constraint(q, MESH_AXES["RPNN"], self.global_mesh)
-        k = sharding_constraint(k, MESH_AXES["RPNN"], self.global_mesh)
-        self.sow("intermediates", "aqr_l1", coord_check_l1(q))
-        self.sow("intermediates", "akr_l1", coord_check_l1(k))
+        if self.hps.rotary_base > 0:
+            q = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(q)
+            k = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(k)
+            q = sharding_constraint(q, MESH_AXES["RPNN"], self.global_mesh)
+            k = sharding_constraint(k, MESH_AXES["RPNN"], self.global_mesh)
+            self.sow("intermediates", "aqr_l1", coord_check_l1(q))
+            self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
         s = jnp.einsum("bhid,bhjd->bhij", q, k) / jnp.array([self.hps.d_head], q.dtype)
         s = sharding_constraint(s, MESH_AXES["RPNN"], self.global_mesh)
@@ -282,9 +285,9 @@ class TransformerBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x, _):
-        x += MultiheadSelfAttention(self.hps, self.global_mesh)(RMSNorm()(x))
+        x += MultiheadSelfAttention(self.hps, self.global_mesh)(RMSNorm(self.hps)(x))
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        x += MultiLayerPerceptron(self.hps, self.global_mesh)(RMSNorm()(x))
+        x += MultiLayerPerceptron(self.hps, self.global_mesh)(RMSNorm(self.hps)(x))
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         return x, None
 
@@ -326,7 +329,7 @@ class PredictionHead(nn.Module):
             self.hps.param_dtype,
         )
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        x = RMSNorm()(x)
+        x = RMSNorm(self.hps)(x)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         if self.hps.is_train:
             output_logits_dtype = self.hps.output_logits_dtype

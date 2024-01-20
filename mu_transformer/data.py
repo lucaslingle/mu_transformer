@@ -50,8 +50,10 @@ def get_tokenizer(
     return obj
 
 
-def get_shard_fp(workdir, identifier, split_name, pindex):
-    return posixpath.join(workdir, "data", identifier, f"{split_name}-{pindex}.bin")
+def get_shard_fp(workdir, identifier, split_name, pcount, pindex):
+    return posixpath.join(
+        workdir, "data", identifier, f"{pcount}", f"{split_name}-{pindex}.bin"
+    )
 
 
 def get_arr_dtype(vocab_size):
@@ -77,10 +79,10 @@ def write_dataset_to_memmap(
     pindex: int,
     workdir: str,
 ) -> str:
-    cloud_fp = get_shard_fp(workdir, hfds_identifier, split_name, pindex)
+    cloud_fp = get_shard_fp(workdir, hfds_identifier, split_name, pcount, pindex)
     cloud_fs = gcsfs.GCSFileSystem(project=gc_project)
     if cloud_fs.exists(cloud_fp):
-        logging.info("Mem-mapped file already exists on GCS, skipping write...")
+        logging.info(f"Mem-mapped file exists at {cloud_fp}, skipping write...")
         return cloud_fp
 
     # get tokenizer info
@@ -193,10 +195,11 @@ def read_dataset_to_memmap(
     hfds_identifier: str,
     hftr_tokenizer: hftr.PreTrainedTokenizerFast,
     split_name: str,
+    pcount: int,
     pindex: int,
     workdir: str,
 ) -> np.ndarray:
-    cloud_fp = get_shard_fp(workdir, hfds_identifier, split_name, pindex)
+    cloud_fp = get_shard_fp(workdir, hfds_identifier, split_name, pcount, pindex)
     cloud_fs = gcsfs.GCSFileSystem(project=gc_project)
 
     local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
@@ -244,6 +247,7 @@ def get_dataset(
         hfds_identifier=hfds_identifier,
         hftr_tokenizer=hftr_tokenizer,
         split_name=split_name,
+        pcount=pcount,
         pindex=pindex,
         workdir=workdir,
     )
