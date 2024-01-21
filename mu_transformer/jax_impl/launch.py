@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import functools
-import os.path as osp
+import posixpath
 import re
 import sys
 import time
@@ -22,7 +22,6 @@ import jax
 import jax.experimental.mesh_utils as jmu
 import jax.numpy as jnp
 import jax.tree_util as jtu
-import numpy as np
 import optax
 import orbax.checkpoint as ocp
 import wandb
@@ -37,21 +36,19 @@ from ml_collections import config_flags
 from mu_transformer.data import count_batches
 from mu_transformer.data import get_batch
 from mu_transformer.data import get_dataset
-from mu_transformer.data import get_loss_mask
 from mu_transformer.data import get_tokenizer
-from mu_transformer.model import MESH_AXES
-from mu_transformer.model import Transformer
-from mu_transformer.model import TransformerConfig
-from mu_transformer.shard import get_namedsharding
-from mu_transformer.shard import sharding_constraint
-from mu_transformer.shard import to_global_array
-from mu_transformer.sow import split_coord_checks
+from mu_transformer.jax_impl.model import MESH_AXES
+from mu_transformer.jax_impl.model import Transformer
+from mu_transformer.jax_impl.model import TransformerConfig
+from mu_transformer.jax_impl.shard import get_namedsharding
+from mu_transformer.jax_impl.shard import sharding_constraint
+from mu_transformer.jax_impl.shard import to_global_array
+from mu_transformer.jax_impl.sow import split_coord_checks
 
 
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
-flags.DEFINE_string("workdir", None, "Working directory (currently must be GCS)")
-flags.DEFINE_string("gc_project", None, "Google Cloud project ID (todo: make optional)")
+flags.DEFINE_string("workdir", None, "Working directory (GCS or local)")
 flags.DEFINE_enum("mode", None, ["train", "validation", "test"], "Mode")
 flags.DEFINE_integer("seed", 0, "Experiment seed")
 flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
@@ -217,6 +214,7 @@ def automatic_modelname_factory():
     lr = str(FLAGS.config.lr_max).split(".")
     assert len(lr) == 2
     parts = [
+        "jax",
         "mutransformer",
         "mup" if FLAGS.config.use_mup else "sp",
         dataset_name,
@@ -239,7 +237,7 @@ def modelname_factory(option):
 
 
 def modeldir_factory(option, suffix):
-    return osp.join(FLAGS.workdir, modelname_factory(option), suffix)
+    return posixpath.join(FLAGS.workdir, modelname_factory(option), suffix)
 
 
 def checkpoint_manager_factory(option):
@@ -281,6 +279,19 @@ def size_pytree(x):
 
 def l2norm_pytree(x):
     return jtu.tree_reduce(lambda a, b: a + jnp.sum(b**2), x, initializer=0.0) ** 0.5
+
+
+def get_loss_mask(batch, *, pad_token_id, eos_token_id):
+    # loss mask that allows training on first occurring eos/pad token as a target,
+    # even if eos_token_id == pad_token_id
+    loss_mask = jnp.logical_or(
+        jnp.equal(batch, pad_token_id),
+        jnp.equal(batch, eos_token_id),
+    )
+    loss_mask = jnp.logical_not(loss_mask)
+    loss_mask = jnp.pad(loss_mask[:, 0:-1], ((0, 0), (1, 0)), constant_values=True)
+    loss_mask = jnp.cumprod(loss_mask, axis=-1)  # mask everything after the first eos
+    return loss_mask
 
 
 def loss_fn(params, batch, config, global_mesh):
@@ -330,7 +341,6 @@ def train_step(state, batch):
 
 
 def train_loop():
-    log_level = logging.INFO
     logging.info("Entering train loop function...")
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
@@ -356,7 +366,6 @@ def train_loop():
     logging.info("Creating dataset...")
     batch_size = global_batch_size_factory() // jax.process_count()
     dataset_shard = get_dataset(
-        gc_project=FLAGS.gc_project,
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,
@@ -381,14 +390,6 @@ def train_loop():
     n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
     for step in range(start_step, n_total_step + 1):
         logging.debug(f"Training step {step}...")
-        # get next batch, and reset at epoch end.
-        # try:
-        #     logging.debug("Getting next batch from existing epoch...")
-        #     batch = next(batch_iter)
-        # except StopIteration:
-        #     logging.debug(log_level, f"Starting new epoch at step {step}...")
-        #     batch_iter = get_dataset(**batch_iter_kwargs)
-        #     batch = next(batch_iter)
         batch = get_batch(
             dataset_shard,
             batch_size=batch_size,
@@ -485,7 +486,6 @@ def eval_loop(params, n_eval_step=None):
     logging.info("Creating dataset...")
     batch_size = global_batch_size_factory() // jax.process_count()  # per host
     dataset_shard = get_dataset(
-        gc_project=FLAGS.gc_project,
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,

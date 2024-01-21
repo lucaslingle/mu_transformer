@@ -15,8 +15,8 @@ import math
 import posixpath
 from typing import Optional
 
+import blobfile
 import datasets as hfds
-import gcsfs
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -66,7 +66,6 @@ def get_arr_dtype(vocab_size):
 #   can then use a subset of official training split for validation,
 #   if an official validation split is not available.
 def write_dataset_to_memmap(
-    gc_project: str,
     hfds_identifier: str,
     hfds_config: str,
     hfds_datacol: str,
@@ -79,11 +78,12 @@ def write_dataset_to_memmap(
     pindex: int,
     workdir: str,
 ) -> str:
-    cloud_fp = get_shard_fp(workdir, hfds_identifier, split_name, pcount, pindex)
-    cloud_fs = gcsfs.GCSFileSystem(project=gc_project)
-    if cloud_fs.exists(cloud_fp):
-        logging.info(f"Mem-mapped file exists at {cloud_fp}, skipping write...")
-        return cloud_fp
+    workdir_fp = get_shard_fp(workdir, hfds_identifier, split_name, pcount, pindex)
+    temp_fp = posixpath.join("/tmp/", posixpath.split(workdir_fp)[-1])
+
+    if blobfile.exists(workdir_fp):
+        logging.info(f"Mem-mapped file exists at {workdir_fp}, skipping write...")
+        return workdir_fp
 
     # get tokenizer info
     assert hftr_tokenizer.is_fast
@@ -174,24 +174,22 @@ def write_dataset_to_memmap(
     logging.info(f"n_shard_tokens: {n_shard_tokens}")
     logging.info(f"n_write_tokens_per_iter: {n_write_tokens_per_iter}")
     logging.info(f"n_write_iters: {n_write_iters}")
-    local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
-    arr = np.memmap(local_fp, dtype=arr_dtype, mode="w+", shape=(n_shard_tokens,))
+    arr = np.memmap(temp_fp, dtype=arr_dtype, mode="w+", shape=(n_shard_tokens,))
     idx = 0
-    for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {local_fp} with memmap"):
+    for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {temp_fp} with memmap"):
         batch = next(ds)["ids"]
         arr_batch = np.array(batch, dtype=arr_dtype).reshape(-1)
         arr[idx : idx + n_write_tokens_per_iter] = arr_batch
         idx += n_write_tokens_per_iter
     arr.flush()
 
-    logging.info(f"Uploading {local_fp} to {cloud_fp}")
-    cloud_fs.upload(local_fp, cloud_fp)
-    return cloud_fp
+    logging.info(f"Copying {temp_fp} to {workdir_fp}")
+    blobfile.copy(temp_fp, workdir_fp, overwrite=True)
+    return workdir_fp
 
 
 def read_dataset_to_memmap(
-    gc_project: str,
     hfds_identifier: str,
     hftr_tokenizer: hftr.PreTrainedTokenizerFast,
     split_name: str,
@@ -199,21 +197,19 @@ def read_dataset_to_memmap(
     pindex: int,
     workdir: str,
 ) -> np.ndarray:
-    cloud_fp = get_shard_fp(workdir, hfds_identifier, split_name, pcount, pindex)
-    cloud_fs = gcsfs.GCSFileSystem(project=gc_project)
+    workdir_fp = get_shard_fp(workdir, hfds_identifier, split_name, pcount, pindex)
+    temp_fp = posixpath.join("/tmp/", posixpath.split(workdir_fp)[-1])
 
-    local_fp = posixpath.join("/tmp/", posixpath.split(cloud_fp)[-1])
-    logging.info(f"Downloading {cloud_fp} to {local_fp}")
-    cloud_fs.download(cloud_fp, local_fp)  # always overwrite local; may have diff cfg
+    logging.info(f"Copying {workdir_fp} to {temp_fp}")
+    blobfile.copy(workdir_fp, temp_fp, overwrite=True)
 
     logging.info(f"Reading with np.memmap...")
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
-    arr = np.memmap(local_fp, dtype=arr_dtype, mode="r")
+    arr = np.memmap(temp_fp, dtype=arr_dtype, mode="r")
     return arr
 
 
 def get_dataset(
-    gc_project: str,
     hfds_identifier: str,
     hfds_config: str,
     hfds_datacol: str,
@@ -228,7 +224,6 @@ def get_dataset(
 ) -> np.ndarray:
     logging.info("Calling write_dataset_to_memmap...")
     _ = write_dataset_to_memmap(
-        gc_project=gc_project,
         hfds_identifier=hfds_identifier,
         hfds_config=hfds_config,
         hfds_datacol=hfds_datacol,
@@ -243,7 +238,6 @@ def get_dataset(
     )
     logging.info("Calling read_dataset_to_memmap...")
     arr = read_dataset_to_memmap(
-        gc_project=gc_project,
         hfds_identifier=hfds_identifier,
         hftr_tokenizer=hftr_tokenizer,
         split_name=split_name,
@@ -271,16 +265,3 @@ def count_batches(arr, batch_size, sequence_len):
     count = arr.shape[0]
     assert count % (batch_size * sequence_len) == 0
     return count // (batch_size * sequence_len)
-
-
-def get_loss_mask(batch, *, pad_token_id, eos_token_id):
-    # loss mask that allows training on first occurring eos/pad token as a target,
-    # even if eos_token_id == pad_token_id
-    loss_mask = jnp.logical_or(
-        jnp.equal(batch, pad_token_id),
-        jnp.equal(batch, eos_token_id),
-    )
-    loss_mask = jnp.logical_not(loss_mask)
-    loss_mask = jnp.pad(loss_mask[:, 0:-1], ((0, 0), (1, 0)), constant_values=True)
-    loss_mask = jnp.cumprod(loss_mask, axis=-1)  # mask everything after the first eos
-    return loss_mask

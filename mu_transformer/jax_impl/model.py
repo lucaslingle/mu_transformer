@@ -23,8 +23,8 @@ from flax import struct
 from flax.linen import partitioning as nnp
 
 from mu_transformer.dims import Dimensions
-from mu_transformer.shard import sharding_constraint
-from mu_transformer.sow import coord_check_l1
+from mu_transformer.jax_impl.shard import sharding_constraint
+from mu_transformer.jax_impl.sow import coord_check_l1
 
 INFTY_APPROX = 1e30
 MESH_AXES = Dimensions(R="rows", C="columns", P="planes", N=None)
