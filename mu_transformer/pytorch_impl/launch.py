@@ -52,7 +52,7 @@ flags.DEFINE_string("saving_name", None, "Model name to save; None = use autogen
 flags.mark_flags_as_required(["config", "workdir", "mode"])
 
 
-TrainState = namedtuple("StateTuple", field_names=["config", "model", "opt", "sched"])
+TrainState = namedtuple("TrainState", field_names=["config", "model", "optim", "sched"])
 
 
 @functools.lru_cache(maxsize=1)
@@ -199,7 +199,7 @@ def global_mean(x):
 
 
 def train_step(state, batch):
-    state.opt.zero_grad(set_to_none=True)
+    state.optim.zero_grad(set_to_none=True)
     loss_term_avg, metrics = loss_fn(state.config, state.model, batch)
     loss_term_avg.backward()  # global mean of grads obtained automatically via DDP
 
@@ -211,8 +211,8 @@ def train_step(state, batch):
         metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
 
     nn.utils.clip_grad_norm_(state.model.params(), FLAGS.config.grad_clip)
-    state.optimizer.step()
-    state.scheduler.step()
+    state.optim.step()
+    state.sched.step()
     return state, metrics
 
 
