@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
+
 import torch
 
 
@@ -22,14 +24,16 @@ def coord_check_l1(act):
 
 
 class Intermediates:
-    def __init__(self):
-        self.kvs = dict()
+    def __init__(self, enabled, kvs=None):
+        self.enabled = enabled
+        self.kvs = dict() if kvs is None else kvs
 
     def set(self, key, value, layer):
-        self.kvs[f"{key}_{layer:02}"] = value
+        if self.enabled:
+            self.kvs[f"{key}_{layer:02}"] = value
 
     def get(self, key):
         return self.kvs[key]
 
-    def items(self):
-        return self.kvs.items()
+    def to_dict(self):
+        return copy.deepcopy(self.kvs)

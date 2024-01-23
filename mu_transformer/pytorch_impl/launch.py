@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import functools
+import os
 import posixpath
 import re
-import sys
 import time
 from collections import namedtuple
 
+import jax.tree_util as jtu
 import torch
 import torch.cuda as cuda
-import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F  # noqa
 import torch.optim as optim
@@ -28,9 +28,7 @@ import wandb
 from absl import app
 from absl import flags
 from absl import logging
-from etils.etree import py as etree
 from ml_collections import config_flags
-from torch.nn.parallel import DistributedDataParallel as DDP  # noqa
 
 from mu_transformer.data import count_batches
 from mu_transformer.data import get_batch
@@ -38,6 +36,9 @@ from mu_transformer.data import get_dataset
 from mu_transformer.data import get_tokenizer
 from mu_transformer.pytorch_impl.model import Transformer
 from mu_transformer.pytorch_impl.model import TransformerConfig
+
+#  import torch.distributed as dist
+#  from torch.nn.parallel import DistributedDataParallel as DDP  # noqa
 
 
 FLAGS = flags.FLAGS
@@ -52,12 +53,14 @@ flags.DEFINE_string("saving_name", None, "Model name to save; None = use autogen
 flags.mark_flags_as_required(["config", "workdir", "mode"])
 
 
-TrainState = namedtuple("TrainState", field_names=["config", "model", "optim", "sched"])
+TrainState = namedtuple("TrainState", field_names=["model", "optim", "sched"])
 
 
 @functools.lru_cache(maxsize=1)
 def device_factory():
-    return torch.device("cpu" if not cuda.is_available() else f"cuda:{dist.get_rank()}")
+    # rank = dist.get_rank() # todo
+    rank = 0  # todo
+    return torch.device("cpu" if not cuda.is_available() else f"cuda:{rank}")
 
 
 @functools.lru_cache(maxsize=1)
@@ -70,7 +73,7 @@ def tokenizer_factory():
 
 @functools.lru_cache(maxsize=1)
 def transformer_config_factory():
-    return TransformerConfig(
+    return TransformerConfig.create(
         **vars(FLAGS.config)["_fields"],
         n_vocab=tokenizer_factory().vocab_size,
         bos_token_id=tokenizer_factory().bos_token_id,
@@ -83,7 +86,7 @@ def transformer_config_factory():
 def model_factory():
     config = transformer_config_factory()
     model = Transformer(config)
-    model = DDP(model, device_ids=device_factory())
+    # model = DDP(model, device_ids=device_factory())  # todo
     return model
 
 
@@ -116,10 +119,33 @@ def optimizer_factory(model):
     return optim.Adam(lr_groups, **kws)
 
 
+def scheduler_factory(optimizer):
+    warmup = optim.lr_scheduler.LinearLR(
+        optimizer,
+        start_factor=0.0001,
+        end_factor=1.0,
+        total_iters=FLAGS.config.n_warmup_step,
+    )
+    decay = optim.lr_scheduler.LinearLR(
+        optimizer,
+        start_factor=1.0,
+        end_factor=0.1,
+        total_iters=FLAGS.config.n_pretrain_step - FLAGS.config.n_warmup_step,
+    )
+    return optim.lr_scheduler.ChainedScheduler([warmup, decay])
+
+
+def train_state_factory():
+    model = model_factory()
+    optimizer = optimizer_factory(model)
+    scheduler = scheduler_factory(optimizer)
+    return TrainState(model=model, optim=optimizer, sched=scheduler)
+
+
 def global_batch_size_factory():
     assert FLAGS.config.tokens_per_global_batch % FLAGS.config.sequence_len == 0
     global_bsz = FLAGS.config.tokens_per_global_batch // FLAGS.config.sequence_len
-    assert global_bsz % dist.get_world_size() == 0
+    # assert global_bsz % dist.get_world_size() == 0  # todo
     return global_bsz
 
 
@@ -155,6 +181,31 @@ def modeldir_factory(option, suffix):
     return posixpath.join(FLAGS.workdir, modelname_factory(option), suffix)
 
 
+def load_state(state):
+    model_path = modeldir_factory("load", "checkpoints/model.pth")
+    optim_path = modeldir_factory("load", "checkpoints/optimizer.pth")
+    sched_path = modeldir_factory("load", "checkpoints/schedule.pth")
+
+    if os.path.exists(model_path):
+        state.model.load_state_dict(torch.load(model_path))
+    if os.path.exists(model_path):
+        state.optim.load_state_dict(torch.load(optim_path))
+    if os.path.exists(model_path):
+        state.sched.load_state_dict(torch.load(sched_path))
+    return state
+
+
+def save_state(state):
+    model_path = modeldir_factory("save", "checkpoints/model.pth")
+    optim_path = modeldir_factory("save", "checkpoints/optimizer.pth")
+    sched_path = modeldir_factory("save", "checkpoints/schedule.pth")
+
+    torch.save(state.model.state_dict(), model_path)
+    torch.save(state.optim.state_dict(), optim_path)
+    torch.save(state.sched.state_dict(), sched_path)
+    return state
+
+
 def get_loss_mask(batch, *, pad_token_id, eos_token_id):
     # loss mask that allows training on first occurring eos/pad token as a target,
     # even if eos_token_id == pad_token_id
@@ -168,49 +219,47 @@ def get_loss_mask(batch, *, pad_token_id, eos_token_id):
     return loss_mask
 
 
-def loss_fn(config, model, batch):
+def loss_fn(model, batch):
     logits, intermediates = model(batch)  # tokens shifted internally by model
     mask = get_loss_mask(
-        batch, pad_token_id=config.pad_token_id, eos_token_id=config.eos_token_id
+        batch=batch,
+        pad_token_id=tokenizer_factory().pad_token_id,
+        eos_token_id=tokenizer_factory().pad_token_id,
     )
-    loss_term_avg = F.cross_entropy(
-        weight=mask, input=logits, target=batch, reduction="mean"
-    )
+    logprobs = F.log_softmax(logits, dim=-1)
+    logprobs = torch.gather(input=logprobs, index=batch[..., None], dim=-1)
+    logprobs = torch.squeeze(logprobs, dim=-1)
     metrics = dict(
-        loss_term_avg=loss_term_avg.detach(),
-        loss_mask_avg=mask.mean().detach(),
-        **intermediates,
+        loss_term_avg=-(mask * logprobs).mean(),
+        loss_mask_avg=mask.to(logprobs.dtype).mean(),
+        **intermediates.to_dict(),
     )
-    return loss_term_avg, metrics
+    return metrics["loss_term_avg"], jtu.tree_map(torch.detach, metrics)
 
 
 def treesz(x):
-    return etree.tree_reduce(lambda a, b: a + b.numel(), x, initializer=0)
+    return jtu.tree_reduce(lambda a, b: a + b.numel(), x, initializer=0)
 
 
 def treel2(x):
-    return (
-        etree.tree_reduce(lambda a, b: a + torch.sum(b**2), x, initializer=0) ** 0.5
-    )
+    return jtu.tree_reduce(lambda a, b: a + torch.sum(b**2), x, initializer=0) ** 0.5
 
 
 def global_mean(x):
-    return dist.all_reduce(x) / dist.get_world_size()
+    # return dist.all_reduce(x) / dist.get_world_size()  # todo
+    return x
 
 
 def train_step(state, batch):
     state.optim.zero_grad(set_to_none=True)
-    loss_term_avg, metrics = loss_fn(state.config, state.model, batch)
+    loss_term_avg, metrics = loss_fn(state.model, batch)
     loss_term_avg.backward()  # global mean of grads obtained automatically via DDP
 
-    metrics = etree.tree_map(lambda x: global_mean(x), metrics)
-    if FLAGS.config.sow_intermediates:
-        metrics["param_count"] = treesz(state.model.params())
-        metrics["param_count"] = treel2(state.model.params())
-        metrics["grad_norm"] = treel2(etree.map(lambda p: p.grad, state.model.params()))
-        metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
+    metrics = jtu.tree_map(lambda x: global_mean(x), metrics)
+    metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
 
-    nn.utils.clip_grad_norm_(state.model.params(), FLAGS.config.grad_clip)
+    gnorm = nn.utils.clip_grad_norm_(state.model.parameters(), FLAGS.config.grad_clip)
+    metrics["grad_norm"] = gnorm
     state.optim.step()
     state.sched.step()
     return state, metrics
@@ -219,8 +268,7 @@ def train_step(state, batch):
 def train_loop():
     logging.info("Entering train loop function...")
     logging.info("Creating W&B connection...")
-
-    if dist.get_rank() == 0:
+    if True:  # dist.get_rank() == 0:  # todo
         wandb.init(
             project="mu_transformer_private",
             config=vars(FLAGS.config)["_fields"],
@@ -228,13 +276,12 @@ def train_loop():
             mode="online" if FLAGS.wb_enabled else "disabled",
             id=FLAGS.wb_run,
         )
-    logging.info("Creating RNGs...")
-    # todo
 
     logging.info("Creating train state...")
-    start_step = None  # todo
+    state = train_state_factory()
+    start_step = 0  # todo: parse from checkpoint name
 
-    batch_size = global_batch_size_factory() // dist.get_world_size()
+    batch_size = global_batch_size_factory()  # // dist.get_world_size()  # todo
     dataset_shard = get_dataset(
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
@@ -244,31 +291,71 @@ def train_loop():
         split_name="train",
         batch_size=batch_size,
         sequence_len=FLAGS.config.sequence_len,
-        pcount=dist.get_world_size(),
-        pindex=dist.get_rank(),
+        pcount=1,  # dist.get_world_size(),  # todo
+        pindex=0,  # dist.get_rank(),  # todo
         workdir=FLAGS.workdir,
     )
 
     logging.info("Starting training loop...")
     best_val_loss = float("inf")
     val_metrics = dict()
-    log_level_is_debug = logging.get_verbosity() == 1
     start_time = time.perf_counter()
-
     # the user should set n_finetune_step > 0 if and only if currently fine-tuning.
     n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
     for step in range(start_step, n_total_step + 1):
-        logging.debug(f"Training step {step}...")
+        logging.info(f"training step: {step}")
+        # run a training step
+        logging.info("getting batch")
         batch = get_batch(
             dataset_shard,
             batch_size=batch_size,
             sequence_len=FLAGS.config.sequence_len,
             step=step,
         )
-        logging.debug("Got batch...")
-        logging.debug(f"Batch shape (local): {batch.shape}")
+        logging.info("training step")
+        state, metrics = train_step(
+            state=state,
+            batch=torch.from_numpy(batch).to(torch.int64),
+        )
+        # occasionally print metrics
+        if step % FLAGS.config.n_print_step == 0:
+            logging.debug("Starting print action...")
+            if cuda.is_available():
+                cuda.synchronize()
+            end_time = time.perf_counter()
+            sec_per_step = (end_time - start_time) / FLAGS.config.n_print_step
+            essentials = {
+                "step": step,
+                "sec_per_step": sec_per_step,
+                "loss_avg": metrics.get("loss_avg"),
+                "val_loss_avg": val_metrics.get("loss_avg"),
+            }
+            logging.info(essentials)
+            if True:  # jax.process_index() == 0: # todo
+                metrics.update(essentials)
+                wandb.log(metrics)
+            start_time = end_time
+            logging.debug("Done with print action...")
 
-        # run a training step
-        logging.debug("Starting train step...")
-        state, metrics = train_step(state=state, batch=batch)
-        logging.debug("Finished train step...")
+        # occasionally evaluate
+        if (step % FLAGS.config.n_save_step == 0) or step == n_total_step:
+            logging.debug("Starting evaluation action...")
+            val_metrics = eval_loop(state.model, n_eval_step=FLAGS.config.n_eval_step)
+            if best_val_loss > val_metrics["loss_avg"]:
+                logging.info("Validation loss improved...")
+                save_state(state)
+                best_val_loss = val_metrics["loss_avg"]
+            logging.debug("Done with evaluation action...")
+
+
+def eval_loop(model, n_eval_step):
+    return {"loss_avg": float("inf")}
+
+
+def main(argv):
+    del argv
+    train_loop()
+
+
+if __name__ == "__main__":
+    app.run(main)

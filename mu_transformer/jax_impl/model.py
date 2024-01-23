@@ -53,8 +53,9 @@ class TransformerConfig:
     @classmethod
     def create(cls, **kwargs):
         signature = {field.name: field.type for field in fields(TransformerConfig)}
-        filtered = {k: v for k, v in kwargs.items() if k in signature}
-        return cls(**filtered)
+        flt = {k: v for k, v in kwargs.items() if k in signature}
+        flt.update({k: jnp.dtype(v) for k, v in flt.items() if k.endswith("_dtype")})
+        return cls(**flt)
 
 
 class RMSNorm(nn.Module):

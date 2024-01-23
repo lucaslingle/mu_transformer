@@ -31,9 +31,9 @@ def get_base_config():
     config.sequence_len = 512
 
     # architecture
-    config.param_dtype = jnp.float32  # master copy of weights in fp32
-    config.dtype = jnp.bfloat16  # weights and activations are in bfloat16 on fwd/bwd
-    config.output_logits_dtype = jnp.bfloat16  # for bfloat16 grad; is fp32 during eval
+    config.param_dtype = "float32"  # master copy of weights in fp32
+    config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
+    config.output_logits_dtype = "bfloat16"  # for bfloat16 grad; is fp32 during eval
     config.use_mup = True  # use mu-parameterization or standard parametrization?
     config.n_layer = 12
     config.d_head = 256
@@ -50,7 +50,7 @@ def get_base_config():
     config.adam_b1 = 0.9
     config.adam_b2 = 0.98
     config.adam_eps = 1e-9
-    config.adam_mu_dtype = jnp.bfloat16
+    config.adam_mu_dtype = "bfloat16"
 
     # periodic action settings
     config.n_print_step = 100  # print every

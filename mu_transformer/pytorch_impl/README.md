@@ -8,12 +8,12 @@
     <img src="https://img.shields.io/badge/Weights_&_Biases-FFFFFF?style=for-the-badge&logo=WeightsAndBiases&logoColor=black&labelColor=FFFFFF"  height="20" />
 </a>
 
-Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
+Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Pytorch. 
 
 - Passes the correctness tests: *wider is better throughout training* and *coordinate checking*.
 - Supports any HuggingFace text dataset and tokenizer.
-- Supports distributed training on TPU pod slices. 
-- Supports data parallelism and tensor parallelism.
+- Supports distributed training on GPUs. 
+- Supports data parallelism. 
 - Supports mixed precision training, performing forward/backward in bfloat16.
 - Simple, flexible configuration.
 
@@ -25,10 +25,7 @@ git clone https://github.com/lucaslingle/mu_transformer.git;
 cd mu_transformer;
 poetry install --with cpu --without gpu --without tpu;  # CPU
 poetry install --with gpu --without cpu --without tpu;  # GPU
-poetry install --with tpu --without cpu --without gpu;  # TPU
 ```
-- On Cloud TPU VMs, Pipx and Poetry can be installed via ```./tpu_setup.sh```.
-- On Cloud TPU VMs, you may need to write ```~/.local/bin/poetry``` when invoking Poetry. 
 
 ## Basics
 
@@ -36,7 +33,7 @@ poetry install --with tpu --without cpu --without gpu;  # TPU
 
 To train a tiny model on OpenWebText for 10K steps, you can run
 ```
-poetry run python3 mu_transformer/jax_impl/launch.py \
+poetry run python3 mu_transformer/pytorch_impl/launch.py \
     --config=mu_transformer/configs/tiny.py \
     --mode=train \
     --workdir=/tmp/workdir;
@@ -51,7 +48,7 @@ However, you may wish to change the batch size, sequence length, number of layer
 
 Setting overrides are supported via command line. Here are some examples:
 ```
-poetry run python3 mu_transformer/jax_impl/launch.py \
+poetry run python3 mu_transformer/launch.py \
     --config=mu_transformer/configs/tiny.py \
     --mode=train \
     --workdir=/tmp/workdir \
@@ -69,7 +66,7 @@ You may also need to override the ```n_mesh_rows```, ```n_mesh_cols```, ```n_mes
 This project supports any HuggingFace text dataset and tokenizer out-of-the-box.  
 For instance, to use the [T5 tokenizer](https://huggingface.co/docs/transformers/model_doc/t5#transformers.T5TokenizerFast) and [C4 dataset](https://huggingface.co/datasets/c4), you can write
 ```
-poetry run python3 mu_transformer/jax_impl/launch.py \
+poetry run python3 mu_transformer/launch.py \
     --config=mu_transformer/configs/tiny.py \
     --mode=train \
     --workdir=/tmp/workdir \

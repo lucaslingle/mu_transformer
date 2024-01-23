@@ -26,11 +26,12 @@ from mu_transformer.pytorch_impl.sow import Intermediates
 
 # from flash_attention import flash_attn_func
 
-INFTY_APPROX = 1e30
+INF_APPROX = 1e30
 
 
 @dataclasses.dataclass
 class TransformerConfig:
+    sow_intermediates: bool
     param_dtype: Any
     dtype: Any
     output_logits_dtype: Any
@@ -48,6 +49,15 @@ class TransformerConfig:
     eos_token_id: int
     pad_token_id: int
     device: torch.device
+
+    @classmethod
+    def create(cls, **kwargs):
+        signature = {f.name: f.type for f in dataclasses.fields(TransformerConfig)}
+        flt = {k: v for k, v in kwargs.items() if k in signature}
+        flt.update(
+            {k: getattr(torch, v) for k, v in flt.items() if k.endswith("dtype")}
+        )
+        return cls(**flt)
 
 
 class RMSNorm(nn.Module):
@@ -71,17 +81,17 @@ class RotaryEncoding(nn.Module):
 
         positions = torch.arange(length, device=self.hps.device)
         dimensions = torch.arange(width // 2, device=self.hps.device)
-        ang_freqs = torch.pow(self.rotary_base, -dimensions / (width // 2))
+        ang_freqs = torch.pow(self.hps.rotary_base, -dimensions / (width // 2))
 
         # expand to a shape broadcastable with q/k dims
-        positions = torch.view(positions, [1, length, 1, 1])
-        ang_freqs = torch.view(ang_freqs, [1, 1, 1, width // 2])
+        positions = torch.reshape(positions, [1, length, 1, 1])
+        ang_freqs = torch.reshape(ang_freqs, [1, 1, 1, width // 2])
 
         radians = positions * ang_freqs
         cos = torch.cos(radians).to(x.dtype)
         sin = torch.sin(radians).to(x.dtype)
 
-        even, odd = torch.split(x, 2, dim=-1)
+        even, odd = torch.chunk(x, 2, dim=-1)
         r_even = even * cos - odd * sin
         r_odd = even * sin + odd * cos
 
@@ -99,45 +109,40 @@ class MultiheadSelfAttention(nn.Module):
             D=self.hps.d_head,
         )
 
-        # zero init; appdx d.2
-        q_init = torch.init.zeros
-        # normal, var 1/fan_in; table 3
-        kv_init = torch.init.normal(self.hps.d_model**-0.5)
-        # normal, var 1/fan_in; table 3 with nh*dh=dm.
-        #   also, discretionary variance multiplier 1/2l for depth transfer (radford).
-        o_init = torch.init.normal((2 * self.hps.n_layer * self.hps.d_model) ** -0.5)
-
         self.w_aq = nn.parameter.Parameter(
-            q_init(
-                torch.empty(
-                    size=self.shapes["HMD"],
+            nn.init.zeros_(  # appdx d.2
+                tensor=torch.empty(
+                    self.shapes["HMD"],
                     dtype=self.hps.param_dtype,
                     device=self.hps.device,
                 ),
             ),
         )
-        self.w_ak = self.param(
-            kv_init(
-                torch.empty(
-                    size=self.shapes["HMD"],
+        self.w_ak = nn.parameter.Parameter(
+            nn.init.normal_(
+                std=self.hps.d_model**-0.5,  # table 3
+                tensor=torch.empty(
+                    self.shapes["HMD"],
                     dtype=self.hps.param_dtype,
                     device=self.hps.device,
                 ),
             ),
         )
-        self.w_av = self.param(
-            kv_init(
-                torch.empty(
-                    size=self.shapes["HMD"],
+        self.w_av = nn.parameter.Parameter(
+            nn.init.normal_(
+                std=self.hps.d_model**-0.5,  # table 3
+                tensor=torch.empty(
+                    self.shapes["HMD"],
                     dtype=self.hps.param_dtype,
                     device=self.hps.device,
                 ),
             ),
         )
-        self.w_ao = self.param(
-            o_init(
-                torch.empty(
-                    size=self.shapes["HDM"],
+        self.w_ao = nn.parameter.Parameter(  # table 3 with nh*dh=dm; var mult 1/2l
+            nn.init.normal_(
+                std=(2 * self.hps.d_model * self.hps.n_layer) ** -0.5,
+                tensor=torch.empty(
+                    self.shapes["HDM"],
                     dtype=self.hps.param_dtype,
                     device=self.hps.device,
                 ),
@@ -164,16 +169,15 @@ class MultiheadSelfAttention(nn.Module):
         # current flash impl doesnt allow storing intermediates like the avg qk scale
         # o = flash_attn_func(q, k, v, softmax_scale=1.0 / self.hps.d_head, causal=True)
 
-        scale = 1 / self.hps.d_head
-        mult = scale**0.5
-        s = torch.einsum("bihd,bjhd->bhij", mult * q, mult * k)
+        s = torch.einsum("bihd,bjhd->bhij", q, k)
+        s = s / self.hps.d_head
         intermediates.set("as_l1", coord_check_l1(s), layer_id)
 
-        i = torch.arange(self.length, device=self.device)[..., None]
-        j = torch.arange(self.length, device=self.device)[None, ...]
+        i = torch.arange(x.shape[1], device=self.hps.device)[..., None]
+        j = torch.arange(x.shape[1], device=self.hps.device)[None, ...]
         mask = torch.less(i, j)  # i.e., j > i, indicator masks out non-causal
         mask = mask[None, None, ...]
-        s = s - torch.tensor([INFTY_APPROX], dtype=x.dtype, device=self.device) * mask
+        s = s - torch.tensor([INF_APPROX], dtype=x.dtype, device=self.hps.device) * mask
 
         p = F.softmax(s, dim=-1)
         intermediates.set("ap_l1", coord_check_l1(p), layer_id)
@@ -195,27 +199,22 @@ class MultiLayerPerceptron(nn.Module):
             F=self.hps.d_model * self.hps.ff_multiple,
         )
 
-        # table 3
-        w1_init = torch.init.normal(self.hps.d_model**-0.5)
-        # table 3 with d_ff = dm * ff_multiple
-        #    discretionary variance multiplier 1 / 2l for depth transfer (radford)
-        w2_init = torch.init.normal(
-            (2 * self.hps.n_layer * self.hps.d_model * self.hps.ff_multiple) ** -0.5
-        )
-
         self.w_fi = nn.parameter.Parameter(
-            w1_init(
-                torch.empty(
-                    size=self.shapes["MF"],
+            nn.init.normal_(
+                std=self.hps.d_model**-0.5,  # table 3
+                tensor=torch.empty(
+                    self.shapes["MF"],
                     dtype=self.hps.param_dtype,
                     device=self.hps.device,
                 ),
             ),
         )
         self.w_fo = nn.parameter.Parameter(
-            w2_init(
-                torch.empty(
-                    size=self.shapes["FM"],
+            nn.init.normal_(  # table 3 with d_ff = dm * ff_multiple; var mult 1/2l
+                std=(2 * self.hps.n_layer * self.hps.d_model * self.hps.ff_multiple)
+                ** -0.5,
+                tensor=torch.empty(
+                    self.shapes["FM"],
                     dtype=self.hps.param_dtype,
                     device=self.hps.device,
                 ),
@@ -262,11 +261,11 @@ class Embedding(nn.Module):
     def __init__(self, hps: TransformerConfig) -> None:
         super().__init__()
         self.hps = hps
-        e_init = torch.init.normal(1.0)  # appendix b.1
         self.w_ei = nn.parameter.Parameter(
-            e_init(
-                torch.empty(
-                    size=[self.hps.n_vocab, self.hps.d_model],
+            nn.init.normal_(  # appendix b.1
+                std=1.0,
+                tensor=torch.empty(
+                    size=(self.hps.n_vocab, self.hps.d_model),
                     dtype=self.hps.param_dtype,
                     device=self.hps.device,
                 ),
@@ -274,11 +273,7 @@ class Embedding(nn.Module):
         )
 
     def forward(self, x):
-        x = torch.gather(
-            input=self.w_ei.to(self.hps.dtype)[None, ...],  # 1VM
-            index=x[..., None],  # BT1
-            dim=1,
-        )
+        x = F.embedding(input=x, weight=self.w_ei.to(self.hps.dtype))
         return x
 
 
@@ -286,12 +281,11 @@ class PredictionHead(nn.Module):
     def __init__(self, hps: TransformerConfig) -> None:
         super().__init__()
         self.hps = hps
-        o_init = torch.init.zeros  # appendix d.2
         self.norm = RMSNorm(self.hps)
         self.w_eo = nn.parameter.Parameter(
-            o_init(
-                torch.empty(
-                    size=[self.hps.d_model, self.hps.n_vocab],
+            nn.init.zeros_(  # appendix d.2
+                tensor=torch.empty(
+                    size=(self.hps.d_model, self.hps.n_vocab),
                     dtype=self.hps.param_dtype,
                     device=self.hps.device,
                 ),
@@ -319,10 +313,10 @@ class Transformer(nn.Module):
         self.predict = PredictionHead(self.hps)
 
     def forward(self, x):
-        intermediates = Intermediates()
+        intermediates = Intermediates(enabled=self.hps.sow_intermediates)
         x = F.pad(x[:, 0:-1], (1, 0), value=self.hps.bos_token_id)
         x = self.embed(x)
         for layer_id in range(self.hps.n_layer):
             x, intermediates = self.stack[layer_id](x, intermediates, layer_id)
-        x = self.predict(self.hps)(x)
-        return x
+        x = self.predict(x)
+        return x, intermediates
