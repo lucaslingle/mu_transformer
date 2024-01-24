@@ -32,8 +32,8 @@ jaxlib = {extras = ["cpu"], version = "0.4.23"}
 
 # todo: change back jaxlib to use cp39 when not on colab
 [tool.poetry.group.gpu.dependencies]
-jax = {extras = ["cuda12_pip"], version = "0.4.23"}
-jaxlib = { url = "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.23+cuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl" }
+jax = {extras = ["cuda12_pip"], version = "0.4.21"}
+jaxlib = { url = "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.21+cuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl" }
 #  flash-attn = "2.3.4"
 
 [tool.poetry.group.tpu.dependencies]
