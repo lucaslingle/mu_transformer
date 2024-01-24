@@ -292,19 +292,19 @@ def train_loop():
     start_step = 0  # todo: parse from checkpoint name
 
     batch_size = global_batch_size_factory()  # // dist.get_world_size()  # todo
-    dataset_shard = get_dataset(
-        hfds_identifier=FLAGS.config.hfds_identifier,
-        hfds_config=FLAGS.config.hfds_config,
-        hfds_datacol=FLAGS.config.hfds_datacol,
-        hfds_buffer_size=FLAGS.config.hfds_buffer_size,
-        hftr_tokenizer=tokenizer_factory(),
-        split_name="train",
-        batch_size=batch_size,
-        sequence_len=FLAGS.config.sequence_len,
-        pcount=1,  # dist.get_world_size(),  # todo
-        pindex=0,  # dist.get_rank(),  # todo
-        workdir=FLAGS.workdir,
-    )
+    # dataset_shard = get_dataset(
+    #     hfds_identifier=FLAGS.config.hfds_identifier,
+    #     hfds_config=FLAGS.config.hfds_config,
+    #     hfds_datacol=FLAGS.config.hfds_datacol,
+    #     hfds_buffer_size=FLAGS.config.hfds_buffer_size,
+    #     hftr_tokenizer=tokenizer_factory(),
+    #     split_name="train",
+    #     batch_size=batch_size,
+    #     sequence_len=FLAGS.config.sequence_len,
+    #     pcount=1,  # dist.get_world_size(),  # todo
+    #     pindex=0,  # dist.get_rank(),  # todo
+    #     workdir=FLAGS.workdir,
+    # )
 
     logging.info("Starting training loop...")
     best_val_loss = float("inf")
