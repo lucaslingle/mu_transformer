@@ -34,29 +34,29 @@ def get_base_config():
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
     config.output_logits_dtype = "bfloat16"  # for bfloat16 grad; is fp32 during eval
     config.use_mup = True  # use mu-parameterization or standard parametrization?
-    config.n_layer = 12
-    config.d_head = 256
+    config.n_layer = 6
+    config.d_head = 64
     config.ff_multiple = 4
     config.rotary_base = 10_000  # can be zero to use NoPE instead of RoPE
     config.act_name = "relu"  # any activation defined in jax.nn
-    config.act_square = False  # activation squaring
-    config.norm_eps = 1e-8
+    config.act_square = True  # activation squaring
+    config.norm_eps = 0.0
 
     # optimization
-    config.tokens_per_global_batch = 2**18
+    config.tokens_per_global_batch = 64
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
-    config.lr_max = 1.0  # master lr; scaled by mu-parameterization adam, schedule
+    config.lr_max = 10.0  # master lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
-    config.adam_b2 = 0.98
-    config.adam_eps = 1e-9
+    config.adam_b2 = 0.95
+    config.adam_eps = 1e-8
     config.adam_mu_dtype = "bfloat16"
 
     # periodic action settings
-    config.n_print_step = 100  # print every
-    config.n_save_step = 1000  # checkpoint every
+    config.n_print_step = 10  # print every
+    config.n_save_step = 100  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
-    config.n_warmup_step = 10_000  # warmup steps during pretraining
-    config.n_pretrain_step = 125_000  # pretraining steps
+    config.n_warmup_step = 400  # warmup steps during pretraining
+    config.n_pretrain_step = 1_600  # pretraining steps
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
 
     return config

@@ -201,7 +201,7 @@ class MultiheadSelfAttention(nn.Module):
         p = F.softmax(s, dim=-1)
         intermediates.coord_check_l1("ap_l1", p, layer_id)
 
-        o = torch.einsum("bhij,bhjd->bihd", p, v)
+        o = torch.einsum("bhij,bjhd->bihd", p, v)
         intermediates.coord_check_l1("ao_l1", o, layer_id)
 
         r = torch.einsum("bihd,hdm->bim", o, self.w_ao.to(self.hps.dtype))
