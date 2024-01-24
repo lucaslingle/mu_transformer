@@ -411,10 +411,9 @@ def train_loop():
         state, metrics = train_step(
             state,
             batch=jnp.remainder(
-                jnp.arange(
-                    end=batch_size * FLAGS.config.sequence_len,
-                    device=state.model.hps.device,
-                ).view(batch_size, -1),
+                jnp.arange(end=batch_size * FLAGS.config.sequence_len).view(
+                    batch_size, -1
+                ),
                 transformer_config_factory(True).n_vocab,
             ),
             # batch=batch,
