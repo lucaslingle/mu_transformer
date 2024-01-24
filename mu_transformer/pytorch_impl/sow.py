@@ -32,6 +32,13 @@ class Intermediates:
         if self.enabled:
             self.kvs[f"{key}_{layer:02}"] = value
 
+    def coord_check_l1(self, key, value, layer):
+        # https://github.com/microsoft/mup?tab=readme-ov-file#coord-check
+        # note this is not actually an l1 norm, since we avg over coordinates
+        if self.enabled:
+            value = torch.detach(torch.mean(torch.abs(value)))
+            self.set(key, value, layer)
+
     def get(self, key):
         return self.kvs[key]
 

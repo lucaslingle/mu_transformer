@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import dataclasses
+import functools
 from typing import Any
-from typing import Union
 
 import torch
 import torch.nn as nn
@@ -21,7 +21,6 @@ import torch.nn.functional as F  # noqa
 from torch.utils.checkpoint import checkpoint as remat
 
 from mu_transformer.dims import Dimensions
-from mu_transformer.pytorch_impl.sow import coord_check_l1
 from mu_transformer.pytorch_impl.sow import Intermediates
 
 # from flash_attention import flash_attn_func
@@ -71,25 +70,50 @@ class RMSNorm(nn.Module):
         return x / rms[..., None]
 
 
+@functools.lru_cache(maxsize=1)
+def sinusoidal_embs(length, width, base, dtype, device):
+    positions = torch.arange(length, device=device)
+    dimensions = torch.arange(width // 2, device=device)
+    ang_freqs = torch.pow(base, -dimensions / (width // 2))
+
+    # expand to a shape broadcastable with q/k dims
+    positions = torch.reshape(positions, [1, length, 1, 1])
+    ang_freqs = torch.reshape(ang_freqs, [1, 1, 1, width // 2])
+
+    radians = positions * ang_freqs
+    cos = torch.cos(radians).to(dtype)
+    sin = torch.sin(radians).to(dtype)
+    return cos, sin
+
+
 class RotaryEncoding(nn.Module):
     def __init__(self, hps: TransformerConfig) -> None:
         super().__init__()
         self.hps = hps
 
     def forward(self, x):
-        *_, length, width = x.shape  # B, T, H, D
+        _, length, _, width = x.shape  # B, T, H, D
 
-        positions = torch.arange(length, device=self.hps.device)
-        dimensions = torch.arange(width // 2, device=self.hps.device)
-        ang_freqs = torch.pow(self.hps.rotary_base, -dimensions / (width // 2))
+        # positions = torch.arange(length, device=self.hps.device)
+        # dimensions = torch.arange(width // 2, device=self.hps.device)
+        # ang_freqs = torch.pow(self.hps.rotary_base, -dimensions / (width // 2))
+        #
+        # # expand to a shape broadcastable with q/k dims
+        # positions = torch.reshape(positions, [1, length, 1, 1])
+        # ang_freqs = torch.reshape(ang_freqs, [1, 1, 1, width // 2])
+        #
+        # radians = positions * ang_freqs
+        # cos = torch.cos(radians).to(x.dtype)
+        # sin = torch.sin(radians).to(x.dtype)
+        #
 
-        # expand to a shape broadcastable with q/k dims
-        positions = torch.reshape(positions, [1, length, 1, 1])
-        ang_freqs = torch.reshape(ang_freqs, [1, 1, 1, width // 2])
-
-        radians = positions * ang_freqs
-        cos = torch.cos(radians).to(x.dtype)
-        sin = torch.sin(radians).to(x.dtype)
+        cos, sin = sinusoidal_embs(
+            length=length,
+            width=width,
+            base=self.hps.rotary_base,
+            dtype=x.dtype,
+            device=self.hps.device,
+        )
 
         even, odd = torch.chunk(x, 2, dim=-1)
         r_even = even * cos - odd * sin
@@ -110,68 +134,63 @@ class MultiheadSelfAttention(nn.Module):
         )
 
         self.w_aq = nn.parameter.Parameter(
-            nn.init.zeros_(  # appdx d.2
-                tensor=torch.empty(
-                    self.shapes["HMD"],
-                    dtype=self.hps.param_dtype,
-                    device=self.hps.device,
-                ),
+            torch.zeros(
+                size=self.shapes["MHD"],
+                dtype=self.hps.param_dtype,
+                device=self.hps.device,
             ),
         )
         self.w_ak = nn.parameter.Parameter(
-            nn.init.normal_(
-                std=self.hps.d_model**-0.5,  # table 3
-                tensor=torch.empty(
-                    self.shapes["HMD"],
-                    dtype=self.hps.param_dtype,
-                    device=self.hps.device,
-                ),
+            torch.normal(
+                mean=0.0,
+                std=self.hps.d_model**-0.5,
+                size=self.shapes["MHD"],
+                dtype=self.hps.param_dtype,
+                device=self.hps.device,
             ),
         )
         self.w_av = nn.parameter.Parameter(
-            nn.init.normal_(
-                std=self.hps.d_model**-0.5,  # table 3
-                tensor=torch.empty(
-                    self.shapes["HMD"],
-                    dtype=self.hps.param_dtype,
-                    device=self.hps.device,
-                ),
+            torch.normal(
+                mean=0.0,
+                std=self.hps.d_model**-0.5,
+                size=self.shapes["MHD"],
+                dtype=self.hps.param_dtype,
+                device=self.hps.device,
             ),
         )
         self.w_ao = nn.parameter.Parameter(  # table 3 with nh*dh=dm; var mult 1/2l
-            nn.init.normal_(
-                std=(2 * self.hps.d_model * self.hps.n_layer) ** -0.5,
-                tensor=torch.empty(
-                    self.shapes["HDM"],
-                    dtype=self.hps.param_dtype,
-                    device=self.hps.device,
-                ),
+            torch.normal(  # table 3 with nh*dh=dm; var mult 1/2l
+                mean=0.0,
+                std=(self.hps.d_model * 2 * self.hps.n_layer) ** -0.5,
+                size=self.shapes["HDM"],
+                dtype=self.hps.param_dtype,
+                device=self.hps.device,
             ),
         )
         self.rope = RotaryEncoding(self.hps)
 
     def forward(self, x, intermediates, layer_id):
-        intermediates.set("ax_l1", coord_check_l1(x), layer_id)
+        intermediates.coord_check_l1("ax_l1", x, layer_id)
 
-        q = torch.einsum("btm,hmd->bthd", x, self.w_aq.to(self.hps.dtype))
-        k = torch.einsum("btm,hmd->bthd", x, self.w_ak.to(self.hps.dtype))
-        v = torch.einsum("btm,hmd->bthd", x, self.w_av.to(self.hps.dtype))
-        intermediates.set("aq_l1", coord_check_l1(q), layer_id)
-        intermediates.set("ak_l1", coord_check_l1(k), layer_id)
-        intermediates.set("av_l1", coord_check_l1(v), layer_id)
+        q = torch.einsum("btm,mhd->bthd", x, self.w_aq.to(self.hps.dtype))
+        k = torch.einsum("btm,mhd->bthd", x, self.w_ak.to(self.hps.dtype))
+        v = torch.einsum("btm,mhd->bthd", x, self.w_av.to(self.hps.dtype))
+        intermediates.coord_check_l1("aq_l1", q, layer_id)
+        intermediates.coord_check_l1("ak_l1", k, layer_id)
+        intermediates.coord_check_l1("av_l1", v, layer_id)
 
         if self.hps.rotary_base > 0:
             q = self.rope(q)
             k = self.rope(k)
-            intermediates.set("aqr_l1", coord_check_l1(q), layer_id)
-            intermediates.set("akr_l1", coord_check_l1(k), layer_id)
+            intermediates.coord_check_l1("aqr_l1", q, layer_id)
+            intermediates.coord_check_l1("akr_l1", k, layer_id)
 
         # current flash impl doesnt allow storing intermediates like the avg qk scale
         # o = flash_attn_func(q, k, v, softmax_scale=1.0 / self.hps.d_head, causal=True)
 
         s = torch.einsum("bihd,bjhd->bhij", q, k)
         s = s / self.hps.d_head
-        intermediates.set("as_l1", coord_check_l1(s), layer_id)
+        intermediates.coord_check_l1("as_l1", s, layer_id)
 
         i = torch.arange(x.shape[1], device=self.hps.device)[..., None]
         j = torch.arange(x.shape[1], device=self.hps.device)[None, ...]
@@ -180,13 +199,13 @@ class MultiheadSelfAttention(nn.Module):
         s = s - torch.tensor([INF_APPROX], dtype=x.dtype, device=self.hps.device) * mask
 
         p = F.softmax(s, dim=-1)
-        intermediates.set("ap_l1", coord_check_l1(p), layer_id)
+        intermediates.coord_check_l1("ap_l1", p, layer_id)
 
         o = torch.einsum("bhij,bhjd->bihd", p, v)
-        intermediates.set("ao_l1", coord_check_l1(o), layer_id)
+        intermediates.coord_check_l1("ao_l1", o, layer_id)
 
         r = torch.einsum("bihd,hdm->bim", o, self.w_ao.to(self.hps.dtype))
-        intermediates.set("ar_l1", coord_check_l1(r), layer_id)
+        intermediates.coord_check_l1("ar_l1", r, layer_id)
         return r, intermediates
 
 
@@ -200,40 +219,37 @@ class MultiLayerPerceptron(nn.Module):
         )
 
         self.w_fi = nn.parameter.Parameter(
-            nn.init.normal_(
+            torch.normal(
+                mean=0.0,
                 std=self.hps.d_model**-0.5,  # table 3
-                tensor=torch.empty(
-                    self.shapes["MF"],
-                    dtype=self.hps.param_dtype,
-                    device=self.hps.device,
-                ),
+                size=self.shapes["MF"],
+                dtype=self.hps.param_dtype,
+                device=self.hps.device,
             ),
         )
         self.w_fo = nn.parameter.Parameter(
-            nn.init.normal_(  # table 3 with d_ff = dm * ff_multiple; var mult 1/2l
-                std=(2 * self.hps.n_layer * self.hps.d_model * self.hps.ff_multiple)
-                ** -0.5,
-                tensor=torch.empty(
-                    self.shapes["FM"],
-                    dtype=self.hps.param_dtype,
-                    device=self.hps.device,
-                ),
+            torch.normal(
+                mean=0.0,
+                std=(self.hps.d_model * 2 * self.hps.n_layer) ** -0.5,  # table 3
+                size=self.shapes["FM"],
+                dtype=self.hps.param_dtype,
+                device=self.hps.device,
             ),
         )
 
     def forward(self, x, intermediates, layer_id):
-        intermediates.set("fx_l1", coord_check_l1(x), layer_id)
+        intermediates.coord_check_l1("fx_l1", x, layer_id)
 
         x = torch.einsum("btm,mf->btf", x, self.w_fi.to(self.hps.dtype))
-        intermediates.set("fp_l1", coord_check_l1(x), layer_id)
+        intermediates.coord_check_l1("fp_l1", x, layer_id)
 
         x = getattr(F, self.hps.act_name)(x)
         if self.hps.act_square:
             x = torch.pow(x, 2)
-        intermediates.set("fa_l1", coord_check_l1(x), layer_id)
+        intermediates.coord_check_l1("fa_l1", x, layer_id)
 
         x = torch.einsum("btf,fm->btm", x, self.w_fo.to(self.hps.dtype))
-        intermediates.set("fr_l1", coord_check_l1(x), layer_id)
+        intermediates.coord_check_l1("fr_l1", x, layer_id)
         return x, intermediates
 
 
@@ -254,7 +270,8 @@ class TransformerBlock(nn.Module):
         return x, intermediates
 
     def forward(self, x, intermediates, layer_id):
-        return remat(self._forward, x, intermediates, layer_id, use_reentrant=False)
+        return remat(self._forward, x, intermediates, layer_id, use_reentrant=True)
+        # return self._forward(x, intermediates, layer_id)
 
 
 class Embedding(nn.Module):
@@ -262,13 +279,12 @@ class Embedding(nn.Module):
         super().__init__()
         self.hps = hps
         self.w_ei = nn.parameter.Parameter(
-            nn.init.normal_(  # appendix b.1
+            torch.normal(  # appendix b.1
+                mean=0.0,
                 std=1.0,
-                tensor=torch.empty(
-                    size=(self.hps.n_vocab, self.hps.d_model),
-                    dtype=self.hps.param_dtype,
-                    device=self.hps.device,
-                ),
+                size=(self.hps.n_vocab, self.hps.d_model),
+                dtype=self.hps.param_dtype,
+                device=self.hps.device,
             ),
         )
 
@@ -283,12 +299,10 @@ class PredictionHead(nn.Module):
         self.hps = hps
         self.norm = RMSNorm(self.hps)
         self.w_eo = nn.parameter.Parameter(
-            nn.init.zeros_(  # appendix d.2
-                tensor=torch.empty(
-                    size=(self.hps.d_model, self.hps.n_vocab),
-                    dtype=self.hps.param_dtype,
-                    device=self.hps.device,
-                ),
+            torch.zeros(  # appendix d.2
+                size=(self.hps.d_model, self.hps.n_vocab),
+                dtype=self.hps.param_dtype,
+                device=self.hps.device,
             ),
         )
 
@@ -319,4 +333,7 @@ class Transformer(nn.Module):
         for layer_id in range(self.hps.n_layer):
             x, intermediates = self.stack[layer_id](x, intermediates, layer_id)
         x = self.predict(x)
-        return x, intermediates
+        return dict(
+            logprobs=F.log_softmax(x, dim=-1),
+            intermediates=intermediates,
+        )

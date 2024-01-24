@@ -17,8 +17,6 @@ from typing import Optional
 
 import blobfile
 import datasets as hfds
-import jax
-import jax.numpy as jnp
 import numpy as np
 import tqdm
 import transformers as hftr
@@ -121,7 +119,7 @@ def write_dataset_to_memmap(
     ds = ds.map(
         processing_fn,
         batched=True,
-        batch_size=hfds_buffer_size * jax.process_count(),
+        batch_size=hfds_buffer_size * pcount,
         remove_columns=list(ds.column_names),
     )
 
@@ -248,7 +246,7 @@ def get_dataset(
     return arr
 
 
-def get_batch(arr, batch_size, sequence_len, step):  # batch size per host
+def get_batch(arr, batch_size, sequence_len, step, out_dtype=np.int32):
     # todo: support shuffle indices
     chunk_size = batch_size * sequence_len
     n_chunks = arr.shape[0] // chunk_size
@@ -256,7 +254,7 @@ def get_batch(arr, batch_size, sequence_len, step):  # batch size per host
     folded_step = step % n_chunks
     batch = arr[chunk_size * folded_step : chunk_size * (folded_step + 1)]
     batch = np.reshape(batch, [batch_size, sequence_len])
-    batch = batch.astype(np.int32)
+    batch = batch.astype(out_dtype)
     return batch
 
 

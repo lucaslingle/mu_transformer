@@ -15,10 +15,11 @@ import functools
 import os
 import posixpath
 import re
+import sys
 import time
 from collections import namedtuple
 
-import jax.tree_util as jtu
+import numpy as np
 import torch
 import torch.cuda as cuda
 import torch.nn as nn
@@ -30,12 +31,14 @@ from absl import flags
 from absl import logging
 from ml_collections import config_flags
 
-from mu_transformer.data import count_batches
 from mu_transformer.data import get_batch
 from mu_transformer.data import get_dataset
 from mu_transformer.data import get_tokenizer
 from mu_transformer.pytorch_impl.model import Transformer
 from mu_transformer.pytorch_impl.model import TransformerConfig
+
+# import jax.tree_util as jtu
+# from mu_transformer.data import count_batches
 
 #  import torch.distributed as dist
 #  from torch.nn.parallel import DistributedDataParallel as DDP  # noqa
@@ -104,7 +107,7 @@ def optimizer_factory(model):
     dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
     # adam optimizer for standard parametrization
     if not FLAGS.config.use_mup:
-        return optim.Adam(model.params(), lr=lr, **kws)
+        return optim.Adam(model.parameters(), lr=lr, **kws)
     # adam optimizer for mu-parametrization
     lr_groups = [
         dict(params=filter_params(model, "w_ei"), lr=lr),  # table 3 col 1
@@ -220,29 +223,34 @@ def get_loss_mask(batch, *, pad_token_id, eos_token_id):
 
 
 def loss_fn(model, batch):
-    logits, intermediates = model(batch)  # tokens shifted internally by model
+    outputs = model(batch)  # tokens shifted internally by model
     mask = get_loss_mask(
         batch=batch,
-        pad_token_id=tokenizer_factory().pad_token_id,
-        eos_token_id=tokenizer_factory().pad_token_id,
+        pad_token_id=model.hps.pad_token_id,
+        eos_token_id=model.hps.eos_token_id,
     )
-    logprobs = F.log_softmax(logits, dim=-1)
-    logprobs = torch.gather(input=logprobs, index=batch[..., None], dim=-1)
-    logprobs = torch.squeeze(logprobs, dim=-1)
+    loss_terms = (
+        -1.0
+        * mask
+        * torch.squeeze(
+            input=torch.gather(outputs["logprobs"], dim=-1, index=batch[..., None]),
+            dim=-1,
+        )
+    )
     metrics = dict(
-        loss_term_avg=-(mask * logprobs).mean(),
-        loss_mask_avg=mask.to(logprobs.dtype).mean(),
-        **intermediates.to_dict(),
+        loss_term_avg=loss_terms.mean(),
+        loss_mask_avg=mask.to(loss_terms.dtype).mean(),
+        **outputs["intermediates"].to_dict(),
     )
-    return metrics["loss_term_avg"], jtu.tree_map(torch.detach, metrics)
+    return metrics["loss_term_avg"], metrics
 
 
-def treesz(x):
-    return jtu.tree_reduce(lambda a, b: a + b.numel(), x, initializer=0)
-
-
-def treel2(x):
-    return jtu.tree_reduce(lambda a, b: a + torch.sum(b**2), x, initializer=0) ** 0.5
+# def treesz(x):
+#     return jtu.tree_reduce(lambda a, b: a + b.numel(), x, initializer=0)
+#
+#
+# def treel2(x):
+#     return jtu.tree_reduce(lambda a, b: a + torch.sum(b**2), x, initializer=0) ** 0.5
 
 
 def global_mean(x):
@@ -255,13 +263,13 @@ def train_step(state, batch):
     loss_term_avg, metrics = loss_fn(state.model, batch)
     loss_term_avg.backward()  # global mean of grads obtained automatically via DDP
 
-    metrics = jtu.tree_map(lambda x: global_mean(x), metrics)
-    metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
-
     gnorm = nn.utils.clip_grad_norm_(state.model.parameters(), FLAGS.config.grad_clip)
-    metrics["grad_norm"] = gnorm
     state.optim.step()
     state.sched.step()
+
+    # metrics = jtu.tree_map(lambda x: global_mean(x), metrics)  # todo
+    metrics["grad_norm"] = gnorm
+    metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
     return state, metrics
 
 
@@ -298,7 +306,7 @@ def train_loop():
 
     logging.info("Starting training loop...")
     best_val_loss = float("inf")
-    val_metrics = dict()
+    val_metrics = dict(loss_avg=torch.tensor([best_val_loss], dtype=torch.float32))
     start_time = time.perf_counter()
     # the user should set n_finetune_step > 0 if and only if currently fine-tuning.
     n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
@@ -311,11 +319,16 @@ def train_loop():
             batch_size=batch_size,
             sequence_len=FLAGS.config.sequence_len,
             step=step,
+            out_dtype=np.int64,
         )
         logging.info("training step")
         state, metrics = train_step(
             state=state,
-            batch=torch.from_numpy(batch).to(torch.int64),
+            # batch=torch.arange(
+            #     end=batch_size * FLAGS.config.sequence_len,
+            #     device=state.model.hps.device,
+            # ).view(batch_size, -1),
+            batch=torch.from_numpy(batch),
         )
         # occasionally print metrics
         if step % FLAGS.config.n_print_step == 0:
@@ -327,8 +340,9 @@ def train_loop():
             essentials = {
                 "step": step,
                 "sec_per_step": sec_per_step,
-                "loss_avg": metrics.get("loss_avg"),
-                "val_loss_avg": val_metrics.get("loss_avg"),
+                "loss_avg": metrics.get("loss_avg").item(),
+                "val_loss_avg": val_metrics.get("loss_avg").item(),
+                "grad_norm": metrics.get("grad_norm").item(),
             }
             logging.info(essentials)
             if True:  # jax.process_index() == 0: # todo
@@ -341,19 +355,40 @@ def train_loop():
         if (step % FLAGS.config.n_save_step == 0) or step == n_total_step:
             logging.debug("Starting evaluation action...")
             val_metrics = eval_loop(state.model, n_eval_step=FLAGS.config.n_eval_step)
-            if best_val_loss > val_metrics["loss_avg"]:
+            if best_val_loss > val_metrics["loss_avg"].item():
                 logging.info("Validation loss improved...")
                 save_state(state)
-                best_val_loss = val_metrics["loss_avg"]
+                best_val_loss = val_metrics["loss_avg"].item()
             logging.debug("Done with evaluation action...")
 
 
 def eval_loop(model, n_eval_step):
-    return {"loss_avg": float("inf")}
+    return dict(loss_avg=torch.tensor([float("inf")], dtype=torch.float32))
 
 
 def main(argv):
     del argv
+    logging.info("=== Start of main() ===")
+    logging.info(f"Python version: {sys.version.__repr__()}")
+    logging.info("=== Flags: ===")
+    logging.info(f"workdir: {FLAGS.workdir}")
+    logging.info(f"mode: {FLAGS.mode}")
+    logging.info(f"seed: {FLAGS.seed}")
+    logging.info(f"wb_enabled: {FLAGS.wb_enabled}")
+    logging.info(f"wb_run: {FLAGS.wb_run}")
+    logging.info(f"loading_name: {FLAGS.loading_name}")
+    logging.info(f"saving_name: {FLAGS.saving_name}")
+    logging.info(f"verbosity: {FLAGS.verbosity}")
+    logging.info("=== Config: ===")
+    for k, v in vars(FLAGS.config)["_fields"].items():
+        logging.info(f"{k}: {v}")
+    assert global_batch_size_factory() % FLAGS.config.n_mesh_rows == 0
+    assert FLAGS.config.n_mesh_rows >= 1
+    assert FLAGS.config.n_mesh_cols == 1
+    assert FLAGS.config.n_mesh_planes == 1
+
+    if FLAGS.mode == "train":
+        train_loop()
     train_loop()
 
 
