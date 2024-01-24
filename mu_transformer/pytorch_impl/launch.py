@@ -389,7 +389,6 @@ def main(argv):
 
     if FLAGS.mode == "train":
         train_loop()
-    train_loop()
 
 
 if __name__ == "__main__":
