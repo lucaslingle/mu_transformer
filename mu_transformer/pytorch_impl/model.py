@@ -321,7 +321,7 @@ class Transformer(nn.Module):
         x = F.pad(x[:, 0:-1], (1, 0), value=self.hps.bos_token_id)
         x = self.embed(x)
         for layer_id in range(self.hps.n_layer):
-            x, _ = self.stack[layer_id](x)  # x, _  = fn(..., None, layer_id)
+            x = self.stack[layer_id](x)  # x, _  = fn(..., None, layer_id)
         x = self.predict(x)
         return dict(
             logprobs=F.log_softmax(x, dim=-1),
