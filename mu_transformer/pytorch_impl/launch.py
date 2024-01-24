@@ -360,6 +360,7 @@ def train_loop():
 
 
 def eval_loop(model, n_eval_step):
+    # todo: implement
     return dict(loss_avg=torch.tensor([float("inf")], dtype=torch.float32))
 
 
