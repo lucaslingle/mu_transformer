@@ -258,6 +258,7 @@ def global_mean(x):
     return x
 
 
+@functools.partial(torch.compile, mode="reduce_overhead")
 def train_step(state, batch):
     state.optim.zero_grad(set_to_none=True)
     loss_term_avg, metrics = loss_fn(state.model, batch)
@@ -287,6 +288,7 @@ def train_loop():
 
     logging.info("Creating train state...")
     state = train_state_factory()
+    state = load_state(state)
     start_step = 0  # todo: parse from checkpoint name
 
     batch_size = global_batch_size_factory()  # // dist.get_world_size()  # todo
