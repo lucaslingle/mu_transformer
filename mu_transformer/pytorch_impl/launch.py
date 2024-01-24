@@ -328,7 +328,7 @@ def train_loop():
             #     end=batch_size * FLAGS.config.sequence_len,
             #     device=state.model.hps.device,
             # ).view(batch_size, -1),
-            batch=torch.from_numpy(batch),
+            batch=torch.from_numpy(batch).to(state.model.hps.device),
         )
         # occasionally print metrics
         if step % FLAGS.config.n_print_step == 0:
