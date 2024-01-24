@@ -19,6 +19,7 @@ import sys
 import time
 from collections import namedtuple
 
+import numpy as np
 import torch
 import torch.cuda as cuda
 import torch.nn as nn
