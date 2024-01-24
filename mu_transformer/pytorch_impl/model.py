@@ -257,7 +257,7 @@ class TransformerBlock(nn.Module):
         return x, intermediates
 
     def forward(self, x, intermediates, layer_id):
-        return remat(self._forward, x, intermediates, layer_id, use_reentrant=True)
+        return remat(self._forward, x, intermediates, layer_id, use_reentrant=False)
         # return self._forward(x, intermediates, layer_id)
 
 
