@@ -311,9 +311,7 @@ def train_loop():
     # the user should set n_finetune_step > 0 if and only if currently fine-tuning.
     n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
     for step in range(start_step, n_total_step + 1):
-        logging.info(f"training step: {step}")
         # run a training step
-        logging.info("getting batch")
         batch = get_batch(
             dataset_shard,
             batch_size=batch_size,
@@ -321,7 +319,6 @@ def train_loop():
             step=step,
             out_dtype=np.int64,
         )
-        logging.info("training step")
         state, metrics = train_step(
             state=state,
             # batch=torch.arange(

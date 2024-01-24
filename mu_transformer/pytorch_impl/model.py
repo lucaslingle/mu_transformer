@@ -94,19 +94,6 @@ class RotaryEncoding(nn.Module):
     def forward(self, x):
         _, length, _, width = x.shape  # B, T, H, D
 
-        # positions = torch.arange(length, device=self.hps.device)
-        # dimensions = torch.arange(width // 2, device=self.hps.device)
-        # ang_freqs = torch.pow(self.hps.rotary_base, -dimensions / (width // 2))
-        #
-        # # expand to a shape broadcastable with q/k dims
-        # positions = torch.reshape(positions, [1, length, 1, 1])
-        # ang_freqs = torch.reshape(ang_freqs, [1, 1, 1, width // 2])
-        #
-        # radians = positions * ang_freqs
-        # cos = torch.cos(radians).to(x.dtype)
-        # sin = torch.sin(radians).to(x.dtype)
-        #
-
         cos, sin = sinusoidal_embs(
             length=length,
             width=width,
