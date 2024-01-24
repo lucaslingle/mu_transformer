@@ -70,7 +70,6 @@ class RMSNorm(nn.Module):
         return x / rms[..., None]
 
 
-@functools.lru_cache(maxsize=1)
 def sinusoidal_embs(length, width, base, dtype, device):
     # B, T, H, D
     positions = torch.arange(length, device=device)
@@ -91,16 +90,19 @@ class RotaryEncoding(nn.Module):
     def __init__(self, hps: TransformerConfig) -> None:
         super().__init__()
         self.hps = hps
-
-    def forward(self, x):
-        # assumes B, T, H, D
         cos, sin = sinusoidal_embs(
             length=self.hps.sequence_len,
             width=self.hps.d_head,
             base=self.hps.rotary_base,
-            dtype=x.dtype,
+            dtype=self.hps.dtype,
             device=self.hps.device,
         )
+        self.register_buffer("cos", cos)
+        self.register_buffer("sin", sin)
+
+    def forward(self, x):
+        # assumes B, T, H, D
+        cos, sin = self.cos, self.sin
 
         even, odd = torch.chunk(x, 2, dim=-1)
         r_even = even * cos - odd * sin
