@@ -240,7 +240,7 @@ def loss_fn(model, batch):
     metrics = dict(
         loss_term_avg=loss_terms.mean(),
         loss_mask_avg=mask.to(loss_terms.dtype).mean(),
-        **outputs["intermediates"].to_dict(),
+        # **outputs["intermediates"].to_dict(),
     )
     return metrics["loss_term_avg"], metrics
 
