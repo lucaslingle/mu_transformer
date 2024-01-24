@@ -269,7 +269,7 @@ class Embedding(nn.Module):
             torch.normal(  # appendix b.1
                 mean=0.0,
                 std=1.0,
-                size=(self.hps.n_vocab, self.hps.d_model),
+                size=(self.hps.n_vocab + 1, self.hps.d_model),  # 1+ reqd by F.embedding
                 dtype=self.hps.param_dtype,
                 device=self.hps.device,
             ),
