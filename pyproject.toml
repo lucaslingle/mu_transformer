@@ -27,8 +27,8 @@ torch = "2.1.0"
 blobfile = "2.1.1"
 
 [tool.poetry.group.cpu.dependencies]
-jax = {extras = ["cpu"], version = "0.4.23"}
-jaxlib = {extras = ["cpu"], version = "0.4.23"}
+jax = {extras = ["cpu"], version = "0.4.21"}
+jaxlib = {extras = ["cpu"], version = "0.4.21"}
 
 # todo: change back jaxlib to use cp39 when not on colab
 [tool.poetry.group.gpu.dependencies]
@@ -38,8 +38,8 @@ jaxlib = { url = "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.
 
 [tool.poetry.group.tpu.dependencies]
 libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20231213-py3-none-any.whl" }
-jax = {extras = ["tpu"], version = "0.4.23"}
-jaxlib = {extras = ["tpu"], version = "0.4.23"}
+jax = {extras = ["tpu"], version = "0.4.21"}
+jaxlib = {extras = ["tpu"], version = "0.4.21"}
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.6.0"
