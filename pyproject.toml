@@ -7,7 +7,7 @@ license = "Apache License 2.0"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.10.dev0"
+python = ">=3.9,<3.11.dev0"  # todo: change back when not using colab
 flax = "0.7.5"
 etils = "1.5.0"
 absl-py = "2.0.0"
@@ -30,9 +30,10 @@ blobfile = "2.1.1"
 jax = {extras = ["cpu"], version = "0.4.23"}
 jaxlib = {extras = ["cpu"], version = "0.4.23"}
 
+# todo: change back jaxlib to use cp39 when not on colab
 [tool.poetry.group.gpu.dependencies]
 jax = {extras = ["cuda12_pip"], version = "0.4.23"}
-jaxlib = { url = "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.23+cuda12.cudnn89-cp39-cp39-manylinux2014_x86_64.whl" }
+jaxlib = { url = "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.23+cuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl" }
 #  flash-attn = "2.3.4"
 
 [tool.poetry.group.tpu.dependencies]
