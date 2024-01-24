@@ -30,11 +30,10 @@ blobfile = "2.1.1"
 jax = {extras = ["cpu"], version = "0.4.23"}
 jaxlib = {extras = ["cpu"], version = "0.4.23"}
 
-# todo: ask poetry people about this installing cuda jaxlib despite using --without gpu
- [tool.poetry.group.gpu.dependencies]
- jax = {extras = ["cuda12_pip"], version = "0.4.23"}
- jaxlib = { url = "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.23+cuda12.cudnn89-cp39-cp39-manylinux2014_x86_64.whl" }
-  flash-attn = "2.3.4"
+[tool.poetry.group.gpu.dependencies]
+jax = {extras = ["cuda12_pip"], version = "0.4.23"}
+jaxlib = { url = "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.23+cuda12.cudnn89-cp39-cp39-manylinux2014_x86_64.whl" }
+#  flash-attn = "2.3.4"
 
 [tool.poetry.group.tpu.dependencies]
 libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20231213-py3-none-any.whl" }
