@@ -415,7 +415,7 @@ def train_loop():
                     end=batch_size * FLAGS.config.sequence_len,
                     device=state.model.hps.device,
                 ).view(batch_size, -1),
-                state.model.hps.n_vocab,
+                transformer_config_factory(True).n_vocab,
             ),
             # batch=batch,
         )
