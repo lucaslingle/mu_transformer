@@ -158,7 +158,7 @@ class MultiheadSelfAttention(nn.Module):
         )
         self.rope = RotaryEncoding(self.hps)
 
-    def forward(self, x, intermediates, layer_id):
+    def forward(self, x):  # , intermediates, layer_id):
         # intermediates.coord_check_l1("ax_l1", x, layer_id)
 
         q = torch.einsum("btm,mhd->bthd", x, self.w_aq.to(self.hps.dtype))
@@ -195,7 +195,7 @@ class MultiheadSelfAttention(nn.Module):
 
         r = torch.einsum("bihd,hdm->bim", o, self.w_ao.to(self.hps.dtype))
         # intermediates.coord_check_l1("ar_l1", r, layer_id)
-        return r, intermediates
+        return r  # , intermediates
 
 
 class MultiLayerPerceptron(nn.Module):
@@ -320,9 +320,8 @@ class Transformer(nn.Module):
         x = F.pad(x[:, 0:-1], (1, 0), value=self.hps.bos_token_id)
         x = self.embed(x)
         for layer_id in range(self.hps.n_layer):
-            x, _ = self.stack[layer_id](x, None, layer_id)
+            x, _ = self.stack[layer_id](x)  # x, _  = fn(..., None, layer_id)
         x = self.predict(x)
         return dict(
             logprobs=F.log_softmax(x, dim=-1),
-            intermediates=None,
         )
