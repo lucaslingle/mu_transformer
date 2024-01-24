@@ -72,6 +72,7 @@ class RMSNorm(nn.Module):
 
 @functools.lru_cache(maxsize=1)
 def sinusoidal_embs(length, width, base, dtype, device):
+    # B, T, H, D
     positions = torch.arange(length, device=device)
     dimensions = torch.arange(width // 2, device=device)
     ang_freqs = torch.pow(base, -dimensions / (width // 2))
@@ -92,11 +93,10 @@ class RotaryEncoding(nn.Module):
         self.hps = hps
 
     def forward(self, x):
-        _, length, _, width = x.shape  # B, T, H, D
-
+        # assumes B, T, H, D
         cos, sin = sinusoidal_embs(
-            length=length,
-            width=width,
+            length=self.hps.sequence_len,
+            width=self.hps.d_head,
             base=self.hps.rotary_base,
             dtype=x.dtype,
             device=self.hps.device,
@@ -179,8 +179,8 @@ class MultiheadSelfAttention(nn.Module):
         s = s / self.hps.d_head
         intermediates.coord_check_l1("as_l1", s, layer_id)
 
-        i = torch.arange(x.shape[1], device=self.hps.device)[..., None]
-        j = torch.arange(x.shape[1], device=self.hps.device)[None, ...]
+        i = torch.arange(self.hps.sequence_len, device=self.hps.device)[..., None]
+        j = torch.arange(self.hps.sequence_len, device=self.hps.device)[None, ...]
         mask = torch.less(i, j)  # i.e., j > i, indicator masks out non-causal
         mask = mask[None, None, ...]
         s = s - torch.tensor([INF_APPROX], dtype=x.dtype, device=self.hps.device) * mask
