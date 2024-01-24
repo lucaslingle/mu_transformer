@@ -226,7 +226,7 @@ class MultiLayerPerceptron(nn.Module):
             ),
         )
 
-    def forward(self, x, intermediates, layer_id):
+    def forward(self, x):  # , intermediates, layer_id):
         # intermediates.coord_check_l1("fx_l1", x, layer_id)
 
         x = torch.einsum("btm,mf->btf", x, self.w_fi.to(self.hps.dtype))
@@ -239,7 +239,7 @@ class MultiLayerPerceptron(nn.Module):
 
         x = torch.einsum("btf,fm->btm", x, self.w_fo.to(self.hps.dtype))
         # intermediates.coord_check_l1("fr_l1", x, layer_id)
-        return x, intermediates
+        return x  # , intermediates
 
 
 class TransformerBlock(nn.Module):
@@ -251,15 +251,16 @@ class TransformerBlock(nn.Module):
         self.norm2 = RMSNorm(self.hps)
         self.mlp = MultiLayerPerceptron(self.hps)
 
-    def _forward(self, x, _, layer_id):
-        r1, _ = self.mha(self.norm1(x), None, layer_id)
+    def _forward(self, x):  # , _, layer_id):
+        r1 = self.mha(self.norm1(x))  # r1, _ = fn(..., None, layer_id)
         x = x + r1
-        r2, _ = self.mlp(self.norm2(x), None, layer_id)
+        r2 = self.mlp(self.norm2(x))  # r2, _ = fn(..., None, layer_id)
         x = x + r2
-        return x, _
+        return x
 
-    def forward(self, x, _, layer_id):
-        return remat(self._forward, x, None, layer_id, use_reentrant=True)
+    def forward(self, x):  # , _, layer_id):
+        return remat(self._forward, x, use_reentrant=True)
+        # return remat(self._forward, x, None, layer_id, use_reentrant=True)
         # return self._forward(x, intermediates, layer_id)
 
 
