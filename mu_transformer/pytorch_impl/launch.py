@@ -258,7 +258,7 @@ def global_mean(x):
     return x
 
 
-@functools.partial(torch.compile, mode="reduce_overhead")
+@functools.partial(torch.compile, mode="reduce-overhead")
 def train_step(state, batch):
     state.optim.zero_grad(set_to_none=True)
     loss_term_avg, metrics = loss_fn(state.model, batch)
