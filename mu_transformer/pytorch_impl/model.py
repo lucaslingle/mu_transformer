@@ -255,7 +255,7 @@ class TransformerBlock(nn.Module):
         x = x + r1
         r2, intermediates = self.mlp(self.norm2(x), intermediates, layer_id)
         x = x + r2
-        return x
+        return x, intermediates
 
     def forward(self, x, intermediates, layer_id):
         return remat(self._forward, x, intermediates, layer_id, use_reentrant=True)
