@@ -292,19 +292,19 @@ def train_loop():
     start_step = 0  # todo: parse from checkpoint name
 
     batch_size = global_batch_size_factory()  # // dist.get_world_size()  # todo
-    # dataset_shard = get_dataset(
-    #     hfds_identifier=FLAGS.config.hfds_identifier,
-    #     hfds_config=FLAGS.config.hfds_config,
-    #     hfds_datacol=FLAGS.config.hfds_datacol,
-    #     hfds_buffer_size=FLAGS.config.hfds_buffer_size,
-    #     hftr_tokenizer=tokenizer_factory(),
-    #     split_name="train",
-    #     batch_size=batch_size,
-    #     sequence_len=FLAGS.config.sequence_len,
-    #     pcount=1,  # dist.get_world_size(),  # todo
-    #     pindex=0,  # dist.get_rank(),  # todo
-    #     workdir=FLAGS.workdir,
-    # )
+    dataset_shard = get_dataset(
+        hfds_identifier=FLAGS.config.hfds_identifier,
+        hfds_config=FLAGS.config.hfds_config,
+        hfds_datacol=FLAGS.config.hfds_datacol,
+        hfds_buffer_size=FLAGS.config.hfds_buffer_size,
+        hftr_tokenizer=tokenizer_factory(),
+        split_name="train",
+        batch_size=batch_size,
+        sequence_len=FLAGS.config.sequence_len,
+        pcount=1,  # dist.get_world_size(),  # todo
+        pindex=0,  # dist.get_rank(),  # todo
+        workdir=FLAGS.workdir,
+    )
 
     logging.info("Starting training loop...")
     best_val_loss = float("inf")
@@ -313,21 +313,16 @@ def train_loop():
     # the user should set n_finetune_step > 0 if and only if currently fine-tuning.
     n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
     for step in range(start_step, n_total_step + 1):
-        # run a training step
-        # batch = get_batch(
-        #     dataset_shard,
-        #     batch_size=batch_size,
-        #     sequence_len=FLAGS.config.sequence_len,
-        #     step=step,
-        #     out_dtype=np.int64,
-        # )
+        batch = get_batch(
+            dataset_shard,
+            batch_size=batch_size,
+            sequence_len=FLAGS.config.sequence_len,
+            step=step,
+            out_dtype=np.int64,
+        )
         state, metrics = train_step(
             state=state,
-            batch=torch.arange(
-                end=batch_size * FLAGS.config.sequence_len,
-                device=state.model.hps.device,
-            ).view(batch_size, -1),
-            # batch=torch.from_numpy(batch).to(state.model.hps.device),
+            batch=torch.from_numpy(batch).to(state.model.hps.device),
         )
         # occasionally print metrics
         if step % FLAGS.config.n_print_step == 0:
