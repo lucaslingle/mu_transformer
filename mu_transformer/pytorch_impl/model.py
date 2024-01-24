@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import dataclasses
-import functools
 from typing import Any
 
 import torch
@@ -158,28 +157,28 @@ class MultiheadSelfAttention(nn.Module):
         )
         self.rope = RotaryEncoding(self.hps)
 
-    def forward(self, x):  # , intermediates, layer_id):
-        # intermediates.coord_check_l1("ax_l1", x, layer_id)
+    def forward(self, x, intermediates, layer_id):
+        intermediates.coord_check_l1("ax_l1", x, layer_id)
 
         q = torch.einsum("btm,mhd->bthd", x, self.w_aq.to(self.hps.dtype))
         k = torch.einsum("btm,mhd->bthd", x, self.w_ak.to(self.hps.dtype))
         v = torch.einsum("btm,mhd->bthd", x, self.w_av.to(self.hps.dtype))
-        # intermediates.coord_check_l1("aq_l1", q, layer_id)
-        # intermediates.coord_check_l1("ak_l1", k, layer_id)
-        # intermediates.coord_check_l1("av_l1", v, layer_id)
+        intermediates.coord_check_l1("aq_l1", q, layer_id)
+        intermediates.coord_check_l1("ak_l1", k, layer_id)
+        intermediates.coord_check_l1("av_l1", v, layer_id)
 
         if self.hps.rotary_base > 0:
             q = self.rope(q)
             k = self.rope(k)
-            # intermediates.coord_check_l1("aqr_l1", q, layer_id)
-            # intermediates.coord_check_l1("akr_l1", k, layer_id)
+            intermediates.coord_check_l1("aqr_l1", q, layer_id)
+            intermediates.coord_check_l1("akr_l1", k, layer_id)
 
         # current flash impl doesnt allow storing intermediates like the avg qk scale
         # o = flash_attn_func(q, k, v, softmax_scale=1.0 / self.hps.d_head, causal=True)
 
         s = torch.einsum("bihd,bjhd->bhij", q, k)
         s = s / self.hps.d_head
-        # intermediates.coord_check_l1("as_l1", s, layer_id)
+        intermediates.coord_check_l1("as_l1", s, layer_id)
 
         i = torch.arange(self.hps.sequence_len, device=self.hps.device)[..., None]
         j = torch.arange(self.hps.sequence_len, device=self.hps.device)[None, ...]
@@ -188,14 +187,14 @@ class MultiheadSelfAttention(nn.Module):
         s = s - torch.tensor([INF_APPROX], dtype=x.dtype, device=self.hps.device) * mask
 
         p = F.softmax(s, dim=-1)
-        # intermediates.coord_check_l1("ap_l1", p, layer_id)
+        intermediates.coord_check_l1("ap_l1", p, layer_id)
 
         o = torch.einsum("bhij,bjhd->bihd", p, v)
-        # intermediates.coord_check_l1("ao_l1", o, layer_id)
+        intermediates.coord_check_l1("ao_l1", o, layer_id)
 
         r = torch.einsum("bihd,hdm->bim", o, self.w_ao.to(self.hps.dtype))
-        # intermediates.coord_check_l1("ar_l1", r, layer_id)
-        return r  # , intermediates
+        intermediates.coord_check_l1("ar_l1", r, layer_id)
+        return r, intermediates
 
 
 class MultiLayerPerceptron(nn.Module):
@@ -226,20 +225,20 @@ class MultiLayerPerceptron(nn.Module):
             ),
         )
 
-    def forward(self, x):  # , intermediates, layer_id):
-        # intermediates.coord_check_l1("fx_l1", x, layer_id)
+    def forward(self, x, intermediates, layer_id):
+        intermediates.coord_check_l1("fx_l1", x, layer_id)
 
         x = torch.einsum("btm,mf->btf", x, self.w_fi.to(self.hps.dtype))
-        # intermediates.coord_check_l1("fp_l1", x, layer_id)
+        intermediates.coord_check_l1("fp_l1", x, layer_id)
 
         x = getattr(F, self.hps.act_name)(x)
         if self.hps.act_square:
             x = torch.pow(x, 2)
-        # intermediates.coord_check_l1("fa_l1", x, layer_id)
+        intermediates.coord_check_l1("fa_l1", x, layer_id)
 
         x = torch.einsum("btf,fm->btm", x, self.w_fo.to(self.hps.dtype))
-        # intermediates.coord_check_l1("fr_l1", x, layer_id)
-        return x  # , intermediates
+        intermediates.coord_check_l1("fr_l1", x, layer_id)
+        return x, intermediates
 
 
 class TransformerBlock(nn.Module):
@@ -251,17 +250,15 @@ class TransformerBlock(nn.Module):
         self.norm2 = RMSNorm(self.hps)
         self.mlp = MultiLayerPerceptron(self.hps)
 
-    def _forward(self, x):  # , _, layer_id):
-        r1 = self.mha(self.norm1(x))  # r1, _ = fn(..., None, layer_id)
+    def _forward(self, x, intermediates, layer_id):
+        r1, intermediates = self.mha(self.norm1(x), intermediates, layer_id)
         x = x + r1
-        r2 = self.mlp(self.norm2(x))  # r2, _ = fn(..., None, layer_id)
+        r2, intermediates = self.mlp(self.norm2(x), intermediates, layer_id)
         x = x + r2
         return x
 
-    def forward(self, x):  # , _, layer_id):
-        return remat(self._forward, x, use_reentrant=True)
-        # return remat(self._forward, x, None, layer_id, use_reentrant=True)
-        # return self._forward(x, intermediates, layer_id)
+    def forward(self, x, intermediates, layer_id):
+        return remat(self._forward, x, intermediates, layer_id, use_reentrant=True)
 
 
 class Embedding(nn.Module):
@@ -317,12 +314,13 @@ class Transformer(nn.Module):
         self.predict = PredictionHead(self.hps)
 
     def forward(self, x):
-        # intermediates = Intermediates(enabled=self.hps.sow_intermediates)
+        intermediates = Intermediates(enabled=self.hps.sow_intermediates)
         x = F.pad(x[:, 0:-1], (1, 0), value=self.hps.bos_token_id)
         x = self.embed(x)
         for layer_id in range(self.hps.n_layer):
-            x = self.stack[layer_id](x)  # x, _  = fn(..., None, layer_id)
+            x, intermediates = self.stack[layer_id](x, intermediates, layer_id)
         x = self.predict(x)
         return dict(
             logprobs=F.log_softmax(x, dim=-1),
+            intermediates=intermediates,
         )

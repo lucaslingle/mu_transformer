@@ -365,19 +365,19 @@ def train_loop():
 
     logging.info("Creating dataset...")
     batch_size = global_batch_size_factory() // jax.process_count()
-    # dataset_shard = get_dataset(
-    #     hfds_identifier=FLAGS.config.hfds_identifier,
-    #     hfds_config=FLAGS.config.hfds_config,
-    #     hfds_datacol=FLAGS.config.hfds_datacol,
-    #     hfds_buffer_size=FLAGS.config.hfds_buffer_size,
-    #     hftr_tokenizer=tokenizer_factory(),
-    #     split_name="train",
-    #     batch_size=batch_size,
-    #     sequence_len=FLAGS.config.sequence_len,
-    #     pcount=jax.process_count(),
-    #     pindex=jax.process_index(),
-    #     workdir=FLAGS.workdir,
-    # )
+    dataset_shard = get_dataset(
+        hfds_identifier=FLAGS.config.hfds_identifier,
+        hfds_config=FLAGS.config.hfds_config,
+        hfds_datacol=FLAGS.config.hfds_datacol,
+        hfds_buffer_size=FLAGS.config.hfds_buffer_size,
+        hftr_tokenizer=tokenizer_factory(),
+        split_name="train",
+        batch_size=batch_size,
+        sequence_len=FLAGS.config.sequence_len,
+        pcount=jax.process_count(),
+        pindex=jax.process_index(),
+        workdir=FLAGS.workdir,
+    )
 
     logging.info("Starting training loop...")
     best_val_loss = float("inf")
@@ -389,34 +389,34 @@ def train_loop():
     # the user should set n_finetune_step > 0 if and only if currently fine-tuning.
     n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
     for step in range(start_step, n_total_step + 1):
-        # logging.debug(f"Training step {step}...")
-        # batch = get_batch(
-        #     dataset_shard,
-        #     batch_size=batch_size,
-        #     sequence_len=FLAGS.config.sequence_len,
-        #     step=step,
-        # )
-        # logging.debug("Got batch...")
-        # logging.debug(f"Batch shape (local): {batch.shape}")
-        #
-        # # distribute local batch arrays to global batch arrays
-        # logging.debug("Distributing batch to global array...")
-        # batch = to_global_array(batch, global_mesh)
-        # batch = jax.block_until_ready(batch) if log_level_is_debug else batch
-        # logging.debug("Finished distributing batch to global array...")
-        # logging.debug(f"Batch shape (global): {batch.shape}")
+        logging.debug(f"Training step {step}...")
+        batch = get_batch(
+            dataset_shard,
+            batch_size=batch_size,
+            sequence_len=FLAGS.config.sequence_len,
+            step=step,
+        )
+        logging.debug("Got batch...")
+        logging.debug(f"Batch shape (local): {batch.shape}")
+
+        # distribute local batch arrays to global batch arrays
+        logging.debug("Distributing batch to global array...")
+        batch = to_global_array(batch, global_mesh)
+        batch = jax.block_until_ready(batch) if log_level_is_debug else batch
+        logging.debug("Finished distributing batch to global array...")
+        logging.debug(f"Batch shape (global): {batch.shape}")
 
         # run a training step
         logging.debug("Starting train step...")
         state, metrics = train_step(
             state,
-            batch=jnp.remainder(
-                jnp.arange(end=batch_size * FLAGS.config.sequence_len).view(
-                    batch_size, -1
-                ),
-                transformer_config_factory(True).n_vocab,
-            ),
-            # batch=batch,
+            # batch=jnp.remainder(
+            #     jnp.arange(end=batch_size * FLAGS.config.sequence_len).view(
+            #         batch_size, -1
+            #     ),
+            #     transformer_config_factory(True).n_vocab,
+            # ),
+            batch=batch,
         )
         state = jax.block_until_ready(state) if log_level_is_debug else state
         metrics = jax.block_until_ready(metrics) if log_level_is_debug else metrics
