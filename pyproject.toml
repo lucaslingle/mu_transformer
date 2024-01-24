@@ -33,6 +33,7 @@ jaxlib = {extras = ["cpu"], version = "0.4.20"}
 [tool.poetry.group.gpu.dependencies]
 jax = {extras = ["cuda12_pip"], version = "0.4.20"}
 jaxlib = { url = "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.20+cuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl" }
+triton = "^2.2.0"
 #  flash-attn = "2.3.4"
 
 [tool.poetry.group.tpu.dependencies]
