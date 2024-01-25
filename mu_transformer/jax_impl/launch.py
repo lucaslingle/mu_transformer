@@ -349,21 +349,24 @@ def train_step(state, batch):
     # Equivalently,
     metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
     # Estimate other quantities of interest:
-    metrics["param_count"] = size_pytree(state.params)
-    metrics["param_norm"] = l2norm_pytree(state.params)
-    metrics["grad_norm"] = l2norm_pytree(grads)
-    metrics["grad_nan"] = jnp.isnan(metrics["grad_norm"]).astype(jnp.int32)
+    metrics["param_count_total"] = size_pytree(state.params)
+    metrics["param_norm_total"] = l2norm_pytree(state.params)
+    metrics["grad_norm_total"] = l2norm_pytree(grads)
+    metrics["grad_nan"] = jnp.isnan(metrics["grad_norm_total"]).astype(jnp.int32)
     # Maybe save param diff norm for quality assurance purposes
-    if FLAGS.config.sow_param_diff:
+    if FLAGS.config.sow_param_info:
         p_old = state.params
         state = state.apply_gradients(grads=grads)
         p_new = state.params
         p_diffs = jtu.tree_map(lambda a, b: jnp.linalg.norm(a - b), p_new, p_old)
         p_diffs = clean_and_flatten_params(p_diffs, prefix="param_diff_norm")
+        p_norms = jtu.tree_map(lambda p: jnp.linalg.norm(p), p_new)
+        p_norms = clean_and_flatten_params(p_norms, prefix="param_norm")
     else:
         state = state.apply_gradients(grads=grads)
         p_diffs = dict()
-    return state, dict(**metrics, **p_diffs)
+        p_norms = dict()
+    return state, dict(**metrics, **p_diffs, **p_norms)
 
 
 def get_scalar_on_host(tensor):
