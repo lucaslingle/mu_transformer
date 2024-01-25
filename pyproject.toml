@@ -37,7 +37,7 @@ triton = "^2.2.0"
 #  flash-attn = "2.3.4"
 
 [tool.poetry.group.tpu.dependencies]
-libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20240123-py3-none-any.whl" }
+libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20231213-py3-none-any.whl" }
 jax = {extras = ["tpu"], version = "0.4.23"}
 jaxlib = {extras = ["tpu"], version = "0.4.23"}
 
