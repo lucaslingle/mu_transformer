@@ -7,7 +7,7 @@ license = "Apache License 2.0"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.11.dev0"  # todo: change back when not using colab
+python = ">=3.9,<3.10.dev0"
 flax = "0.7.5"
 etils = "1.5.0"
 absl-py = "2.0.0"
@@ -27,19 +27,19 @@ torch = "2.1.0"
 blobfile = "2.1.1"
 
 [tool.poetry.group.cpu.dependencies]
-jax = {extras = ["cpu"], version = "0.4.20"}
-jaxlib = {extras = ["cpu"], version = "0.4.20"}
+jax = {extras = ["cpu"], version = "0.4.23"}
+jaxlib = {extras = ["cpu"], version = "0.4.23"}
 
 [tool.poetry.group.gpu.dependencies]
-jax = {extras = ["cuda12_pip"], version = "0.4.20"}
-jaxlib = { url = "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.20+cuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl" }
+jax = {extras = ["cuda12_pip"], version = "0.4.23"}
+jaxlib = { url = "https://storage.googleapis.com/jax-releases/cuda12/jaxlib-0.4.23+cuda12.cudnn89-cp39-cp39-manylinux2014_x86_64.whl" }
 triton = "^2.2.0"
 #  flash-attn = "2.3.4"
 
 [tool.poetry.group.tpu.dependencies]
-libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20231102-py3-none-any.whl" }
-jax = {extras = ["tpu"], version = "0.4.20"}
-jaxlib = {extras = ["tpu"], version = "0.4.20"}
+libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20240123-py3-none-any.whl" }
+jax = {extras = ["tpu"], version = "0.4.23"}
+jaxlib = {extras = ["tpu"], version = "0.4.23"}
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.6.0"
