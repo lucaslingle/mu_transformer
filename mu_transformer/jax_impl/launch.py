@@ -294,9 +294,17 @@ def get_loss_mask(batch, *, pad_token_id, eos_token_id):
     return loss_mask
 
 
-def clean_and_flatten(pytree, prefix=None):
+def clean_and_flatten_intermediates(pytree, prefix=None):
     pytree = traverse_util.flatten_dict(pytree)
     pytree = {k[-1]: split_coord_checks(k[-1], v[0]) for k, v in pytree.items()}
+    pytree = traverse_util.flatten_dict(pytree)
+    pytree = {k[-1]: v for k, v in pytree.items()}
+    if prefix is not None:
+        pytree = {prefix + "_" + k[-1]: v for k, v in pytree.items()}
+    return pytree
+
+
+def clean_and_flatten_params(pytree, prefix=None):
     pytree = traverse_util.flatten_dict(pytree)
     pytree = {k[-1]: v for k, v in pytree.items()}
     if prefix is not None:
@@ -310,7 +318,7 @@ def loss_fn(params, batch, config, global_mesh):
     apply_args = [{"params": params}, batch]  # tokens shifted internally by model
     if FLAGS.config.sow_intermediates:
         logits, mv = Transformer(*init_args).apply(*apply_args, mutable="intermediates")
-        sown = clean_and_flatten(mv["intermediates"])
+        sown = clean_and_flatten_intermediates(mv["intermediates"])
     else:
         logits = Transformer(*init_args).apply(*apply_args)
         sown = dict()
@@ -350,7 +358,7 @@ def train_step(state, batch):
         state = state.apply_gradients(grads=grads)
         p_new = state.params
         p_diffs = jtu.tree_map(lambda a, b: jnp.linalg.norm(a - b), p_new, p_old)
-        p_diffs = clean_and_flatten(p_diffs, prefix="param_diff_norm")
+        p_diffs = clean_and_flatten_params(p_diffs, prefix="param_diff_norm")
     else:
         state = state.apply_gradients(grads=grads)
         p_diffs = dict()
