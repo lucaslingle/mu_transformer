@@ -19,8 +19,6 @@ Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466)
 
 ## Installation
 
-tmux new-session -d -s mysession "poetry run python3 mu_transformer/jax_impl/launch.py --config=mu_transformer/configs/tiny.py --workdir=gs://tpu_persist_bucket/mu_transformer_opensci/ --mode=train --wb_enabled=True --config.tokens_per_global_batch=65536 --config.hfds_identifier=JeanKaddour/minipile --config.hfds_buffer_size=128 --config.n_print_step=100 --config.n_pretrain_step=1_250_000 --config.n_warmup_step=100_000 --config.lr_max=1.0; bash;"
-
 To proceed, install [Pipx](https://github.com/pypa/pipx) and [Poetry](https://github.com/python-poetry/poetry). Then run
 ```
 git clone https://github.com/lucaslingle/mu_transformer.git;
