@@ -176,7 +176,9 @@ class MultiheadSelfAttention(nn.Module):
         # current flash impl doesnt allow storing intermediates like the avg qk scale
         # o = flash_attn_func(q, k, v, softmax_scale=1.0 / self.hps.d_head, causal=True)
 
-        mult = torch.tensor([self.hps.d_head**-0.5], dtype=self.hps.dtype)
+        mult = torch.tensor(
+            [self.hps.d_head**-0.5], dtype=self.hps.dtype, device=self.hps.device
+        )
         s = torch.einsum("bihd,bjhd->bhij", q * mult, k * mult)
         intermediates.coord_check_l1("as_l1", s, layer_id)
 
