@@ -207,7 +207,8 @@ class MultiheadSelfAttention(nn.Module):
             self.sow("intermediates", "aqr_l1", coord_check_l1(q))
             self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
-        s = jnp.einsum("bhid,bhjd->bhij", q, k) / jnp.array([self.hps.d_head], q.dtype)
+        mult = jnp.array([self.hps.d_head**-0.5], dtype=self.dtype)
+        s = jnp.einsum("bhid,bhjd->bhij", q * mult, k * mult)
         s = sharding_constraint(s, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
 
