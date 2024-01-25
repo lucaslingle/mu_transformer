@@ -294,16 +294,23 @@ def get_loss_mask(batch, *, pad_token_id, eos_token_id):
     return loss_mask
 
 
+def clean_and_flatten(pytree, prefix=None):
+    pytree = traverse_util.flatten_dict(pytree)
+    pytree = {k[-1]: split_coord_checks(k[-1], v[0]) for k, v in pytree.items()}
+    pytree = traverse_util.flatten_dict(pytree)
+    pytree = {k[-1]: v for k, v in pytree.items()}
+    if prefix is not None:
+        pytree = {prefix + "_" + k: v for k, v in pytree.items()}
+    return pytree
+
+
 def loss_fn(params, batch, config, global_mesh):
     batch = sharding_constraint(batch, MESH_AXES["RN"], global_mesh)
     init_args = [config, global_mesh]
     apply_args = [{"params": params}, batch]  # tokens shifted internally by model
     if FLAGS.config.sow_intermediates:
         logits, mv = Transformer(*init_args).apply(*apply_args, mutable="intermediates")
-        sown = traverse_util.flatten_dict(mv["intermediates"])
-        sown = {k[-1]: split_coord_checks(k[-1], v[0]) for k, v in sown.items()}
-        sown = traverse_util.flatten_dict(sown)
-        sown = {k[-1]: v for k, v in sown.items()}
+        sown = clean_and_flatten(mv["intermediates"])
     else:
         logits = Transformer(*init_args).apply(*apply_args)
         sown = dict()
@@ -328,16 +335,26 @@ def train_step(state, batch):
         config=transformer_config_factory(is_train=True),
         global_mesh=global_mesh_factory(),
     )
-    # no extra mean anywhere, we already have the sharded all-device mean gradient!
-    metrics["param_count"] = size_pytree(state.params)  # so it's always visible
+    # no extra mean anywhere, already have the sharded all-device mean gradient & loss.
+    # Estimate ce loss for global batch: sum of unmasked ce terms / sum of mask values.
+    # Equivalently,
+    metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
+    # Estimate other quantities of interest:
+    metrics["param_count"] = size_pytree(state.params)
     metrics["param_norm"] = l2norm_pytree(state.params)
     metrics["grad_norm"] = l2norm_pytree(grads)
     metrics["grad_nan"] = jnp.isnan(metrics["grad_norm"]).astype(jnp.int32)
-    state = state.apply_gradients(grads=grads)
-    # Estimate ce loss for global batch: sum of unmasked ce terms / sum of mask values.
-    # Equivalently,
-    loss_avg = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
-    return state, dict(loss_avg=loss_avg, **metrics)
+    # Maybe save param diff norm for quality assurance purposes
+    if FLAGS.config.sow_param_diff:
+        p_old = state.params
+        state = state.apply_gradients(grads=grads)
+        p_new = state.params
+        p_diffs = jtu.tree_map(lambda a, b: jnp.linalg.norm(a - b), p_new, p_old)
+        p_diffs = clean_and_flatten(p_diffs, prefix="param_diff_norm")
+    else:
+        state = state.apply_gradients(grads=grads)
+        p_diffs = dict()
+    return state, dict(**metrics, **p_diffs)
 
 
 def train_loop():
@@ -408,16 +425,7 @@ def train_loop():
 
         # run a training step
         logging.debug("Starting train step...")
-        state, metrics = train_step(
-            state,
-            # batch=jnp.remainder(
-            #     jnp.arange(end=batch_size * FLAGS.config.sequence_len).view(
-            #         batch_size, -1
-            #     ),
-            #     transformer_config_factory(True).n_vocab,
-            # ),
-            batch=batch,
-        )
+        state, metrics = train_step(state, batch=batch)
         state = jax.block_until_ready(state) if log_level_is_debug else state
         metrics = jax.block_until_ready(metrics) if log_level_is_debug else metrics
         logging.debug("Finished train step...")
