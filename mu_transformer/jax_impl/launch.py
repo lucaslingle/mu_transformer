@@ -357,7 +357,9 @@ def train_step(state, batch):
         p_old = state.params
         state = state.apply_gradients(grads=grads)
         p_new = state.params
-        p_diffs = jtu.tree_map(lambda a, b: jnp.linalg.norm(a - b), p_new, p_old)
+        p_diffs = jtu.tree_map(
+            lambda a, b: jnp.linalg.norm(a.unbox - b.unbox), p_new, p_old
+        )
         p_diffs = clean_and_flatten_params(p_diffs, prefix="param_diff_norm")
     else:
         state = state.apply_gradients(grads=grads)
