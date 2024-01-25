@@ -43,9 +43,9 @@ def get_base_config():
     config.norm_eps = 0.0
 
     # optimization
-    config.tokens_per_global_batch = 64
+    config.tokens_per_global_batch = 32768
     config.grad_clip = 1.0  # gradient clip, applied globally using all parameter grads
-    config.lr_max = 10.0  # master lr; scaled by mu-parameterization adam, schedule
+    config.lr_max = 0.007  # master lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
     config.adam_b2 = 0.95
     config.adam_eps = 1e-8
