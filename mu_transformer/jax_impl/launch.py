@@ -17,6 +17,7 @@ import re
 import sys
 import time
 
+import flax
 import flax.linen as nn
 import jax
 import jax.experimental.mesh_utils as jmu
@@ -357,14 +358,19 @@ def train_step(state, batch):
         p_old = state.params
         state = state.apply_gradients(grads=grads)
         p_new = state.params
-        p_diffs = jtu.tree_map(
-            lambda a, b: jnp.sum(jnp.square(a - b)) ** 0.5, p_new, p_old
-        )
+        p_diffs = jtu.tree_map(lambda a, b: jnp.linalg.norm(a - b), p_new, p_old)
         p_diffs = clean_and_flatten_params(p_diffs, prefix="param_diff_norm")
     else:
         state = state.apply_gradients(grads=grads)
         p_diffs = dict()
     return state, dict(**metrics, **p_diffs)
+
+
+def get_scalar_on_host(tensor):
+    tensor = jax.device_get(tensor)
+    if isinstance(tensor, flax.core.meta.Partitioned):
+        tensor = tensor.value
+    return tensor.item()
 
 
 def train_loop():
@@ -443,7 +449,7 @@ def train_loop():
         # occasionally print metrics
         if step % FLAGS.config.n_print_step == 0:
             state = jax.block_until_ready(state)
-            metrics = jtu.tree_map(lambda a: jax.device_get(a).item(), metrics)
+            metrics = {k: get_scalar_on_host(v) for k, v in metrics.items()}
             metrics = jax.block_until_ready(metrics)
             logging.debug("Starting print action...")
             end_time = time.perf_counter()
