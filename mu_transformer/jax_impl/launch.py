@@ -476,14 +476,10 @@ def train_loop():
                 "loss_avg": metrics.get("loss_avg"),
                 "val_loss_avg": val_metrics.get("loss_avg"),
             }
-
-            metrics.update(essentials)
-            logging.info(metrics)
-
-            # logging.info(essentials)
-            # if jax.process_index() == 0:
-            #     metrics.update(essentials)
-            #     wandb.log(metrics)
+            logging.info(essentials)
+            if jax.process_index() == 0:
+                metrics.update(essentials)
+                wandb.log(metrics)
             start_time = end_time
             logging.debug("Done with print action...")
 
