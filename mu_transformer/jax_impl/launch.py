@@ -119,6 +119,26 @@ def schedule_factory():
     )
 
 
+@functools.lru_cache(maxsize=1)
+def get_lrs():
+    lr = FLAGS.config.lr_max
+    dm = FLAGS.config.d_model
+    dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
+    return {
+        # embeddings and de-embeddings
+        "w_ei": lr,  # table 3, col 1
+        "w_eo": lr / dm,  # table 3, col2
+        # attention projections
+        "w_aq": lr / dm,  # table 3, col3
+        "w_ak": lr / dm,  # table 3, col3
+        "w_av": lr / dm,  # table 3, col3
+        "w_ao": lr / dm,  # table 3, col3; assumes dm=nh*dh
+        # feed-forward projections
+        "w_fi": lr / dm,  # table 3, col3
+        "w_fo": lr / dff,  # table 3, col3
+    }
+
+
 def grad_transform_factory():
     kws = dict(
         b1=FLAGS.config.adam_b1,
@@ -126,33 +146,18 @@ def grad_transform_factory():
         eps=FLAGS.config.adam_eps,
         mu_dtype=FLAGS.config.adam_mu_dtype,
     )
-    lr = FLAGS.config.lr_max
-    dm = FLAGS.config.d_model
-    dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
     # adam optimizer for standard parametrization
     if not FLAGS.config.use_mup:
         return optax.chain(
             optax.clip_by_global_norm(FLAGS.config.grad_clip),
-            optax.adam(lr, **kws),
+            optax.adam(FLAGS.config.lr_max, **kws),
             optax.scale_by_schedule(schedule_factory()),
         )
     # adam optimizer for mu-parametrization
     return optax.chain(
         optax.clip_by_global_norm(FLAGS.config.grad_clip),
         optax.multi_transform(
-            {
-                # embeddings and de-embeddings
-                "w_ei": optax.adam(lr, **kws),  # table 3, col 1
-                "w_eo": optax.adam(lr / dm, **kws),  # table 3, col2
-                # attention projections
-                "w_aq": optax.adam(lr / dm, **kws),  # table 3, col3
-                "w_ak": optax.adam(lr / dm, **kws),  # table 3, col3
-                "w_av": optax.adam(lr / dm, **kws),  # table 3, col3
-                "w_ao": optax.adam(lr / dm, **kws),  # table 3, col3; assumes dm=nh*dh
-                # feed-forward projections
-                "w_fi": optax.adam(lr / dm, **kws),  # table 3, col3
-                "w_fo": optax.adam(lr / dff, **kws),  # table 3, col3
-            },
+            jtu.tree_map(lambda lr: optax.adam(lr, **kws), get_lrs()),
             param_labels=param_label_fn,
         ),
         optax.scale_by_schedule(schedule_factory()),
@@ -370,15 +375,12 @@ def train_step(state, batch):
         p_new = state.params
         p_old = clean_and_flatten(p_old, split_filter={"w_a", "w_f"})
         p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f"})
-        p_diffs = jtu.tree_map(lambda a, b: jnp.mean(jnp.abs(a - b)), p_new, p_old)
-        p_norms = jtu.tree_map(lambda p: jnp.mean(jnp.abs(p)), p_new)
-        p_diffs = {"update_l1_" + k: v for k, v in p_diffs.items()}
-        p_norms = {"param_l1_" + k: v for k, v in p_norms.items()}
+        p_update = jtu.tree_map(lambda a, b: jnp.mean(jnp.abs(a - b)), p_new, p_old)
+        p_update = {"scaled_update_" + k: v / get_lrs()[k] for k, v in p_update.items()}
     else:
         state = state.apply_gradients(grads=grads)
-        p_diffs = dict()
-        p_norms = dict()
-    return state, dict(**metrics, **p_diffs, **p_norms)
+        p_update = dict()
+    return state, dict(**metrics, **p_update)
 
 
 def get_scalar_on_host(tensor):
