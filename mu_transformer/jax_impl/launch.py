@@ -378,7 +378,7 @@ def train_step(state, batch):
         p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f"})
         p_update = jtu.tree_map(lambda a, b: jnp.mean(jnp.abs(a - b)), p_new, p_old)
         p_update = {
-            f"whitened_update_{k}": (
+            f"wu_{k}": (
                 v / (get_lrs()["_".join(k.split("_")[0:2])] * schedule_factory()(s_old))
             )
             for k, v in p_update.items()
