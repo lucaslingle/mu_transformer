@@ -112,7 +112,7 @@ def schedule_factory():
     decay_steps = FLAGS.config.n_pretrain_step - FLAGS.config.n_warmup_step  # const aft
     return optax.join_schedules(
         [
-            optax.linear_schedule(0.0, end_value=1.0, transition_steps=warmup_steps),
+            optax.linear_schedule(0.0001, end_value=1.0, transition_steps=warmup_steps),
             optax.linear_schedule(1.0, end_value=0.1, transition_steps=decay_steps),
         ],
         boundaries=[warmup_steps],
@@ -370,6 +370,7 @@ def train_step(state, batch):
     metrics["param_count_total"] = size_pytree(state.params)
     # Maybe save update and param l1's, scaled by param tensor size for x-model compare
     if FLAGS.config.sow_param_info:
+        s_old = state.step
         p_old = state.params
         state = state.apply_gradients(grads=grads)
         p_new = state.params
@@ -377,7 +378,9 @@ def train_step(state, batch):
         p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f"})
         p_update = jtu.tree_map(lambda a, b: jnp.mean(jnp.abs(a - b)), p_new, p_old)
         p_update = {
-            "scaled_update_" + k: v / get_lrs()["_".join(k.split("_")[0:2])]
+            f"wu_{k}": (
+                v / (get_lrs()["_".join(k.split("_")[0:2])] * schedule_factory()(s_old))
+            )
             for k, v in p_update.items()
         }
     else:
@@ -478,10 +481,12 @@ def train_loop():
                 "loss_avg": metrics.get("loss_avg"),
                 "val_loss_avg": val_metrics.get("loss_avg"),
             }
-            logging.info(essentials)
-            if jax.process_index() == 0:
-                metrics.update(essentials)
-                wandb.log(metrics)
+            metrics.update(essentials)
+            logging.info(metrics)
+            # logging.info(essentials)
+            # if jax.process_index() == 0:
+            #     metrics.update(essentials)
+            #     wandb.log(metrics)
             start_time = end_time
             logging.debug("Done with print action...")
 
