@@ -375,7 +375,7 @@ def train_step(state, batch):
         p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f"})
         p_diffs = jtu.tree_map(lambda a, b: jnp.linalg.norm(a - b), p_new, p_old)
         p_norms = jtu.tree_map(lambda p: jnp.linalg.norm(p), p_new)
-        p_diffs = {"param_diffs_norm_" + k: v for k, v in p_diffs.items()}
+        p_diffs = {"param_diff_norm_" + k: v for k, v in p_diffs.items()}
         p_norms = {"param_norm_" + k: v for k, v in p_norms.items()}
     else:
         state = state.apply_gradients(grads=grads)
