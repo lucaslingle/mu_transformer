@@ -163,6 +163,7 @@ def write_dataset_to_memmap(
     assert writable_count % write_buffer_size == 0
 
     # so make an iterator
+    ds = ds.take(writable_count)
     ds = ds.iter(batch_size=write_buffer_size, drop_last_batch=True)
 
     # write to memmapped file
