@@ -354,6 +354,13 @@ def loss_fn(params, batch, config, global_mesh):
     return metrics["loss_term_avg"], dict(**metrics, **sown)
 
 
+def get_current_lr(name, step):
+    name_without_layer = "_".join(name.split("_")[0:2])
+    tensor_lr = get_lrs()[name_without_layer]
+    schedule_now = schedule_factory()(step)
+    return tensor_lr * schedule_now
+
+
 @functools.partial(jax.jit, donate_argnums=(0,))
 def train_step(state, batch):
     (_, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(
@@ -370,19 +377,14 @@ def train_step(state, batch):
     metrics["param_count_total"] = size_pytree(state.params)
     # Maybe save update and param l1's, scaled by param tensor size for x-model compare
     if FLAGS.config.sow_param_info:
-        s_old = state.step
+        step = state.step
         p_old = state.params
         state = state.apply_gradients(grads=grads)
         p_new = state.params
         p_old = clean_and_flatten(p_old, split_filter={"w_a", "w_f"})
         p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f"})
         p_update = jtu.tree_map(lambda a, b: jnp.mean(jnp.abs(a - b)), p_new, p_old)
-        p_update = {
-            f"wu_{k}": (
-                v / (get_lrs()["_".join(k.split("_")[0:2])] * schedule_factory()(s_old))
-            )
-            for k, v in p_update.items()
-        }
+        p_update = {f"wu_{k}": v / get_current_lr(k, step) for k, v in p_update.items()}
     else:
         state = state.apply_gradients(grads=grads)
         p_update = dict()
