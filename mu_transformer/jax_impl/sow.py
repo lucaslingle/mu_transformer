@@ -21,7 +21,7 @@ def coord_check_l1(act):
     return stat
 
 
-def split_coord_checks(name, stat_tensor):
+def split_and_name(name, stat_tensor):
     # for logging. splits the sown stats by layer when using remat_scan or scan(remat),
     # after they've been stacked into a single output tensor
     stats = jnp.split(stat_tensor, stat_tensor.shape[0], axis=0)

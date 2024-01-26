@@ -16,6 +16,7 @@ import posixpath
 import re
 import sys
 import time
+from typing import Set
 
 import flax
 import flax.linen as nn
@@ -44,7 +45,7 @@ from mu_transformer.jax_impl.model import TransformerConfig
 from mu_transformer.jax_impl.shard import get_namedsharding
 from mu_transformer.jax_impl.shard import sharding_constraint
 from mu_transformer.jax_impl.shard import to_global_array
-from mu_transformer.jax_impl.sow import split_coord_checks
+from mu_transformer.jax_impl.sow import split_and_name
 
 
 FLAGS = flags.FLAGS
@@ -295,21 +296,33 @@ def get_loss_mask(batch, *, pad_token_id, eos_token_id):
     return loss_mask
 
 
-def clean_and_flatten_intermediates(pytree, prefix=None):
-    pytree = traverse_util.flatten_dict(pytree)
-    pytree = {k[-1]: split_coord_checks(k[-1], v[0]) for k, v in pytree.items()}
-    pytree = traverse_util.flatten_dict(pytree)
-    pytree = {k[-1]: v for k, v in pytree.items()}
-    if prefix is not None:
-        pytree = {prefix + "_" + k[-1]: v for k, v in pytree.items()}
-    return pytree
+def maybe_untuple(maybe_tuple):
+    if isinstance(maybe_tuple, tuple):
+        if len(maybe_tuple) == 1:
+            return maybe_tuple[0]
+    return maybe_tuple
 
 
-def clean_and_flatten_params(pytree, prefix=None):
+def maybe_unbox(tensor):
+    if isinstance(tensor, flax.core.meta.Partitioned):
+        tensor = tensor.value
+    return tensor
+
+
+def clean_and_flatten(pytree, split_filter: Set[str]):
+    pytree = traverse_util.flatten_dict(pytree)
+    pytree = {k: maybe_untuple(v) for k, v in pytree.items()}
+    pytree = {k: maybe_unbox(v) for k, v in pytree.items()}
+    pytree = {
+        k: (
+            split_and_name(k[-1], v)
+            if any([s in k[-1] for s in split_filter])
+            else {k[-1]: v}
+        )
+        for k, v in pytree.items()
+    }
     pytree = traverse_util.flatten_dict(pytree)
     pytree = {k[-1]: v for k, v in pytree.items()}
-    if prefix is not None:
-        pytree = {prefix + "_" + k: v for k, v in pytree.items()}
     return pytree
 
 
@@ -319,7 +332,7 @@ def loss_fn(params, batch, config, global_mesh):
     apply_args = [{"params": params}, batch]  # tokens shifted internally by model
     if FLAGS.config.sow_intermediates:
         logits, mv = Transformer(*init_args).apply(*apply_args, mutable="intermediates")
-        sown = clean_and_flatten_intermediates(mv["intermediates"])
+        sown = clean_and_flatten(mv["intermediates"], split_filter={""})  # split all
     else:
         logits = Transformer(*init_args).apply(*apply_args)
         sown = dict()
@@ -358,10 +371,12 @@ def train_step(state, batch):
         p_old = state.params
         state = state.apply_gradients(grads=grads)
         p_new = state.params
+        p_old = clean_and_flatten(p_old, split_filter={"w_a", "w_f"})
+        p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f"})
         p_diffs = jtu.tree_map(lambda a, b: jnp.linalg.norm(a - b), p_new, p_old)
-        p_diffs = clean_and_flatten_params(p_diffs, prefix="param_diff_norm")
         p_norms = jtu.tree_map(lambda p: jnp.linalg.norm(p), p_new)
-        p_norms = clean_and_flatten_params(p_norms, prefix="param_norm")
+        p_diffs = {"param_diffs_norm_" + k: v for k, v in p_diffs.items()}
+        p_norms = {"param_norm_" + k: v for k, v in p_norms.items()}
     else:
         state = state.apply_gradients(grads=grads)
         p_diffs = dict()
@@ -371,8 +386,6 @@ def train_step(state, batch):
 
 def get_scalar_on_host(tensor):
     tensor = jax.device_get(tensor)
-    if isinstance(tensor, flax.core.meta.Partitioned):
-        tensor = tensor.value
     return tensor.item()
 
 
@@ -463,10 +476,14 @@ def train_loop():
                 "loss_avg": metrics.get("loss_avg"),
                 "val_loss_avg": val_metrics.get("loss_avg"),
             }
-            logging.info(essentials)
-            if jax.process_index() == 0:
-                metrics.update(essentials)
-                wandb.log(metrics)
+
+            metrics.update(essentials)
+            logging.info(metrics)
+
+            # logging.info(essentials)
+            # if jax.process_index() == 0:
+            #     metrics.update(essentials)
+            #     wandb.log(metrics)
             start_time = end_time
             logging.debug("Done with print action...")
 
