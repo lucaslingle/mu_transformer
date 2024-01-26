@@ -143,15 +143,15 @@ def write_dataset_to_memmap(
             ds = ds.take(sharded_split_count)
         elif split_name == "test":
             sharded_split_count = sharded_val_count
-            ds = ds.skip(sharded_val_count).take(sharded_val_count)
+            ds = ds.skip(sharded_val_count).take(sharded_split_count)
         elif split_name == "train":
             sharded_split_count = sharded_canonical_count - 2 * sharded_val_count
-            ds = ds.skip(2 * sharded_val_count)
+            ds = ds.skip(2 * sharded_val_count).take(sharded_split_count)
         else:
             raise NotImplementedError("Unrecognized split name")
     else:
         sharded_split_count = sharded_canonical_count
-    ds = ds.take(sharded_split_count)
+        ds = ds.take(sharded_split_count)
 
     # note that currently the shards on all hosts have the same example count.
     # in addition, we want this example count to be divisible by the batch size per host
