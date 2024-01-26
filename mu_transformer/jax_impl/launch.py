@@ -356,7 +356,10 @@ def loss_fn(params, batch, config, global_mesh):
 
 def get_current_lr(name, step):
     name_without_layer = "_".join(name.split("_")[0:2])
-    tensor_lr = get_lrs()[name_without_layer]
+    if FLAGS.config.use_mup:
+        tensor_lr = get_lrs()[name_without_layer]
+    else:
+        tensor_lr = FLAGS.config.lr_max
     schedule_now = schedule_factory()(step)
     return tensor_lr * schedule_now
 
