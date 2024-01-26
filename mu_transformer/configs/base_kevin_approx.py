@@ -19,6 +19,7 @@ def get_base_config():
 
     # logging/plotting
     config.sow_intermediates = True
+    config.sow_param_info = False
 
     # huggingface tokenizer and dataset settings
     config.hftr_tokenizer_name = "GPT2TokenizerFast"
