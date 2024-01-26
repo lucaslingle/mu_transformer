@@ -131,7 +131,7 @@ def write_dataset_to_memmap(
     except AttributeError as exep:
         logging.error("You're using a bad dataset, it has no num_examples metadata...")
         raise exep
-    sharded_canonical_count = (canonical_count // pcount) * pcount
+    sharded_canonical_count = canonical_count // pcount
     ds = ds.take(sharded_canonical_count)
 
     # if need be, split the training set into train/validation/test.
