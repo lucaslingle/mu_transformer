@@ -378,7 +378,7 @@ def train_step(state, batch):
         global_mesh=global_mesh_factory(),
     )
     # no extra mean anywhere, already have the sharded all-device mean gradient & loss.
-    # Estimate ce loss for global batch: sum of unmasked ce terms / sum of mask values.
+    # Estimate ce loss for global batch: sum of non-masked ce terms / sum of mask values
     # Equivalently,
     metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
     # Estimate other quantities of interest:
