@@ -147,21 +147,24 @@ def grad_transform_factory():
         mu_dtype=FLAGS.config.adam_mu_dtype,
     )
     # adam optimizer for standard parametrization
-    if not FLAGS.config.use_mup:
+    if FLAGS.config.parameterization in {"sp", "sp++"}:
         return optax.chain(
             optax.clip_by_global_norm(FLAGS.config.grad_clip),
             optax.adam(FLAGS.config.lr_max, **kws),
             optax.scale_by_schedule(schedule_factory()),
         )
-    # adam optimizer for mu-parametrization
-    return optax.chain(
-        optax.clip_by_global_norm(FLAGS.config.grad_clip),
-        optax.multi_transform(
-            jtu.tree_map(lambda lr: optax.adam(lr, **kws), get_lrs()),
-            param_labels=param_label_fn,
-        ),
-        optax.scale_by_schedule(schedule_factory()),
-    )
+    elif FLAGS.config.parameterization in {"mup"}:
+        # adam optimizer for mu-parametrization
+        return optax.chain(
+            optax.clip_by_global_norm(FLAGS.config.grad_clip),
+            optax.multi_transform(
+                jtu.tree_map(lambda lr: optax.adam(lr, **kws), get_lrs()),
+                param_labels=param_label_fn,
+            ),
+            optax.scale_by_schedule(schedule_factory()),
+        )
+    else:
+        raise NotImplementedError("Unrecognized parameterization name")
 
 
 def init_fn(rng, model_cls, optim_cls, config, global_mesh):
@@ -223,7 +226,7 @@ def automatic_modelname_factory():
     parts = [
         "jax",
         "mutransformer",
-        "mup" if FLAGS.config.use_mup else "sp",
+        FLAGS.config.parameterization,
         dataset_name,
         FLAGS.config.model_size,
         f"a{lr[0]}point{lr[1]}",
@@ -356,10 +359,12 @@ def loss_fn(params, batch, config, global_mesh):
 
 def get_current_lr(name, step):
     name_without_layer = "_".join(name.split("_")[0:2])
-    if FLAGS.config.use_mup:
+    if FLAGS.config.parameterization in {"sp", "sp++"}:
         tensor_lr = get_lrs()[name_without_layer]
-    else:
+    elif FLAGS.config.parameterization in {"mup"}:
         tensor_lr = FLAGS.config.lr_max
+    else:
+        raise NotImplementedError
     schedule_now = schedule_factory()(step)
     return tensor_lr * schedule_now
 
@@ -404,7 +409,7 @@ def train_loop():
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_private",
+            project="mu_transformer_scaling",
             config=vars(FLAGS.config)["_fields"],
             resume="never" if FLAGS.wb_run is None else "must",
             mode="online" if FLAGS.wb_enabled else "disabled",

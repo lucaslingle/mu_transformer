@@ -157,13 +157,17 @@ class MultiheadSelfAttention(nn.Module):
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
 
-        # zero init; appdx d.2
-        q_init = init.zeros
+        if self.hps.parameterization in {"sp"}:
+            q_init = init.normal(self.hps.d_model**-0.5)
+        elif self.hps.parameterization in {"sp++", "mup"}:
+            q_init = init.zeros  # zero init; appdx d.2
+        else:
+            raise NotImplementedError
+
         # normal, var 1/fan_in; table 3
         kv_init = init.normal(self.hps.d_model**-0.5)
         # normal, var 1/fan_in; table 3 with nh*dh=dm.
-        # also, discretionary variance multiplier 1/2l for depth transfer (radford).
-        o_init = init.normal((2 * self.hps.n_layer * self.hps.d_model) ** -0.5)
+        o_init = init.normal(self.hps.d_model**-0.5)
         wq = self.param(
             "w_aq",
             nn.with_partitioning(q_init, MESH_AXES["PCN"], self.global_mesh),
@@ -245,26 +249,23 @@ class MultiLayerPerceptron(nn.Module):
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
 
         # table 3
-        w1_init = init.normal(self.hps.d_model**-0.5)
+        i_init = init.normal(self.hps.d_model**-0.5)
         # table 3 with dff = dm * ff_multiple
-        # discretionary variance multiplier 1 / 2l for depth transfer (radford)
-        w2_init = init.normal(
-            (2 * self.hps.n_layer * self.hps.d_model * self.hps.ff_multiple) ** -0.5
-        )
-        w1 = self.param(
+        o_init = init.normal((self.hps.d_model * self.hps.ff_multiple) ** -0.5)
+        w_fi = self.param(
             "w_fi",
-            nn.with_partitioning(w1_init, MESH_AXES["CP"], self.global_mesh),
+            nn.with_partitioning(i_init, MESH_AXES["CP"], self.global_mesh),
             shapes["MF"],
             self.hps.param_dtype,
         )
-        w2 = self.param(
+        w_fo = self.param(
             "w_fo",
-            nn.with_partitioning(w2_init, MESH_AXES["PC"], self.global_mesh),
+            nn.with_partitioning(o_init, MESH_AXES["PC"], self.global_mesh),
             shapes["FM"],
             self.hps.param_dtype,
         )
 
-        x = jnp.einsum("btm,mf->btf", x, w1.astype(self.hps.dtype))
+        x = jnp.einsum("btm,mf->btf", x, w_fi.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["RNP"], self.global_mesh)
         self.sow("intermediates", "fp_l1", coord_check_l1(x))
 
@@ -275,7 +276,7 @@ class MultiLayerPerceptron(nn.Module):
             x = sharding_constraint(x, MESH_AXES["RNP"], self.global_mesh)
         self.sow("intermediates", "fa_l1", coord_check_l1(x))
 
-        x = jnp.einsum("btf,fm->btm", x, w2.astype(self.hps.dtype))
+        x = jnp.einsum("btf,fm->btm", x, w_fo.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "fr_l1", coord_check_l1(x))
         return x
@@ -323,7 +324,12 @@ class PredictionHead(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        o_init = init.zeros  # appendix d.2
+        if self.hps.parameterization in {"sp"}:
+            o_init = init.normal(self.hps.d_model**-0.5)
+        elif self.hps.parameterization in {"sp++", "mup"}:
+            o_init = init.zeros  # zero init; appdx d.2
+        else:
+            raise NotImplementedError
         w_out = self.param(
             "w_eo",
             nn.with_partitioning(o_init, MESH_AXES["CN"], self.global_mesh),
