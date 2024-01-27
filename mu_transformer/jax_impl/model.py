@@ -32,6 +32,7 @@ MESH_AXES = Dimensions(R="rows", C="columns", P="planes", N=None)
 
 @struct.dataclass
 class TransformerConfig:
+    parameterization: str
     param_dtype: Any
     dtype: Any
     output_logits_dtype: Any
