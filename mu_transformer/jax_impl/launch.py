@@ -360,9 +360,9 @@ def loss_fn(params, batch, config, global_mesh):
 def get_current_lr(name, step):
     name_without_layer = "_".join(name.split("_")[0:2])
     if FLAGS.config.parameterization in {"sp", "sp++"}:
-        tensor_lr = get_lrs()[name_without_layer]
-    elif FLAGS.config.parameterization in {"mup"}:
         tensor_lr = FLAGS.config.lr_max
+    elif FLAGS.config.parameterization in {"mup"}:
+        tensor_lr = get_lrs()[name_without_layer]
     else:
         raise NotImplementedError
     schedule_now = schedule_factory()(step)
