@@ -44,8 +44,9 @@ def get_base_config():
     config.norm_eps = 1e-8
 
     # optimization
-    config.tokens_per_global_batch = 2**19
-    config.grad_clip = 0.0  # optional gradient clip
+    config.tokens_per_global_batch = 2**18
+    config.grad_acc_steps = 2
+    config.grad_clip = 1.0  # optional gradient clip
     config.lr_max = 1.0  # master lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
     config.adam_b2 = 0.95
@@ -57,7 +58,7 @@ def get_base_config():
     config.n_save_step = 1000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
     config.n_warmup_step = 10_000  # warmup steps during pretraining
-    config.n_pretrain_step = 250_000  # pretraining steps
+    config.n_pretrain_step = 500_000  # pretraining steps
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
 
     return config
