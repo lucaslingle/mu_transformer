@@ -372,9 +372,9 @@ def get_current_lr(name, step):
 def train_step(state, batch):
     (_, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(
         state.params,
-        batch=batch,
-        config=transformer_config_factory(is_train=True),
-        global_mesh=global_mesh_factory(),
+        batch,
+        transformer_config_factory(is_train=True),
+        global_mesh_factory(),
     )
     # No extra mean anywhere, already have the sharded all-device mean gradient & loss.
     # Estimate ce loss for global batch: sum of non-masked ce terms / sum of mask values
