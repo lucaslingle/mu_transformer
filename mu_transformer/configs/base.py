@@ -40,7 +40,7 @@ def get_base_config():
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
     config.output_logits_dtype = "bfloat16"  # for bfloat16 grad; is fp32 during eval
-    config.n_layer = 18
+    config.n_layer = 24
     config.d_head = 256
     config.ff_multiple = 4
     config.rotary_base = 10_000  # can be zero to use NoPE instead of RoPE
@@ -51,7 +51,7 @@ def get_base_config():
     # optimization
     config.tokens_per_global_batch = 2**18
     config.grad_acc_steps = 1
-    config.grad_clip = 0.0  # optional gradient clip
+    config.grad_clip = 1.0  # optional gradient clip
     config.lr_max = 1.0  # master lr; scaled by mu-parameterization adam, schedule
     config.adam_b1 = 0.9
     config.adam_b2 = 0.95
