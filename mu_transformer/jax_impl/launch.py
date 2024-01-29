@@ -332,6 +332,7 @@ def clean_and_flatten(pytree, split_filter: Set[str]):
     return pytree
 
 
+@functools.partial(jax.remat)
 def loss_fn(params, batch, config, global_mesh):
     batch = sharding_constraint(batch, MESH_AXES["RN"], global_mesh)
     init_args = [config, global_mesh]
