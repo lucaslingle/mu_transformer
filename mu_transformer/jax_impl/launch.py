@@ -135,7 +135,7 @@ def get_lrs():
         "w_ao": lr / dm,  # table 3, col3; assumes dm=nh*dh
         # feed-forward projections
         "w_fi": lr / dm,  # table 3, col3
-        "w_fo": lr / dff,  # table 3, col3
+        "w_fo": {"mup": lr / dff, "mup++": lr / dm}[FLAGS.config.parameterization],
     }
 
 
@@ -149,7 +149,7 @@ def grad_transform_factory():
     # adam optimizer for standard parametrization
     if FLAGS.config.parameterization in {"sp", "sp++"}:
         opt = optax.adam(FLAGS.config.lr_max, **kws)
-    elif FLAGS.config.parameterization in {"mup"}:
+    elif FLAGS.config.parameterization in {"mup", "mup++"}:
         # adam optimizer for mu-parametrization
         opt = optax.multi_transform(
             jtu.tree_map(lambda lr: optax.adam(lr, **kws), get_lrs()),
@@ -363,7 +363,7 @@ def get_current_lr(name, step):
     name_without_layer = "_".join(name.split("_")[0:2])
     if FLAGS.config.parameterization in {"sp", "sp++"}:
         tensor_lr = FLAGS.config.lr_max
-    elif FLAGS.config.parameterization in {"mup"}:
+    elif FLAGS.config.parameterization in {"mup", "mup++"}:
         tensor_lr = get_lrs()[name_without_layer]
     else:
         raise NotImplementedError

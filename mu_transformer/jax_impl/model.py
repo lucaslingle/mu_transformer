@@ -160,7 +160,7 @@ class MultiheadSelfAttention(nn.Module):
 
         if self.hps.parameterization in {"sp"}:
             q_init = init.normal(self.hps.d_model**-0.5)
-        elif self.hps.parameterization in {"sp++", "mup"}:
+        elif self.hps.parameterization in {"sp++", "mup", "mup++"}:
             q_init = init.zeros  # zero init; appdx d.2
         else:
             raise NotImplementedError
@@ -327,7 +327,7 @@ class PredictionHead(nn.Module):
     def __call__(self, x):
         if self.hps.parameterization in {"sp"}:
             o_init = init.normal(self.hps.d_model**-0.5)
-        elif self.hps.parameterization in {"sp++", "mup"}:
+        elif self.hps.parameterization in {"sp++", "mup", "mup++"}:
             o_init = init.zeros  # zero init; appdx d.2
         else:
             raise NotImplementedError

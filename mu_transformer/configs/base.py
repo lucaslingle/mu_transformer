@@ -31,10 +31,15 @@ def get_base_config():
     config.sequence_len = 512
 
     # architecture
+    # options for parameterization: mup, sp, sp++, mup++.
+    #     mup = maximal update parameterization from tp5 paper table 3, all consts = 1.
+    #     sp = standard parameterization from tp5 paper table 3, all consts = 1.
+    #     sp++ = mup init with sp adam.
+    #     mup++ = mup init and mup adam with 4x lr multiplier on mlp residual proj.
+    config.parameterization = "mup++"
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
     config.output_logits_dtype = "bfloat16"  # for bfloat16 grad; is fp32 during eval
-    config.parameterization = "mup"  # mup, sp, or sp++. sp++ = mup w/ O(1) lr wrt width
     config.n_layer = 18
     config.d_head = 256
     config.ff_multiple = 4
