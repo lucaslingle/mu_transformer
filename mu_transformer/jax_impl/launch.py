@@ -527,10 +527,10 @@ def train_loop():
 @jax.jit
 def eval_step(params, batch):
     _, metrics = loss_fn(
-        params=params,
-        batch=batch,
-        config=transformer_config_factory(is_train=False),
-        global_mesh=global_mesh_factory(),
+        params,
+        batch,
+        transformer_config_factory(is_train=False),
+        global_mesh_factory(),
     )
     return metrics
 
