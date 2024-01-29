@@ -148,23 +148,21 @@ def grad_transform_factory():
     )
     # adam optimizer for standard parametrization
     if FLAGS.config.parameterization in {"sp", "sp++"}:
-        return optax.chain(
-            optax.clip_by_global_norm(FLAGS.config.grad_clip),
-            optax.adam(FLAGS.config.lr_max, **kws),
-            optax.scale_by_schedule(schedule_factory()),
-        )
+        opt = optax.adam(FLAGS.config.lr_max, **kws)
     elif FLAGS.config.parameterization in {"mup"}:
         # adam optimizer for mu-parametrization
-        return optax.chain(
-            optax.clip_by_global_norm(FLAGS.config.grad_clip),
-            optax.multi_transform(
-                jtu.tree_map(lambda lr: optax.adam(lr, **kws), get_lrs()),
-                param_labels=param_label_fn,
-            ),
-            optax.scale_by_schedule(schedule_factory()),
+        opt = optax.multi_transform(
+            jtu.tree_map(lambda lr: optax.adam(lr, **kws), get_lrs()),
+            param_labels=param_label_fn,
         )
     else:
         raise NotImplementedError("Unrecognized parameterization name")
+    chain = []
+    if FLAGS.config.grad_clip > 0.0:
+        chain.append(optax.clip_by_global_norm(FLAGS.config.grad_clip))
+    chain.append(opt)
+    chain.append(optax.scale_by_schedule(schedule_factory()))
+    return optax.chain(*chain)
 
 
 def init_fn(rng, model_cls, optim_cls, config, global_mesh):
@@ -377,24 +375,24 @@ def train_step(state, batch):
         config=transformer_config_factory(is_train=True),
         global_mesh=global_mesh_factory(),
     )
-    # no extra mean anywhere, already have the sharded all-device mean gradient & loss.
+    # No extra mean anywhere, already have the sharded all-device mean gradient & loss.
     # Estimate ce loss for global batch: sum of non-masked ce terms / sum of mask values
     # Equivalently,
     metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
-    # Estimate other quantities of interest:
-    metrics["param_count_total"] = size_pytree(state.params)
-    # Maybe save update and param l1's, scaled by param tensor size for x-model compare
     if FLAGS.config.sow_param_info:
+        # Compute param count
+        metrics["param_count_total"] = size_pytree(state.params)
+        # Maybe save update coordinate size (here, mean abs), scaled by current lr
         step = state.step
         p_old = state.params
-        state = state.apply_gradients(grads=grads)
+        state = state.apply_gradients(grads=grads)  # do update
         p_new = state.params
         p_old = clean_and_flatten(p_old, split_filter={"w_a", "w_f"})
         p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f"})
         p_update = jtu.tree_map(lambda a, b: jnp.mean(jnp.abs(a - b)), p_new, p_old)
         p_update = {f"wu_{k}": v / get_current_lr(k, step) for k, v in p_update.items()}
     else:
-        state = state.apply_gradients(grads=grads)
+        state = state.apply_gradients(grads=grads)  # do update
         p_update = dict()
     return state, dict(**metrics, **p_update)
 
