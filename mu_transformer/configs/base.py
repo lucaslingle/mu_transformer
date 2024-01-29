@@ -35,7 +35,7 @@ def get_base_config():
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
     config.output_logits_dtype = "bfloat16"  # for bfloat16 grad; is fp32 during eval
     config.parameterization = "mup"  # mup, sp, or sp++. sp++ = mup w/ O(1) lr wrt width
-    config.n_layer = 24
+    config.n_layer = 18
     config.d_head = 256
     config.ff_multiple = 4
     config.rotary_base = 10_000  # can be zero to use NoPE instead of RoPE
