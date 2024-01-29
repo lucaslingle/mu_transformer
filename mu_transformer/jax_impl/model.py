@@ -305,7 +305,7 @@ class Embedding(nn.Module):
         e_init = init.normal(1.0)  # appendix b.1
         w_emb = self.param(
             "w_ei",
-            nn.with_partitioning(e_init, MESH_AXES["NN"], self.global_mesh),  # NC=slow
+            nn.with_partitioning(e_init, MESH_AXES["NN"], self.global_mesh),  # try NC
             [self.hps.n_vocab, self.hps.d_model],
             self.hps.param_dtype,
         )
