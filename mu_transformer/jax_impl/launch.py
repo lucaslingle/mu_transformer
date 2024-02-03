@@ -489,6 +489,7 @@ def train_loop():
         pcount=jax.process_count(),
         pindex=jax.process_index(),
         workdir=FLAGS.workdir,
+        force_download=FLAGS.config.force_download,
     )
 
     logging.info("Starting training loop...")
@@ -609,6 +610,7 @@ def eval_loop(params, n_eval_step=None):
         pcount=jax.process_count(),
         pindex=jax.process_index(),
         workdir=FLAGS.workdir,
+        force_download=FLAGS.config.force_download,
     )
 
     global_mesh = global_mesh_factory()

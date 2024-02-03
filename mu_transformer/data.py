@@ -196,12 +196,14 @@ def read_dataset_to_memmap(
     pcount: int,
     pindex: int,
     workdir: str,
+    force_download: bool,
 ) -> np.ndarray:
     workdir_fp = get_shard_fp(workdir, hfds_identifier, split_name, pcount, pindex)
     temp_fp = posixpath.join("/tmp/", posixpath.split(workdir_fp)[-1])
 
-    logging.info(f"Copying {workdir_fp} to {temp_fp}")
-    blobfile.copy(workdir_fp, temp_fp, overwrite=True)
+    if force_download or not blobfile.exists(temp_fp):
+        logging.info(f"Copying {workdir_fp} to {temp_fp}")
+        blobfile.copy(workdir_fp, temp_fp, overwrite=True)
 
     logging.info(f"Reading with np.memmap...")
     arr_dtype = get_arr_dtype(hftr_tokenizer.vocab_size)
@@ -221,6 +223,7 @@ def get_dataset(
     pcount: int,
     pindex: int,
     workdir: str,
+    force_download: bool,
 ) -> np.ndarray:
     logging.info("Calling write_dataset_to_memmap...")
     _ = write_dataset_to_memmap(
@@ -244,6 +247,7 @@ def get_dataset(
         pcount=pcount,
         pindex=pindex,
         workdir=workdir,
+        force_download=force_download,
     )
     return arr
 

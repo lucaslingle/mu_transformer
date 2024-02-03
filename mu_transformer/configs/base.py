@@ -29,6 +29,7 @@ def get_base_config():
     config.hfds_datacol = "text"
     config.hfds_buffer_size = 1024  # example buffer length for batched tokenization
     config.sequence_len = 512
+    config.force_download = True  # should be true unless you know what you're doing
 
     # architecture
     # options for parameterization: sp, mup, spectral
