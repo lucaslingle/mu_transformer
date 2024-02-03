@@ -19,7 +19,7 @@ def get_config():
     config.model_size = "small"
 
     # mesh
-    config.n_mesh_rows = 8
+    config.n_mesh_rows = 128
     config.n_mesh_cols = 1
     config.n_mesh_planes = 1
 

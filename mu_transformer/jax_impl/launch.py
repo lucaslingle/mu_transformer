@@ -119,48 +119,100 @@ def schedule_factory():
     )
 
 
-@functools.lru_cache(maxsize=1)
-def get_lrs():
-    lr = FLAGS.config.lr_max
-    dm = FLAGS.config.d_model
-    dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
+def get_standard_lrs():
+    lr = FLAGS.config.lr_base
     return {
-        # embeddings and de-embeddings
-        "w_ei": lr,  # table 3, col 1
-        "w_eo": lr / dm,  # table 3, col2
-        # attention projections
-        "w_aq": lr / dm,  # table 3, col3
-        "w_ak": lr / dm,  # table 3, col3
-        "w_av": lr / dm,  # table 3, col3
-        "w_ao": lr / dm,  # table 3, col3; assumes dm=nh*dh
-        # feed-forward projections
-        "w_fi": lr / dm,  # table 3, col3
-        "w_fo": {"mup": lr / dff, "mup++": lr / dm}[FLAGS.config.parameterization],
+        # embeddings
+        "w_e": lr,
+        # attention
+        "g_a": lr,
+        "w_aq": lr,
+        "w_ak": lr,
+        "w_av": lr,
+        "w_ao": lr,
+        # feed-forward
+        "g_f": lr,
+        "w_fi": lr,
+        "w_fo": lr,
+        # readout
+        "g_o": lr,
+        "w_o": lr,
     }
 
 
+def get_mup_lrs():
+    lr = FLAGS.config.lr_base
+    wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
+    return {
+        # embeddings
+        "w_e": lr,  # table 3, col1
+        # attention
+        "g_a": lr,  # table 3, col1
+        "w_aq": lr / wm,  # table 3, col3
+        "w_ak": lr / wm,  # table 3, col3
+        "w_av": lr / wm,  # table 3, col3
+        "w_ao": lr / wm,  # table 3, col3; assumes dm=nh*dh
+        # feed-forward
+        "g_f": lr,  # table 3, col1
+        "w_fi": lr / wm,  # table 3, col3
+        "w_fo": lr / wm,  # table 3, col3
+        # readout
+        "g_o": lr,  # table 3, col1
+        "w_o": lr / wm,  # table 3, col2
+    }
+
+
+def get_spectral_lrs():
+    lr = FLAGS.config.lr_base
+    wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
+    return {
+        # embeddings
+        "w_e": lr * wm,
+        # attention
+        "g_a": lr * wm,
+        "w_aq": lr,
+        "w_ak": lr,
+        "w_av": lr,
+        "w_ao": lr,
+        # feed-forward
+        "g_f": lr * wm,
+        "w_fi": lr,
+        "w_fo": lr,
+        # readout
+        "g_o": lr * wm,
+        "w_o": lr / wm,
+    }
+
+
+@functools.lru_cache(maxsize=1)
+def get_lrs():
+    p = FLAGS.config.parameterization
+    if p == "sp":
+        return get_standard_lrs()
+    if p == "mup":
+        return get_mup_lrs()
+    if p == "spectral":
+        return get_spectral_lrs()
+    raise NotImplementedError(f"Unrecognized parameterization name: {p}")
+
+
 def grad_transform_factory():
+    chain = []
+    if FLAGS.config.grad_clip > 0.0:
+        chain.append(optax.clip_by_global_norm(FLAGS.config.grad_clip))
     kws = dict(
         b1=FLAGS.config.adam_b1,
         b2=FLAGS.config.adam_b2,
         eps=FLAGS.config.adam_eps,
         mu_dtype=FLAGS.config.adam_mu_dtype,
     )
-    # adam optimizer for standard parametrization
-    if FLAGS.config.parameterization in {"sp", "sp++"}:
-        opt = optax.adam(FLAGS.config.lr_max, **kws)
-    elif FLAGS.config.parameterization in {"mup", "mup++"}:
-        # adam optimizer for mu-parametrization
-        opt = optax.multi_transform(
-            jtu.tree_map(lambda lr: optax.adam(lr, **kws), get_lrs()),
-            param_labels=param_label_fn,
-        )
-    else:
-        raise NotImplementedError("Unrecognized parameterization name")
-    chain = []
-    if FLAGS.config.grad_clip > 0.0:
-        chain.append(optax.clip_by_global_norm(FLAGS.config.grad_clip))
+    opt = optax.multi_transform(
+        jtu.tree_map(lambda lr: optax.adam(lr, **kws), get_lrs()),
+        param_labels=param_label_fn,
+    )
     chain.append(opt)
+    if FLAGS.config.wd > 0.0:
+        chain.append(optax.add_decayed_weights(-FLAGS.config.wd))
     chain.append(optax.scale_by_schedule(schedule_factory()))
     tx = optax.chain(*chain)
     if FLAGS.config.grad_acc_steps > 1:
@@ -222,7 +274,7 @@ def global_batch_size_factory():
 def automatic_modelname_factory():
     dataset_name = FLAGS.config.hfds_identifier.split("/")[-1].lower()
     assert re.search(r"^[a-zA-Z0-9-_]+$", dataset_name) is not None  # ^=start, $=end.
-    lr = str(FLAGS.config.lr_max).split(".")
+    lr = str(FLAGS.config.lr_base).split(".")
     assert len(lr) == 2
     parts = [
         "jax",
@@ -360,12 +412,7 @@ def loss_fn(params, batch, config, global_mesh):
 
 def get_current_lr(name, step):
     name_without_layer = "_".join(name.split("_")[0:2])
-    if FLAGS.config.parameterization in {"sp", "sp++"}:
-        tensor_lr = FLAGS.config.lr_max
-    elif FLAGS.config.parameterization in {"mup", "mup++"}:
-        tensor_lr = get_lrs()[name_without_layer]
-    else:
-        raise NotImplementedError
+    tensor_lr = get_lrs()[name_without_layer]
     schedule_now = schedule_factory()(step)
     return tensor_lr * schedule_now
 
@@ -390,10 +437,10 @@ def train_step(state, batch):
         p_old = state.params
         state = state.apply_gradients(grads=grads)  # do update
         p_new = state.params
-        p_old = clean_and_flatten(p_old, split_filter={"w_a", "w_f"})
-        p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f"})
+        p_old = clean_and_flatten(p_old, split_filter={"w_a", "w_f", "g_a", "g_f"})
+        p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f", "g_a", "g_f"})
         p_update = jtu.tree_map(lambda a, b: jnp.mean(jnp.abs(a - b)), p_new, p_old)
-        p_update = {f"wu_{k}": v / get_current_lr(k, step) for k, v in p_update.items()}
+        p_update = {f"uu_{k}": v / get_current_lr(k, step) for k, v in p_update.items()}
     else:
         state = state.apply_gradients(grads=grads)  # do update
         p_update = dict()
@@ -410,7 +457,7 @@ def train_loop():
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_scaling",
+            project="mu_transformer_rel",
             config=vars(FLAGS.config)["_fields"],
             resume="never" if FLAGS.wb_run is None else "must",
             mode="online" if FLAGS.wb_enabled else "disabled",

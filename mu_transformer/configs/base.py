@@ -31,39 +31,41 @@ def get_base_config():
     config.sequence_len = 512
 
     # architecture
-    # options for parameterization: mup, sp, sp++, mup++.
-    #     mup = maximal update parameterization from tp5 paper table 3, all consts = 1.
-    #     sp = standard parameterization from tp5 paper table 3, all consts = 1.
-    #     sp++ = mup init with sp adam.
-    #     mup++ = mup init and mup adam with 4x lr multiplier on mlp residual proj.
-    config.parameterization = "mup++"
+    # options for parameterization: sp, mup, spectral
+    #     sp = standard parameterization w/ zero-init on query, readout projections.
+    #     mup = max update parameterization w/ rel scaling: assumes only d_model changes
+    #     spectral = spectral init w/ rel scaling: assumes only d_model changes
+    config.parameterization = "mup"
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
     config.output_logits_dtype = "bfloat16"  # for bfloat16 grad; is fp32 during eval
-    config.n_layer = 24
-    config.d_head = 256
-    config.ff_multiple = 4
-    config.rotary_base = 10_000  # can be zero to use NoPE instead of RoPE
+    config.n_layer = 6  # depth, should stay const for mu-transfer
+    config.d_base = 256  # base model width for relative scaling rules
+    config.d_head = 64  # attn head width
+    config.ff_multiple = 4  # mlp hidden width multiple
+    config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
     config.act_name = "relu"  # any activation defined in jax.nn
     config.act_square = False  # activation squaring
-    config.norm_eps = 1e-8
+    config.norm_eps = 1e-8  # rmsnorm epsilon
+    config.norm_gains = False  # rmsnorm gains
 
     # optimization
-    config.tokens_per_global_batch = 2**18
-    config.grad_acc_steps = 1
-    config.grad_clip = 1.0  # optional gradient clip
-    config.lr_max = 1.0  # master lr; scaled by mu-parameterization adam, schedule
-    config.adam_b1 = 0.9
-    config.adam_b2 = 0.95
-    config.adam_eps = 1e-8
-    config.adam_mu_dtype = "bfloat16"
+    config.tokens_per_global_batch = 2**18  # batch size * sequence len
+    config.grad_acc_steps = 1  # steps per parameter update (for micro-batching)
+    config.grad_clip = 1.0  # grad clip max l2 norm
+    config.lr_base = 1.0  # base learning rate
+    config.adam_b1 = 0.9  # adam first moment ema rate
+    config.adam_b2 = 0.95  # adam second moment ema rate
+    config.adam_eps = 1e-8  # adam epsilon
+    config.adam_mu_dtype = "bfloat16"  # adam first moment dtype
+    config.wd = 0.0  # weight decay
 
     # periodic action settings
     config.n_print_step = 100  # print every
     config.n_save_step = 1000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
-    config.n_warmup_step = 10_000  # warmup steps during pretraining
-    config.n_pretrain_step = 500_000  # pretraining steps
+    config.n_warmup_step = 1_000  # warmup steps during pretraining
+    config.n_pretrain_step = 10_000  # pretraining steps
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
 
     return config

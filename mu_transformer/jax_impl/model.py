@@ -44,6 +44,7 @@ class TransformerConfig:
     act_name: str
     act_square: bool
     norm_eps: float
+    norm_gains: bool
     n_layer: int
     n_vocab: int
     bos_token_id: int
@@ -61,13 +62,22 @@ class TransformerConfig:
 
 class RMSNorm(nn.Module):
     hps: TransformerConfig
+    suffix: str
 
     @nn.compact
     def __call__(self, x):
         eps = jnp.array([self.hps.norm_eps], dtype=x.dtype)
         ms = jnp.mean(jnp.square(x), axis=-1)
         rms = jnp.sqrt(ms + eps)
-        return x / rms[..., None]
+        normed = x / rms[..., None]
+        if self.hps.norm_gains:
+            normed *= self.param(
+                "g_" + self.suffix,
+                nn.with_partitioning(init.ones, MESH_AXES["C"], self.global_mesh),
+                [self.hps.d_model],
+                self.hps.param_dtype,
+            ).astype(self.hps.dtype)[None, None, ...]
+        return normed
 
 
 class RotaryEncoding(nn.Module):
@@ -142,7 +152,7 @@ class CausalMask(nn.Module):
         return x
 
 
-class MultiheadSelfAttention(nn.Module):
+class MultiHeadAttention(nn.Module):
     hps: TransformerConfig
     global_mesh: jax.sharding.Mesh
 
@@ -158,13 +168,8 @@ class MultiheadSelfAttention(nn.Module):
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
 
-        if self.hps.parameterization in {"sp"}:
-            q_init = init.normal(self.hps.d_model**-0.5)
-        elif self.hps.parameterization in {"sp++", "mup", "mup++"}:
-            q_init = init.zeros  # zero init; appdx d.2
-        else:
-            raise NotImplementedError
-
+        # zero init; appdx d.2
+        q_init = init.zeros
         # normal, var 1/fan_in; table 3
         kv_init = init.normal(self.hps.d_model**-0.5)
         # normal, var 1/fan_in; table 3 with nh*dh=dm.
@@ -289,9 +294,9 @@ class TransformerBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x, _):
-        x += MultiheadSelfAttention(self.hps, self.global_mesh)(RMSNorm(self.hps)(x))
+        x += MultiHeadAttention(self.hps, self.global_mesh)(RMSNorm(self.hps, "a")(x))
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        x += MultiLayerPerceptron(self.hps, self.global_mesh)(RMSNorm(self.hps)(x))
+        x += MultiLayerPerceptron(self.hps, self.global_mesh)(RMSNorm(self.hps, "f")(x))
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         return x, None
 
@@ -302,10 +307,9 @@ class Embedding(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        e_init = init.normal(1.0)  # appendix b.1
         w_emb = self.param(
-            "w_ei",
-            nn.with_partitioning(e_init, MESH_AXES["NN"], self.global_mesh),  # try NC
+            "w_e",
+            nn.with_partitioning(init.normal(1.0), MESH_AXES["NC"], self.global_mesh),
             [self.hps.n_vocab, self.hps.d_model],
             self.hps.param_dtype,
         )
@@ -325,20 +329,14 @@ class PredictionHead(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        if self.hps.parameterization in {"sp"}:
-            o_init = init.normal(self.hps.d_model**-0.5)
-        elif self.hps.parameterization in {"sp++", "mup", "mup++"}:
-            o_init = init.zeros  # zero init; appdx d.2
-        else:
-            raise NotImplementedError
         w_out = self.param(
-            "w_eo",
-            nn.with_partitioning(o_init, MESH_AXES["CN"], self.global_mesh),
+            "w_o",
+            nn.with_partitioning(init.zeros, MESH_AXES["CN"], self.global_mesh),
             [self.hps.d_model, self.hps.n_vocab],
             self.hps.param_dtype,
         )
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        x = RMSNorm(self.hps)(x)
+        x = RMSNorm(self.hps, "o")(x)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         if self.hps.is_train:
             output_logits_dtype = self.hps.output_logits_dtype
