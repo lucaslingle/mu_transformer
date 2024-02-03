@@ -477,13 +477,27 @@ def train_loop():
 
     logging.info("Creating dataset...")
     batch_size = global_batch_size_factory() // jax.process_count()
-    dataset_shard = get_dataset(
+    train_ds_shard = get_dataset(
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,
         hfds_buffer_size=FLAGS.config.hfds_buffer_size,
         hftr_tokenizer=tokenizer_factory(),
         split_name="train",
+        batch_size=batch_size,
+        sequence_len=FLAGS.config.sequence_len,
+        pcount=jax.process_count(),
+        pindex=jax.process_index(),
+        workdir=FLAGS.workdir,
+        force_download=FLAGS.config.force_download,
+    )
+    val_ds_shard = get_dataset(
+        hfds_identifier=FLAGS.config.hfds_identifier,
+        hfds_config=FLAGS.config.hfds_config,
+        hfds_datacol=FLAGS.config.hfds_datacol,
+        hfds_buffer_size=FLAGS.config.hfds_buffer_size,
+        hftr_tokenizer=tokenizer_factory(),
+        split_name="validation",
         batch_size=batch_size,
         sequence_len=FLAGS.config.sequence_len,
         pcount=jax.process_count(),
@@ -504,7 +518,7 @@ def train_loop():
     for step in range(start_step, n_total_step + 1):
         logging.debug(f"Training step {step}...")
         batch = get_batch(
-            dataset_shard,
+            train_ds_shard,
             batch_size=batch_size,
             sequence_len=FLAGS.config.sequence_len,
             step=step,
@@ -555,7 +569,11 @@ def train_loop():
                 logging.info("Stopping profiler trace...")
                 jax.profiler.stop_trace()
             logging.debug("Starting evaluation action...")
-            val_metrics = eval_loop(state.params, n_eval_step=FLAGS.config.n_eval_step)
+            val_metrics = eval_loop(
+                state.params,
+                dataset_shard=val_ds_shard,
+                n_eval_step=FLAGS.config.n_eval_step,
+            )
             if best_val_loss > val_metrics["loss_avg"]:
                 logging.info("Validation loss improved...")
                 do_save(save_checkpoint_mgr, step, state)
@@ -582,7 +600,7 @@ def eval_step(params, batch):
     return metrics
 
 
-def eval_loop(params, n_eval_step=None):
+def eval_loop(params, dataset_shard=None, n_eval_step=None):
     logging.info("Entering eval loop function...")
     if params is None:
         rng_init, _ = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
@@ -598,20 +616,21 @@ def eval_loop(params, n_eval_step=None):
 
     logging.info("Creating dataset...")
     batch_size = global_batch_size_factory() // jax.process_count()  # per host
-    dataset_shard = get_dataset(
-        hfds_identifier=FLAGS.config.hfds_identifier,
-        hfds_config=FLAGS.config.hfds_config,
-        hfds_datacol=FLAGS.config.hfds_datacol,
-        hfds_buffer_size=FLAGS.config.hfds_buffer_size,
-        hftr_tokenizer=tokenizer_factory(),
-        split_name="validation" if FLAGS.mode == "train" else FLAGS.mode,
-        batch_size=batch_size,
-        sequence_len=FLAGS.config.sequence_len,
-        pcount=jax.process_count(),
-        pindex=jax.process_index(),
-        workdir=FLAGS.workdir,
-        force_download=FLAGS.config.force_download,
-    )
+    if dataset_shard is None:
+        dataset_shard = get_dataset(
+            hfds_identifier=FLAGS.config.hfds_identifier,
+            hfds_config=FLAGS.config.hfds_config,
+            hfds_datacol=FLAGS.config.hfds_datacol,
+            hfds_buffer_size=FLAGS.config.hfds_buffer_size,
+            hftr_tokenizer=tokenizer_factory(),
+            split_name=FLAGS.mode,
+            batch_size=batch_size,
+            sequence_len=FLAGS.config.sequence_len,
+            pcount=jax.process_count(),
+            pindex=jax.process_index(),
+            workdir=FLAGS.workdir,
+            force_download=FLAGS.config.force_download,
+        )
 
     global_mesh = global_mesh_factory()
     acc = None
