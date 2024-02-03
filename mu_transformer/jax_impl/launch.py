@@ -587,6 +587,7 @@ def train_loop():
                     # create_perfetto_trace=True,  # write extra trace file for perfetto
                 )
             logging.debug("Done with evaluation action...")
+    logging.info(f"best_val_loss: {best_val_loss}")
 
 
 @jax.jit
