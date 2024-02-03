@@ -42,7 +42,7 @@ def get_base_config():
     config.output_logits_dtype = "bfloat16"  # for bfloat16 grad; is fp32 during eval
     config.n_layer = 6  # depth, should stay const for mu-transfer
     config.d_base = 256  # base model width for relative scaling rules
-    config.d_head = 64  # attn head width
+    config.d_head = 128  # attn head width
     config.ff_multiple = 4  # mlp hidden width multiple
     config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
     config.act_name = "relu"  # any activation defined in jax.nn
