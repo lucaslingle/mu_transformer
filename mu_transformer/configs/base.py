@@ -49,6 +49,7 @@ def get_base_config():
     config.act_square = False  # activation squaring
     config.norm_eps = 1e-8  # rmsnorm epsilon
     config.norm_gains = False  # rmsnorm gains
+    config.parallel_res = False  # apply attn and mlp blocks in parallel
 
     # optimization
     config.tokens_per_global_batch = 2**18  # batch size * sequence len

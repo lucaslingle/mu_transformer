@@ -45,6 +45,7 @@ class TransformerConfig:
     act_square: bool
     norm_eps: float
     norm_gains: bool
+    parallel_res: bool
     n_layer: int
     n_vocab: int
     bos_token_id: int
@@ -294,10 +295,23 @@ class TransformerBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x, _):
-        x += MultiHeadAttention(self.hps, self.global_mesh)(RMSNorm(self.hps, "a")(x))
-        x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        x += MultiLayerPerceptron(self.hps, self.global_mesh)(RMSNorm(self.hps, "f")(x))
-        x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+        r1 = MultiHeadAttention(self.hps, self.global_mesh)(RMSNorm(self.hps, "a")(x))
+        r1 = sharding_constraint(r1, MESH_AXES["RNC"], self.global_mesh)
+
+        if not self.hps.parallel_res:
+            x += r1
+            x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+
+        r2 = MultiLayerPerceptron(self.hps, self.global_mesh)(RMSNorm(self.hps, "f")(x))
+        r2 = sharding_constraint(r2, MESH_AXES["RNC"], self.global_mesh)
+
+        if not self.hps.parallel_res:
+            x += r2
+            x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+        else:
+            x += r1 + r2
+            x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+
         return x, None
 
 
@@ -323,7 +337,7 @@ class Embedding(nn.Module):
         return x
 
 
-class PredictionHead(nn.Module):
+class Unembedding(nn.Module):
     hps: TransformerConfig
     global_mesh: jax.sharding.Mesh
 
@@ -364,5 +378,5 @@ class Transformer(nn.Module):
             metadata_params={nn.PARTITION_NAME: None},
         )(hps=self.hps, global_mesh=self.global_mesh)(x, None)
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        x = nnp.remat(PredictionHead)(self.hps, self.global_mesh)(x)
+        x = nnp.remat(Unembedding)(self.hps, self.global_mesh)(x)
         return x
