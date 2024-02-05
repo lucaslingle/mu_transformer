@@ -8,31 +8,34 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.10.dev0"
-flax = "0.7.5"
-etils = "1.5.0"
 absl-py = "2.0.0"
-ml-collections = "0.1.1"
+blobfile = "2.1.1"
 chex = "0.1.7"
-transformers = "4.36.2"
 datasets = "2.16.1"
+etils = "1.5.0"
+flax = "0.7.5"
 huggingface-hub = "0.20.2"
+matplotlib = "^3.8.2"
+ml-collections = "0.1.1"
 numpy = "1.23.5"
 optax = "0.1.7"
 orbax-checkpoint = "0.4.8"
+pandas = "^2.2.0"
 requests = "^2.31.0"
+seaborn = "^0.13.2"
 tensorflow = "2.12.1"
 tqdm = "4.66.1"
+transformers = "4.36.2"
 wandb = "^0.16.1"
-blobfile = "2.1.1"
 
 [tool.poetry.group.cpu.dependencies]
 jax = {extras = ["cpu"], version = "0.4.23"}
 jaxlib = {extras = ["cpu"], version = "0.4.23"}
 
 [tool.poetry.group.tpu.dependencies]
-libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20231213-py3-none-any.whl" }
 jax = {extras = ["tpu"], version = "0.4.23"}
 jaxlib = {extras = ["tpu"], version = "0.4.23"}
+libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20231213-py3-none-any.whl" }
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.6.0"
