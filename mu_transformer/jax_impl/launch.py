@@ -429,9 +429,9 @@ def train_step(state, batch):
     # Estimate ce loss for global batch: sum of non-masked ce terms / sum of mask values
     # Equivalently,
     metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
+    # Compute param count
+    metrics["param_count_total"] = size_pytree(state.params)
     if FLAGS.config.sow_param_info:
-        # Compute param count
-        metrics["param_count_total"] = size_pytree(state.params)
         # Maybe save update coordinate size (here, mean abs), scaled by current lr
         step = state.step
         p_old = state.params
@@ -445,6 +445,32 @@ def train_step(state, batch):
         state = state.apply_gradients(grads=grads)  # do update
         p_update = dict()
     return state, dict(**metrics, **p_update)
+
+
+def get_tpuv3_mfu(param_count, sec_per_step):
+    """Estimate model flops utilization (MFU)"""
+    # see PaLM paper Appendix B as ref: https://arxiv.org/abs/2204.02311
+
+    # get throughput estimate in tokens per second
+    tokens_per_sec = FLAGS.config.tokens_per_global_batch / sec_per_step
+
+    # get flop count estimate per token using analytical accounting
+    n = param_count
+    l = FLAGS.config.n_layer
+    h = FLAGS.config.d_model // FLAGS.config.d_head
+    q = FLAGS.config.d_head
+    t = FLAGS.config.sequence_len
+    flop_per_token = (6 * n) + (12 * l * h * q * t)
+
+    # get estimated flop count per second (flop/s)
+    flop_per_second_analytic = flop_per_token * tokens_per_sec
+
+    # get peak theoretical flop count per second for the tpu v3 pod slice.
+    #   formula: TPU v3 flop/s per chip * 4 chips per host * num hosts:
+    flop_per_second_peak = 123e12 * 4 * jax.process_count()
+
+    mfu = flop_per_second_analytic / flop_per_second_peak
+    return mfu * 100  # a percentage
 
 
 def get_scalar_on_host(tensor):
@@ -553,6 +579,7 @@ def train_loop():
                 "sec_per_step": sec_per_step,
                 "loss_avg": metrics.get("loss_avg"),
                 "val_loss_avg": val_metrics.get("loss_avg"),
+                "tpuv3_mfu": get_tpuv3_mfu(metrics["param_count_total"], sec_per_step),
             }
             logging.info(essentials)
             if jax.process_index() == 0:
