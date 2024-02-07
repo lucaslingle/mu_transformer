@@ -24,6 +24,6 @@ def get_config():
     config.n_mesh_planes = 2
 
     # width
-    config.d_model = 4096
+    config.d_model = 2048
 
     return config

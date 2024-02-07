@@ -55,8 +55,8 @@ flags.DEFINE_enum("mode", None, ["train", "validation", "test"], "Mode")
 flags.DEFINE_integer("seed", 0, "Experiment seed")
 flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
 flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
-flags.DEFINE_string("loading_name", None, "Model name to load; None = use autogen")
-flags.DEFINE_string("saving_name", None, "Model name to save; None = use autogen")
+flags.DEFINE_string("load_suffix", None, "Suffix of model to load; prefix=autogen")
+flags.DEFINE_string("save_suffix", None, "Suffix of model to save; prefix=autogen")
 flags.mark_flags_as_required(["config", "workdir", "mode"])
 
 
@@ -293,9 +293,9 @@ def automatic_modelname_factory():
 
 def modelname_factory(option):
     if option == "save":
-        return FLAGS.saving_name or automatic_modelname_factory()
+        return automatic_modelname_factory() + "_" + FLAGS.save_suffix
     if option == "load":
-        return FLAGS.loading_name or automatic_modelname_factory()
+        return automatic_modelname_factory() + "_" + FLAGS.load_suffix
     raise NotImplementedError(f"Unrecognized option {option}")
 
 
@@ -734,8 +734,8 @@ def main(argv):
     logging.info(f"seed: {FLAGS.seed}")
     logging.info(f"wb_enabled: {FLAGS.wb_enabled}")
     logging.info(f"wb_run: {FLAGS.wb_run}")
-    logging.info(f"loading_name: {FLAGS.loading_name}")
-    logging.info(f"saving_name: {FLAGS.saving_name}")
+    logging.info(f"load_suffix: {FLAGS.load_suffix}")
+    logging.info(f"save_suffix: {FLAGS.save_suffix}")
     logging.info(f"verbosity: {FLAGS.verbosity}")
     logging.info("=== Config: ===")
     for k, v in vars(FLAGS.config)["_fields"].items():

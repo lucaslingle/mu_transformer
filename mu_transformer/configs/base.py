@@ -33,7 +33,7 @@ def get_base_config():
 
     # architecture
     # options for parameterization: sp, mup, spectral
-    #     sp = standard parameterization w/ zero-init on query, readout projections.
+    #     sp = standard parameterization w/ zero-init on query, unembedding projections.
     #     mup = max update parameterization w/ rel scaling: assumes only d_model changes
     #     spectral = spectral init w/ rel scaling: assumes only d_model changes
     config.parameterization = "mup"
@@ -41,8 +41,8 @@ def get_base_config():
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
     config.output_logits_dtype = "bfloat16"  # for bfloat16 grad; is fp32 during eval
     config.n_layer = 6  # depth, should stay const for mu-transfer
-    config.d_base = 256  # base model width for relative scaling rules
-    config.d_head = 128  # attn head width
+    config.d_base = 128  # base model width for relative scaling rules
+    config.d_head = 64  # attn head width
     config.ff_multiple = 4  # mlp hidden width multiple
     config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
     config.act_name = "relu"  # any activation defined in jax.nn
@@ -52,7 +52,7 @@ def get_base_config():
     config.parallel_res = False  # apply attn and mlp blocks in parallel
 
     # optimization
-    config.tokens_per_global_batch = 2**17  # batch size * sequence len
+    config.tokens_per_global_batch = 2**20  # batch size * sequence len
     config.grad_acc_steps = 1  # steps per parameter update (for micro-batching)
     config.grad_clip = 1.0  # grad clip max l2 norm
     config.lr_base = 1.0  # base learning rate
