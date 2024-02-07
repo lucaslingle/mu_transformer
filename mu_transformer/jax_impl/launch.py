@@ -614,7 +614,6 @@ def train_loop():
                     # create_perfetto_trace=True,  # write extra trace file for perfetto
                 )
             logging.debug("Done with evaluation action...")
-    logging.info(f"best_val_loss: {best_val_loss}")
 
 
 @jax.jit
@@ -761,7 +760,6 @@ def main(argv):
     elif FLAGS.mode in {"validation", "test"}:
         eval_metrics = eval_loop(params=None, n_eval_step=None)
         eval_loss = eval_metrics["loss_avg"]
-        logging.info(f"Eval metrics: {eval_metrics}")
         logging.info(f"Eval loss: {eval_loss}")
     else:
         raise NotImplementedError
