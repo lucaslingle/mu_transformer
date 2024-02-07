@@ -25,6 +25,6 @@ def get_config():
 
     # width
     config.d_model = 2048
-    config.d_head = 64
+    config.d_head = 256
 
     return config
