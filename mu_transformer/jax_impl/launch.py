@@ -614,6 +614,8 @@ def train_loop():
                     # create_perfetto_trace=True,  # write extra trace file for perfetto
                 )
             logging.debug("Done with evaluation action...")
+    logging.info("All done training!")
+    logging.info("To benchmark, restore last checkpoint w/ mode in {validation, test}")
 
 
 @jax.jit
