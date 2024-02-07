@@ -51,7 +51,7 @@ def get_base_config():
     config.parallel_res = False  # apply attn and mlp blocks in parallel
 
     # optimization
-    config.tokens_per_global_batch = 2**20  # batch size * sequence len
+    config.tokens_per_global_batch = 2**19  # batch size * sequence len
     config.grad_acc_steps = 1  # steps per parameter update (for micro-batching)
     config.grad_clip = 1.0  # grad clip max l2 norm
     config.lr_base = 1.0  # base learning rate
