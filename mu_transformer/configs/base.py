@@ -40,7 +40,7 @@ def get_base_config():
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
     config.output_logits_dtype = "bfloat16"  # for bfloat16 grad; is fp32 during eval
-    config.n_layer = 6  # depth, should stay const for mu-transfer
+    config.n_layer = 12  # depth, should stay const for mu-transfer
     config.d_base = 128  # base model width for relative scaling rules
     config.ff_multiple = 4  # mlp hidden width multiple
     config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
@@ -48,10 +48,11 @@ def get_base_config():
     config.act_square = False  # activation squaring
     config.norm_eps = 1e-8  # rmsnorm epsilon
     config.norm_gains = False  # rmsnorm gains
+    config.proj_biases = False  # projections with bias
     config.parallel_res = False  # apply attn and mlp blocks in parallel
 
     # optimization
-    config.tokens_per_global_batch = 2**19  # batch size * sequence len
+    config.tokens_per_global_batch = 2**20  # batch size * sequence len
     config.grad_acc_steps = 1  # steps per parameter update (for micro-batching)
     config.grad_clip = 1.0  # grad clip max l2 norm
     config.lr_base = 1.0  # base learning rate

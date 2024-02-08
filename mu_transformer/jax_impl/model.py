@@ -45,6 +45,7 @@ class TransformerConfig:
     act_square: bool
     norm_eps: float
     norm_gains: bool
+    proj_biases: bool
     parallel_res: bool
     n_layer: int
     n_vocab: int
@@ -175,6 +176,8 @@ class MultiHeadAttention(nn.Module):
         kv_init = init.normal(self.hps.d_model**-0.5)
         # normal, var 1/fan_in; table 3 with nh*dh=dm.
         o_init = init.normal(self.hps.d_model**-0.5)
+        # bias init
+        b_init = init.zeros
         wq = self.param(
             "w_aq",
             nn.with_partitioning(q_init, MESH_AXES["PCN"], self.global_mesh),
@@ -199,6 +202,31 @@ class MultiHeadAttention(nn.Module):
             shapes["HDM"],
             self.hps.param_dtype,
         )
+        if self.hps.proj_biases:
+            bq = self.param(
+                "b_aq",
+                nn.with_partitioning(b_init, MESH_AXES["PN"], self.global_mesh),
+                shapes["HD"],
+                self.hps.param_dtype,
+            )
+            bk = self.param(
+                "b_ak",
+                nn.with_partitioning(b_init, MESH_AXES["PN"], self.global_mesh),
+                shapes["HD"],
+                self.hps.param_dtype,
+            )
+            bv = self.param(
+                "b_av",
+                nn.with_partitioning(b_init, MESH_AXES["PN"], self.global_mesh),
+                shapes["HD"],
+                self.hps.param_dtype,
+            )
+            bo = self.param(
+                "b_ao",
+                nn.with_partitioning(b_init, MESH_AXES["C"], self.global_mesh),
+                shapes["M"],
+                self.hps.param_dtype,
+            )
 
         q = jnp.einsum("bim,hmd->bhid", x, wq.astype(self.hps.dtype))
         k = jnp.einsum("bim,hmd->bhid", x, wk.astype(self.hps.dtype))
@@ -206,6 +234,13 @@ class MultiHeadAttention(nn.Module):
         q = sharding_constraint(q, MESH_AXES["RPNN"], self.global_mesh)
         k = sharding_constraint(k, MESH_AXES["RPNN"], self.global_mesh)
         v = sharding_constraint(v, MESH_AXES["RPNN"], self.global_mesh)
+        if self.hps.proj_biases:
+            q += jnp.expand_dims(bq.astype(self.hps.dtype), (0, 2))  # noqa
+            k += jnp.expand_dims(bk.astype(self.hps.dtype), (0, 2))  # noqa
+            v += jnp.expand_dims(bv.astype(self.hps.dtype), (0, 2))  # noqa
+            q = sharding_constraint(q, MESH_AXES["RPNN"], self.global_mesh)
+            k = sharding_constraint(k, MESH_AXES["RPNN"], self.global_mesh)
+            v = sharding_constraint(v, MESH_AXES["RPNN"], self.global_mesh)
         self.sow("intermediates", "aq_l1", coord_check_l1(q))
         self.sow("intermediates", "ak_l1", coord_check_l1(k))
         self.sow("intermediates", "av_l1", coord_check_l1(v))
@@ -236,6 +271,9 @@ class MultiHeadAttention(nn.Module):
 
         r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.hps.dtype))
         r = sharding_constraint(r, MESH_AXES["RNC"], self.global_mesh)
+        if self.hps.proj_biases:
+            r += bo.astype(self.hps.dtype)[None, None, ...]  # noqa
+            r = sharding_constraint(r, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "ar_l1", coord_check_l1(r))
         return r
 
@@ -259,21 +297,39 @@ class MultiLayerPerceptron(nn.Module):
         i_init = init.normal(self.hps.d_model**-0.5)
         # table 3 with dff = dm * ff_multiple
         o_init = init.normal((self.hps.d_model * self.hps.ff_multiple) ** -0.5)
-        w_fi = self.param(
+        # bias init
+        b_init = init.zeros
+        wi = self.param(
             "w_fi",
             nn.with_partitioning(i_init, MESH_AXES["CP"], self.global_mesh),
             shapes["MF"],
             self.hps.param_dtype,
         )
-        w_fo = self.param(
+        wo = self.param(
             "w_fo",
             nn.with_partitioning(o_init, MESH_AXES["PC"], self.global_mesh),
             shapes["FM"],
             self.hps.param_dtype,
         )
+        if self.hps.proj_biases:
+            bi = self.param(
+                "b_fi",
+                nn.with_partitioning(b_init, MESH_AXES["P"], self.global_mesh),
+                shapes["FM"],
+                self.hps.param_dtype,
+            )
+            bo = self.param(
+                "b_fo",
+                nn.with_partitioning(b_init, MESH_AXES["C"], self.global_mesh),
+                shapes["FM"],
+                self.hps.param_dtype,
+            )
 
-        x = jnp.einsum("btm,mf->btf", x, w_fi.astype(self.hps.dtype))
+        x = jnp.einsum("btm,mf->btf", x, wi.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["RNP"], self.global_mesh)
+        if self.hps.proj_biases:
+            x += bi.astype(self.hps.dtype)[None, None, ...]  # noqa
+            x = sharding_constraint(x, MESH_AXES["RNP"], self.global_mesh)
         self.sow("intermediates", "fp_l1", coord_check_l1(x))
 
         x = getattr(jax.nn, self.hps.act_name)(x)
@@ -283,8 +339,11 @@ class MultiLayerPerceptron(nn.Module):
             x = sharding_constraint(x, MESH_AXES["RNP"], self.global_mesh)
         self.sow("intermediates", "fa_l1", coord_check_l1(x))
 
-        x = jnp.einsum("btf,fm->btm", x, w_fo.astype(self.hps.dtype))
+        x = jnp.einsum("btf,fm->btm", x, wo.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+        if self.hps.proj_biases:
+            x += bo.astype(self.hps.dtype)[None, None, ...]  # noqa
+            x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
         self.sow("intermediates", "fr_l1", coord_check_l1(x))
         return x
 
@@ -343,21 +402,36 @@ class Unembedding(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        w_out = self.param(
-            "w_o",
-            nn.with_partitioning(init.zeros, MESH_AXES["CN"], self.global_mesh),
+        x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+        x = RMSNorm(self.hps, "u")(x)
+        x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+
+        u_init = init.zeros
+        b_init = init.zeros
+        wu = self.param(
+            "w_u",
+            nn.with_partitioning(u_init, MESH_AXES["CN"], self.global_mesh),
             [self.hps.d_model, self.hps.n_vocab],
             self.hps.param_dtype,
         )
-        x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
-        x = RMSNorm(self.hps, "o")(x)
-        x = sharding_constraint(x, MESH_AXES["RNC"], self.global_mesh)
+        if self.hps.proj_biases:
+            bu = self.param(
+                "b_u",
+                nn.with_partitioning(b_init, MESH_AXES["N"], self.global_mesh),
+                [self.hps.n_vocab],
+                self.hps.param_dtype,
+            )
+
         if self.hps.is_train:
             output_logits_dtype = self.hps.output_logits_dtype
         else:
             output_logits_dtype = self.hps.param_dtype
-        x = jnp.einsum("btm,mv->btv", x, w_out.astype(output_logits_dtype))
+
+        x = jnp.einsum("btm,mv->btv", x, wu.astype(output_logits_dtype))
         x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
+        if self.hps.proj_biases:
+            x += bu.astype(output_logits_dtype)[None, None, ...]  # noqa
+            x = sharding_constraint(x, MESH_AXES["RNN"], self.global_mesh)
         return x
 
 

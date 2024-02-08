@@ -46,10 +46,12 @@ from mu_transformer.jax_impl.shard import get_namedsharding
 from mu_transformer.jax_impl.shard import sharding_constraint
 from mu_transformer.jax_impl.shard import to_global_array
 from mu_transformer.jax_impl.sow import split_and_name
+from mu_transformer.jax_impl.tree import flattened_traversal
 
 
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
+flags.DEFINE_string("experiment_group", None, "Experiment group name")
 flags.DEFINE_string("workdir", None, "Working directory (GCS or local)")
 flags.DEFINE_enum("mode", None, ["train", "validation", "test"], "Mode")
 flags.DEFINE_integer("seed", 0, "Experiment seed")
@@ -57,7 +59,7 @@ flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
 flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
 flags.DEFINE_string("load_suffix", None, "Suffix of model to load; prefix=autogen")
 flags.DEFINE_string("save_suffix", None, "Suffix of model to save; prefix=autogen")
-flags.mark_flags_as_required(["config", "workdir", "mode"])
+flags.mark_flags_as_required(["config", "experiment_group", "workdir", "mode"])
 
 
 @functools.lru_cache(maxsize=1)
@@ -130,13 +132,20 @@ def get_standard_lrs():
         "w_ak": lr,
         "w_av": lr,
         "w_ao": lr,
+        "b_aq": lr,
+        "b_ak": lr,
+        "b_av": lr,
+        "b_ao": lr,
         # feed-forward
         "g_f": lr,
         "w_fi": lr,
         "w_fo": lr,
-        # readout
-        "g_o": lr,
-        "w_o": lr,
+        "b_fi": lr,
+        "b_fo": lr,
+        # unembedding
+        "g_u": lr,
+        "w_u": lr,
+        "b_u": lr,
     }
 
 
@@ -145,20 +154,27 @@ def get_mup_lrs():
     wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
     return {
         # embeddings
-        "w_e": lr,  # table 3, col1
+        "w_e": lr,
         # attention
-        "g_a": lr,  # table 3, col1
-        "w_aq": lr / wm,  # table 3, col3
-        "w_ak": lr / wm,  # table 3, col3
-        "w_av": lr / wm,  # table 3, col3
-        "w_ao": lr / wm,  # table 3, col3; assumes dm=nh*dh
+        "g_a": lr,
+        "w_aq": lr / wm,
+        "w_ak": lr / wm,
+        "w_av": lr / wm,
+        "w_ao": lr / wm,
+        "b_aq": lr,
+        "b_ak": lr,
+        "b_av": lr,
+        "b_ao": lr,
         # feed-forward
-        "g_f": lr,  # table 3, col1
-        "w_fi": lr / wm,  # table 3, col3
-        "w_fo": lr / wm,  # table 3, col3
-        # readout
-        "g_o": lr,  # table 3, col1
-        "w_o": lr / wm,  # table 3, col2
+        "g_f": lr,
+        "w_fi": lr / wm,
+        "w_fo": lr / wm,
+        "b_fi": lr,
+        "b_fo": lr,
+        # unembedding
+        "g_u": lr,
+        "w_u": lr / wm,
+        "b_u": lr,
     }
 
 
@@ -174,13 +190,20 @@ def get_spectral_lrs():
         "w_ak": lr,
         "w_av": lr,
         "w_ao": lr,
+        "b_aq": lr * wm,
+        "b_ak": lr * wm,
+        "b_av": lr * wm,
+        "b_ao": lr * wm,
         # feed-forward
         "g_f": lr * wm,
         "w_fi": lr,
         "w_fo": lr,
-        # readout
-        "g_o": lr * wm,
-        "w_o": lr / wm,
+        "b_fi": lr * wm,
+        "b_fo": lr * wm,
+        # unembedding
+        "g_u": lr * wm,
+        "w_u": lr,
+        "b_u": lr * wm,
     }
 
 
@@ -196,23 +219,29 @@ def get_lrs():
     raise NotImplementedError(f"Unrecognized parameterization name: {p}")
 
 
+def get_wd_mask():
+    return flattened_traversal(
+        lambda path, _: True if path[-1].startswith("w_") else False
+    )
+
+
 def grad_transform_factory():
-    chain = []
-    if FLAGS.config.grad_clip > 0.0:
-        chain.append(optax.clip_by_global_norm(FLAGS.config.grad_clip))
-    kws = dict(
+    optimizer_kws = dict(
         b1=FLAGS.config.adam_b1,
         b2=FLAGS.config.adam_b2,
         eps=FLAGS.config.adam_eps,
         mu_dtype=FLAGS.config.adam_mu_dtype,
     )
-    opt = optax.multi_transform(
-        jtu.tree_map(lambda lr: optax.adam(lr, **kws), get_lrs()),
+    chain = []
+    if FLAGS.config.grad_clip > 0.0:
+        chain.append(optax.clip_by_global_norm(FLAGS.config.grad_clip))
+    optimizer = optax.multi_transform(
+        jtu.tree_map(lambda lr: optax.adam(lr, **optimizer_kws), get_lrs()),
         param_labels=param_label_fn,
     )
-    chain.append(opt)
+    chain.append(optimizer)
     if FLAGS.config.wd > 0.0:
-        chain.append(optax.add_decayed_weights(-FLAGS.config.wd))
+        chain.append(optax.add_decayed_weights(-FLAGS.config.wd, get_wd_mask()))
     chain.append(optax.scale_by_schedule(schedule_factory()))
     tx = optax.chain(*chain)
     if FLAGS.config.grad_acc_steps > 1:
@@ -277,10 +306,10 @@ def automatic_modelname_factory():
     lr = str(FLAGS.config.lr_base).split(".")
     assert len(lr) == 2
     parts = [
-        "jax",
         "mutransformer",
-        FLAGS.config.parameterization,
         dataset_name,
+        FLAGS.experiment_group,
+        FLAGS.config.parameterization,
         FLAGS.config.model_size,
         f"a{lr[0]}point{lr[1]}",
         f"b{global_batch_size_factory()}",
@@ -292,11 +321,16 @@ def automatic_modelname_factory():
 
 
 def modelname_factory(option):
+    name = automatic_modelname_factory()
     if option == "save":
-        return automatic_modelname_factory() + "_" + FLAGS.save_suffix
-    if option == "load":
-        return automatic_modelname_factory() + "_" + FLAGS.load_suffix
-    raise NotImplementedError(f"Unrecognized option {option}")
+        if FLAGS.save_suffix is not None:
+            name += "_" + FLAGS.save_suffix
+    elif option == "load":
+        if FLAGS.load_suffix is not None:
+            name += "_" + FLAGS.load_suffix
+    else:
+        raise NotImplementedError(f"Unrecognized option {option}")
+    return name
 
 
 def modeldir_factory(option, suffix):
@@ -483,7 +517,8 @@ def train_loop():
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_rel",
+            project="mu_transformer_groups",
+            group=FLAGS.experiment_group,
             config=vars(FLAGS.config)["_fields"],
             resume="never" if FLAGS.wb_run is None else "must",
             mode="online" if FLAGS.wb_enabled else "disabled",
@@ -729,6 +764,7 @@ def main(argv):
         logging.warning(e)
     logging.info(f"JAX process: {jax.process_index()} / {jax.process_count()}")
     logging.info("=== Flags: ===")
+    logging.info(f"experiment_group: {FLAGS.experiment_group}")
     logging.info(f"workdir: {FLAGS.workdir}")
     logging.info(f"mode: {FLAGS.mode}")
     logging.info(f"seed: {FLAGS.seed}")
