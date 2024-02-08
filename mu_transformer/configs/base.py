@@ -34,8 +34,8 @@ def get_base_config():
     # architecture
     # options for parameterization: sp, mup, spectral
     #     sp = standard parameterization w/ zero-init on query, unembedding projections.
-    #     mup = max update parameterization w/ rel scaling: assumes only d_model changes
-    #     spectral = spectral init w/ rel scaling: assumes only d_model changes
+    #     mup = max update parameterization w/ rel scaling
+    #     spectral = spectral init w/ rel scaling
     config.parameterization = "mup"
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
