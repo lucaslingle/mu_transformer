@@ -9,7 +9,7 @@ models/
 checkpoints/
 workdir/
 wandb/
-temp.csv
+*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
