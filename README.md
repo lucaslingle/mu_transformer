@@ -23,9 +23,8 @@ To proceed, install [Pipx](https://github.com/pypa/pipx) and [Poetry](https://gi
 ```
 git clone https://github.com/lucaslingle/mu_transformer.git;
 cd mu_transformer;
-poetry install --with cpu --without tpu,gpu;  # CPU
-poetry install --with gpu --without cpu,tpu;  # GPU
-poetry install --with tpu --without cpu,gpu;  # TPU
+poetry install --with cpu --without tpu;  # CPU
+poetry install --with tpu --without cpu;  # TPU
 ```
 - On Cloud TPU VMs, Pipx and Poetry can be installed via ```./tpu_setup.sh```.
 - On Cloud TPU VMs, you may need to write ```~/.local/bin/poetry``` when invoking Poetry. 
@@ -91,12 +90,7 @@ To allow training on cloud hosts without staying logged in, you can use a detach
 ### Performance profiling
 
 We capture a profile trace from step ```n_save_step``` to ```2 * n_save_step```. 
-The trace is saved to a subdirectory of the workdir, and ends with ```.trace.json.gz```. To visualize the trace, upload it to ```https://ui.perfetto.dev```. 
-
-### Pytorch support
-
-Experimental pytorch support is offered using ```mu_transformer/pytorch_impl/launch.py``` instead of ```mu_transformer/pytorch_impl/launch.py```. 
-We plan to support DDP/FSDP. 
+The trace is saved to a subdirectory of the workdir, and ends with ```.trace.json.gz```. To visualize the trace, upload it to ```https://ui.perfetto.dev```.
 
 ## Acknowledgements
 
