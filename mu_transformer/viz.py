@@ -4,7 +4,7 @@ import seaborn as sns
 
 sns.set_theme(style="darkgrid")
 
-df = pd.read_csv("~/PycharmProjects/mu_transformer/temp.csv")
+df = pd.read_csv("temp.csv")
 df["log_lr_base"] = df["lr_base"].map(lambda y: int(y.split("**")[-1].split(" ")[-1]))
 print(df.head())
 
