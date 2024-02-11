@@ -35,12 +35,12 @@ for i in $(seq 0 2 10);
 do
     LR=$(bc -l <<< "2 ^(-$i)");
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
+        --experiment_group="$GROUP_NAME" \
         --config="mu_transformer/configs/$SIZE_NAME.py" \
         --workdir="gs://tpu_persist_bucket/mu_transformer_scaling/" \
         --mode="$MODE_NAME" \
         --wb_enabled=True \
         --config.lr_base="$LR" \
         --config.force_download=False \
-        --config.parameterization="$RULE_NAME" \
-        --experiment_group="$GROUP_NAME";
+        --config.parameterization="$RULE_NAME";
 done

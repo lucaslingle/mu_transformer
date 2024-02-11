@@ -513,16 +513,6 @@ def get_scalar_on_host(tensor):
 
 def train_loop():
     logging.info("Entering train loop function...")
-    logging.info("Creating W&B connection...")
-    if jax.process_index() == 0:
-        wandb.init(
-            project="mu_transformer_official",
-            group=FLAGS.experiment_group,
-            config=vars(FLAGS.config)["_fields"],
-            resume="never" if FLAGS.wb_run is None else "must",
-            mode="online" if FLAGS.wb_enabled else "disabled",
-            id=FLAGS.wb_run,
-        )
     logging.info("Creating RNGs...")
     rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
     rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())
@@ -815,12 +805,24 @@ def main(argv):
     assert d_ff >= n_col  # parallelize mlp hiddens across columns
     assert d_ff % n_col == 0
 
+    logging.info("Creating W&B connection...")
+    if jax.process_index() == 0:
+        wandb.init(
+            project="mu_transformer_official",
+            group=FLAGS.experiment_group,
+            config=vars(FLAGS.config)["_fields"],
+            resume="never" if FLAGS.wb_run is None else "must",
+            mode="online" if FLAGS.wb_enabled else "disabled",
+            id=FLAGS.wb_run,
+        )
+
     if FLAGS.mode == "train":
         train_loop()
     elif FLAGS.mode in {"validation", "test"}:
-        eval_metrics = eval_loop(params=None, n_eval_step=None)
-        eval_loss = eval_metrics["loss_avg"]
+        eval_loss = eval_loop(params=None, n_eval_step=None)["loss_avg"]
         logging.info(f"Eval loss: {eval_loss}")
+        if jax.process_index() == 0:
+            wandb.log({f"{FLAGS.mode}_loss_final": eval_loss})
     else:
         raise NotImplementedError
 
