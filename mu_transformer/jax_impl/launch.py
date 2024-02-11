@@ -834,7 +834,7 @@ def main(argv):
                     ],
                 ],
             )
-            wandb.log({f"sweep_table": table})
+            wandb.log({"sweep_table": table})
     else:
         raise NotImplementedError
 
