@@ -11,10 +11,9 @@
 Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
 
 - Passes the correctness tests: *wider is better throughout training* and *coordinate checking*.
-- Supports any HuggingFace text dataset and tokenizer.
-- Supports distributed training on TPU pod slices. 
-- Supports data parallelism and tensor parallelism.
+- Supports fully-sharded data parallelism (FSDP) using the strategy from the GSPMD paper.
 - Supports mixed precision training, performing forward/backward in bfloat16.
+- Supports any huggingface text dataset and tokenizer.
 - Simple, flexible configuration.
 
 ## Installation

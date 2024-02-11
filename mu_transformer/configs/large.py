@@ -16,14 +16,14 @@ from mu_transformer.configs.base import get_base_config
 
 def get_config():
     config = get_base_config()
-    config.model_size = "tiny"
+    config.model_size = "large"
 
     # mesh
-    config.n_mesh_rows = 128
-    config.n_mesh_cols = 1
+    config.n_mesh_rows = 32
+    config.n_mesh_cols = 4
 
     # width
-    config.d_model = 128
+    config.d_model = 2048
     config.d_head = 128
 
     return config
