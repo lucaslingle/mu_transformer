@@ -89,11 +89,10 @@ def global_mesh_factory():
             mesh_shape=(
                 FLAGS.config.n_mesh_rows,
                 FLAGS.config.n_mesh_cols,
-                FLAGS.config.n_mesh_planes,
             ),
             devices=jax.devices(),
         ),
-        axis_names=("rows", "columns", "planes"),
+        axis_names=("X", "Y"),  # using 2D-finalized from GSPMD paper
     )
 
 
@@ -781,17 +780,35 @@ def main(argv):
     n_device = jax.device_count()
     n_example = global_batch_size_factory()
     d_model = FLAGS.config.d_model
+    d_ff = FLAGS.config.d_model * FLAGS.config.ff_multiple
     n_head = FLAGS.config.d_model // FLAGS.config.d_head
     n_row = FLAGS.config.n_mesh_rows
     n_col = FLAGS.config.n_mesh_cols
-    n_plane = FLAGS.config.n_mesh_planes
-    assert n_row * n_col * n_plane == n_device
+    assert n_row * n_col == n_device
+
+    # weight shape constraints
+    assert d_model >= n_row
+    assert d_model % n_row == 0
+    assert n_head >= n_col
+    assert n_head % n_col == 0
+
+    assert d_model >= n_row
+    assert d_model % n_row == 0
+    assert d_ff >= n_col
+    assert d_ff % n_col == 0
+
+    # activation shape constraints
     assert n_example >= n_device  # dataloader quirk
     assert n_example % n_row == 0  # parallelize batch across rows
+
     assert d_model >= n_col  # parallelize residuals across columns
     assert d_model % n_col == 0
-    assert n_head >= n_plane  # parallelize hidden activations across planes
-    assert n_head % n_plane == 0
+
+    assert n_head >= n_col  # parallelize heads across columns
+    assert n_head % n_col == 0
+
+    assert d_ff >= n_col  # parallelize mlp hiddens across columns
+    assert d_ff % n_col == 0
 
     if FLAGS.mode == "train":
         train_loop()

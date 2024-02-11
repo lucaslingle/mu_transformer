@@ -21,7 +21,6 @@ def get_config():
     # mesh
     config.n_mesh_rows = 128
     config.n_mesh_cols = 1
-    config.n_mesh_planes = 1
 
     # width
     config.d_model = 128
