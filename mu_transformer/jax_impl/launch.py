@@ -66,7 +66,7 @@ flags.mark_flags_as_required(["config", "experiment_group", "workdir", "mode"])
 def tokenizer_factory():
     return get_tokenizer(
         FLAGS.config.hftr_tokenizer_name,
-        FLAGS.config.hftr_tokenizer_shortname,
+        FLAGS.config.hftr_tokenizer_instance,
     )
 
 

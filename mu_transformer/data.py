@@ -24,26 +24,26 @@ from absl import logging
 
 
 def get_tokenizer(
-    cls_name: str,
-    short_name: Optional[str] = None,
+    tokenizer_name: str,
+    model_name: Optional[str] = None,
     pad_token: Optional[str] = None,
 ) -> hftr.PreTrainedTokenizerFast:
     # get class
-    cls = getattr(hftr, cls_name)
+    cls = getattr(hftr, tokenizer_name)
     # instantiate class
     kwargs = dict(pad_token=pad_token) if pad_token is not None else dict()
-    if short_name is not None:
-        obj = cls.from_pretrained(short_name, **kwargs)
+    if model_name is not None:
+        obj = cls.from_pretrained(model_name, **kwargs)
     else:
         try:
-            short_name, *_ = cls_name.lower().split("tokenizer")
-            obj = cls.from_pretrained(short_name, **kwargs)
+            model_name, *_ = tokenizer_name.lower().split("tokenizer")
+            obj = cls.from_pretrained(model_name, **kwargs)
         except Exception as e:
             raise NotImplementedError(f"Got exception {e}.")
     # grab eos token, for consistency of data pipeline always use it for padding
     if pad_token is None:
         assert obj.eos_token_id is not None
-        obj = get_tokenizer(cls_name, short_name, pad_token=obj.eos_token)
+        obj = get_tokenizer(tokenizer_name, model_name, pad_token=obj.eos_token)
     assert obj.is_fast
     return obj
 

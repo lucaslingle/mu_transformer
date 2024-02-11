@@ -22,8 +22,8 @@ def get_base_config():
     config.sow_param_info = True
 
     # huggingface tokenizer and dataset settings
-    config.hftr_tokenizer_name = "GPT2TokenizerFast"
-    config.hftr_tokenizer_shortname = "gpt2"
+    config.hftr_tokenizer_name = "GPTNeoXTokenizerFast"
+    config.hftr_tokenizer_instance = "EleutherAI/gpt-neox-20b"
     config.hfds_identifier = "EleutherAI/the_pile_deduplicated"
     config.hfds_config = None
     config.hfds_datacol = "text"

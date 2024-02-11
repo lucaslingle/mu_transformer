@@ -72,7 +72,7 @@ poetry run python3 mu_transformer/jax_impl/launch.py \
     --mode=train \
     --workdir=/tmp/workdir \
     --config.hftr_tokenizer_name=T5TokenizerFast \
-    --config.hftr_tokenizer_shortname=t5-base \
+    --config.hftr_tokenizer_instance=t5-base \
     --config.hfds_identifier=c4 \
     --config.hfds_config=en \
     --config.hfds_datacol=text;
