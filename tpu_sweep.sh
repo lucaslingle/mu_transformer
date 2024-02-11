@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e;
 
 Help() {
   echo "Syntax: tpu_sweep.sh [g|r|s|m|h]"
@@ -45,4 +44,3 @@ do
         --config.parameterization="$RULE_NAME" \
         --experiment_group="$GROUP_NAME";
 done
-set +e;
