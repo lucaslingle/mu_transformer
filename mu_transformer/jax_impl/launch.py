@@ -822,7 +822,18 @@ def main(argv):
         eval_loss = eval_loop(params=None, n_eval_step=None)["loss_avg"]
         logging.info(f"Eval loss: {eval_loss}")
         if jax.process_index() == 0:
-            wandb.log({f"{FLAGS.mode}_loss_final": eval_loss})
+            table = wandb.Table(
+                columns=["Rule", "Width", "LR", "Loss"],
+                data=[
+                    [
+                        FLAGS.config.parameterization,
+                        FLAGS.config.d_model,
+                        FLAGS.config.lr_base,
+                        eval_loss,
+                    ],
+                ],
+            )
+            wandb.log({f"sweep_table": table})
     else:
         raise NotImplementedError
 
