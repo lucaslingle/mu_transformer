@@ -69,5 +69,6 @@ def get_base_config():
     config.n_warmup_step = 1_000  # warmup steps during pretraining
     config.n_pretrain_step = 10_000  # pretraining steps
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
+    config.no_checkpoint = False  # skip saving the model
 
     return config

@@ -516,7 +516,7 @@ def train_loop():
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_groups",
+            project="mu_transformer_finalized",
             group=FLAGS.experiment_group,
             config=vars(FLAGS.config)["_fields"],
             resume="never" if FLAGS.wb_run is None else "must",
@@ -637,7 +637,8 @@ def train_loop():
             )
             if best_val_loss > val_metrics["loss_avg"]:
                 logging.info("Validation loss improved...")
-                do_save(save_checkpoint_mgr, step, state)
+                if not FLAGS.config.no_checkpoint:
+                    do_save(save_checkpoint_mgr, step, state)
                 best_val_loss = val_metrics["loss_avg"]
             # start profiler
             if jax.process_index() == 0 and step == FLAGS.config.n_save_step:
