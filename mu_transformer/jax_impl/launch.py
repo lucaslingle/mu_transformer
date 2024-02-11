@@ -528,12 +528,15 @@ def train_loop():
     rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())
 
     logging.info("Creating train state...")
-    load_checkpoint_mgr = checkpoint_manager_factory(option="load")
     state = train_state_factory(rng_init)
-    if load_checkpoint_mgr.latest_step() is not None:
-        state = do_restore(load_checkpoint_mgr, state)
-    start_step = load_checkpoint_mgr.latest_step() or 0
-    del load_checkpoint_mgr
+    if not FLAGS.config.no_checkpoint:
+        load_checkpoint_mgr = checkpoint_manager_factory(option="load")
+        if load_checkpoint_mgr.latest_step() is not None:
+            state = do_restore(load_checkpoint_mgr, state)
+        start_step = load_checkpoint_mgr.latest_step() or 0
+        del load_checkpoint_mgr
+    else:
+        start_step = 0
 
     logging.info("Creating dataset...")
     batch_size = global_batch_size_factory() // jax.process_count()
@@ -669,11 +672,12 @@ def eval_loop(params, dataset_shard=None, n_eval_step=None):
     if params is None:
         rng_init, _ = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
         logging.info("Creating params...")
-        load_checkpoint_mgr = checkpoint_manager_factory(option="load")
         state = train_state_factory(rng_init)
-        if load_checkpoint_mgr.latest_step() is not None:
-            state = do_restore(load_checkpoint_mgr, state)
-        del load_checkpoint_mgr
+        if not FLAGS.config.no_checkpoint:
+            load_checkpoint_mgr = checkpoint_manager_factory(option="load")
+            if load_checkpoint_mgr.latest_step() is not None:
+                state = do_restore(load_checkpoint_mgr, state)
+            del load_checkpoint_mgr
         state = jax.block_until_ready(state)
         params = state.params
         del state
