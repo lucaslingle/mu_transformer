@@ -421,7 +421,7 @@ def clean_and_flatten(pytree, split_filter: Set[str]):
 
 
 def loss_fn(params, batch, config, global_mesh):
-    batch = sharding_constraint(batch, MESH_AXES["RN"], global_mesh)
+    batch = sharding_constraint(batch, MESH_AXES["XN"], global_mesh)
     init_args = [config, global_mesh]
     apply_args = [{"params": params}, batch]  # tokens shifted internally by model
     if FLAGS.config.sow_intermediates:
@@ -431,11 +431,11 @@ def loss_fn(params, batch, config, global_mesh):
         logits = Transformer(*init_args).apply(*apply_args)
         sown = dict()
     terms = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=batch)
-    terms = sharding_constraint(terms, MESH_AXES["RN"], global_mesh)
+    terms = sharding_constraint(terms, MESH_AXES["XN"], global_mesh)
     mask = get_loss_mask(
         batch, pad_token_id=config.pad_token_id, eos_token_id=config.eos_token_id
     )
-    mask = sharding_constraint(mask, MESH_AXES["RN"], global_mesh)
+    mask = sharding_constraint(mask, MESH_AXES["XN"], global_mesh)
     metrics = dict(
         loss_term_avg=jnp.mean(mask * terms),
         loss_mask_avg=jnp.mean(mask),
