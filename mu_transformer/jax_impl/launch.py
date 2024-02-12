@@ -657,7 +657,7 @@ def eval_step(params, batch):
     return metrics
 
 
-def eval_loop(params, dataset_shard=None, n_eval_step=None):
+def eval_loop(params, dataset_shard=None, n_eval_step=None, mode=None):
     logging.info("Entering eval loop function...")
     if params is None:
         rng_init, _ = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
@@ -681,7 +681,7 @@ def eval_loop(params, dataset_shard=None, n_eval_step=None):
             hfds_datacol=FLAGS.config.hfds_datacol,
             hfds_buffer_size=FLAGS.config.hfds_buffer_size,
             hftr_tokenizer=tokenizer_factory(),
-            split_name=FLAGS.mode,
+            split_name=mode,
             batch_size=batch_size,
             sequence_len=FLAGS.config.sequence_len,
             pcount=jax.process_count(),
@@ -744,6 +744,25 @@ def eval_loop(params, dataset_shard=None, n_eval_step=None):
     )
     logging.debug("Finished computing eval metrics...")
     return eval_metrics
+
+
+def save_eval_loss():
+    eval_loss = eval_loop(params=None, n_eval_step=None, mode="validation")["loss_avg"]
+    logging.info(f"Eval loss: {eval_loss}")
+    if jax.process_index() == 0:
+        table = wandb.Table(
+            columns=["Group", "Rule", "Width", "LR", "Loss"],
+            data=[
+                [
+                    FLAGS.experiment_group,
+                    FLAGS.config.parameterization,
+                    FLAGS.config.d_model,
+                    FLAGS.config.lr_base,
+                    eval_loss,
+                ],
+            ],
+        )
+        wandb.log({"sweep_table": table})
 
 
 def main(argv):
@@ -818,23 +837,12 @@ def main(argv):
 
     if FLAGS.mode == "train":
         train_loop()
+        if FLAGS.config.is_sweep:
+            save_eval_loss()
     elif FLAGS.mode in {"validation", "test"}:
-        eval_loss = eval_loop(params=None, n_eval_step=None)["loss_avg"]
+        eval_metrics = eval_loop(params=None, n_eval_step=None, mode=FLAGS.mode)
+        eval_loss = eval_metrics["loss_avg"]
         logging.info(f"Eval loss: {eval_loss}")
-        if jax.process_index() == 0:
-            table = wandb.Table(
-                columns=["Group", "Rule", "Width", "LR", "Loss"],
-                data=[
-                    [
-                        FLAGS.experiment_group,
-                        FLAGS.config.parameterization,
-                        FLAGS.config.d_model,
-                        FLAGS.config.lr_base,
-                        eval_loss,
-                    ],
-                ],
-            )
-            wandb.log({"sweep_table": table})
     else:
         raise NotImplementedError
 

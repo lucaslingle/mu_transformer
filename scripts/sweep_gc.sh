@@ -1,9 +1,8 @@
 #!/bin/bash
 
 Help() {
-  echo "Syntax: tpu_sweep.sh [g|r|s|m|h]"
+  echo "Syntax: sweep_gc.sh [g|r|s|m|h]"
   echo "options:"
-  echo "g     Group name for experiments."
   echo "r     Rule for scaling (sp, mup, spectral)."
   echo "s     Size of model (small, medium, large)."
   echo "m     Mode (train, validation)."
@@ -11,10 +10,10 @@ Help() {
   echo
 }
 
-while getopts "g:r:s:m:h" option; do
+
+GROUP_NAME="gc";
+while getopts "r:s:m:h" option; do
   case $option in
-    g)
-      GROUP_NAME=$OPTARG;;
     r)
       RULE_NAME=$OPTARG;;
     s)
@@ -40,7 +39,9 @@ do
         --workdir="gs://tpu_persist_bucket/mu_transformer_scaling/" \
         --mode="$MODE_NAME" \
         --wb_enabled=True \
+        --config.is_sweep=True \
         --config.lr_base="$LR" \
         --config.force_download=False \
-        --config.parameterization="$RULE_NAME";
+        --config.parameterization="$RULE_NAME" \
+        --config.grad_clip=0.0;
 done
