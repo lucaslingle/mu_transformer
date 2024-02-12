@@ -525,6 +525,8 @@ def train_loop():
             state = do_restore(load_checkpoint_mgr, state)
         start_step = load_checkpoint_mgr.latest_step() or 0
         del load_checkpoint_mgr
+        if start_step == FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step:
+            return
     else:
         start_step = 0
 
