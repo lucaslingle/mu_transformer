@@ -10,6 +10,7 @@ checkpoints/
 workdir/
 wandb/
 *.csv
+*.pdf
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
