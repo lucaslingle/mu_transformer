@@ -1,18 +1,19 @@
 #!/bin/bash
 
 Help() {
-  echo "Syntax: sweep_biases.sh [g|r|s|m|h]"
+  echo "Syntax: sweep_biases.sh [r|s|m|l|h]"
   echo "options:"
   echo "r     Rule for scaling (sp, mup, spectral)."
   echo "s     Size of model (small, medium, large)."
   echo "m     Mode (train, validation)."
+  echo "l     -Log2 of starting lr in sweep, defaults to zero."
   echo "h     Print this Help."
   echo
 }
 
 
 GROUP_NAME="biases";
-while getopts "r:s:m:h" option; do
+while getopts "r:s:m:l:h" option; do
   case $option in
     r)
       RULE_NAME=$OPTARG;;
@@ -20,6 +21,8 @@ while getopts "r:s:m:h" option; do
       SIZE_NAME=$OPTARG;;
     m)
       MODE_NAME=$OPTARG;;
+    l)
+      LR_IDX_START=$OPTARG;;
     h)
       Help
       exit;;
@@ -30,7 +33,7 @@ while getopts "r:s:m:h" option; do
 done
 
 
-for i in $(seq 0 2 10);
+for i in $(seq "$LR_IDX_START" 2 10);
 do
     LR=$(bc -l <<< "2 ^(-$i)");
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
