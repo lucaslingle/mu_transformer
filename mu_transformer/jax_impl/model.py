@@ -315,13 +315,13 @@ class MultiLayerPerceptron(nn.Module):
             bi = self.param(
                 "b_fi",
                 nn.with_partitioning(b_init, MESH_AXES["Y"], self.global_mesh),
-                shapes["FM"],
+                shapes["F"],
                 self.hps.param_dtype,
             )
             bo = self.param(
                 "b_fo",
                 nn.with_partitioning(b_init, MESH_AXES["Y"], self.global_mesh),
-                shapes["FM"],
+                shapes["M"],
                 self.hps.param_dtype,
             )
 
