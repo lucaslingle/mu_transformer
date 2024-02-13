@@ -39,10 +39,10 @@ poetry run python3 mu_transformer/jax_impl/launch.py \
     --mode=train \
     --workdir=/tmp/workdir;
 ```
-A series of model configs, each increasing model size by about 4x, are provided.   
-Settings follow ```base.py```, with exception of width and mesh sizes. 
+A series of model configs, each increasing model size by about 16x, are provided.   
+Settings follow ```base.py```, with exception of mesh, width, and head sizes. 
 
-The tiny model should be a sufficient proxy for hyperparameter search. 
+The small model should be a sufficient proxy for hyperparameter search. 
 However, you may wish to change the batch size, sequence length, number of layers, and training steps to match your target setting. 
 
 ### CLI overrides
@@ -60,7 +60,7 @@ poetry run python3 mu_transformer/jax_impl/launch.py \
     --config.n_warmup_step=10000 \
     --config.lr_max=0.03;
 ```
-You may also need to override the ```n_mesh_rows```, ```n_mesh_cols```, ```n_mesh_planes``` settings so that their product matches the total number of available devices. These three settings correspond to sharding directions for the batch, residual and hidden axes, respectively.  
+You may also need to override the ```n_mesh_rows``` and ```n_mesh_cols``` settings so that their product matches the total number of available devices. These values correspond to mesh dimensions X and Y of the "2D finalized" FSDP from [Xu et al., 2021](https://arxiv.org/abs/2105.04663). 
 
 ### Data and tokenizer
 
