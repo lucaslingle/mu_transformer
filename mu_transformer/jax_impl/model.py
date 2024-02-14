@@ -354,6 +354,8 @@ class TransformerBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x, _):
+        # note: our implementation of parallel residuals is not optimized for efficiency
+        # but instead aims to guarantee an identical init for controlled experiments.
         r1 = MultiHeadAttention(self.hps, self.global_mesh)(RMSNorm(self.hps, "a")(x))
         r1 = sharding_constraint(r1, MESH_AXES["XNY"], self.global_mesh)
 
