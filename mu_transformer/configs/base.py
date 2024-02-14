@@ -68,7 +68,7 @@ def get_base_config():
     config.n_save_step = 1000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
     config.n_warmup_step = 1_000  # warmup steps during pretraining
-    config.n_pretrain_step = 10_000  # pretraining steps
+    config.n_pretrain_step = 12_000  # pretraining steps
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
     config.no_checkpoint = False  # skip saving the model
 
