@@ -29,13 +29,13 @@ transformers = "4.36.2"
 wandb = "^0.16.1"
 
 [tool.poetry.group.cpu.dependencies]
-jax = {extras = ["cpu"], version = "0.4.23"}
-jaxlib = {extras = ["cpu"], version = "0.4.23"}
+jax = {extras = ["cpu"], version = "0.4.24"}
+jaxlib = {extras = ["cpu"], version = "0.4.24"}
 
 [tool.poetry.group.tpu.dependencies]
-jax = {extras = ["tpu"], version = "0.4.23"}
-jaxlib = {extras = ["tpu"], version = "0.4.23"}
-libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20231213-py3-none-any.whl" }
+jax = {extras = ["tpu"], version = "0.4.24"}
+jaxlib = {extras = ["tpu"], version = "0.4.24"}
+libtpu-nightly = { url = "https://storage.googleapis.com/cloud-tpu-tpuvm-artifacts/wheels/libtpu-nightly/libtpu_nightly-0.1.dev20240205-py3-none-any.whl" }
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.6.0"
