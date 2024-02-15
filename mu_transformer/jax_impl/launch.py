@@ -623,7 +623,11 @@ def train_loop():
             # stop profiler
             if jax.process_index() == 0 and step == 2 * FLAGS.config.n_save_step:
                 logging.info("Stopping profiler trace...")
-                jax.profiler.stop_trace()
+                try:
+                    jax.profiler.stop_trace()
+                except RuntimeError as e:
+                    if e != "No profile started":  # happens if we restore at 2 * n_save
+                        raise RuntimeError(e)
             logging.debug("Starting evaluation action...")
             val_metrics = eval_loop(
                 state.params,
