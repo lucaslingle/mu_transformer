@@ -626,7 +626,7 @@ def train_loop():
                 try:
                     jax.profiler.stop_trace()
                 except RuntimeError as e:
-                    if e != "No profile started":  # happens if we restore at 2 * n_save
+                    if e.args != "No profile started":  # ignore if restore @ 2 * n_save
                         raise RuntimeError(e)
             logging.debug("Starting evaluation action...")
             val_metrics = eval_loop(
