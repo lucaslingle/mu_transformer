@@ -64,6 +64,7 @@ class TransformerConfig:
 
 class RMSNorm(nn.Module):
     hps: TransformerConfig
+    global_mesh: jax.sharding.Mesh
     suffix: str
 
     @nn.compact
@@ -354,16 +355,18 @@ class TransformerBlock(nn.Module):
 
     @nn.compact
     def __call__(self, x, _):
+        kws = dict(hps=self.hps, global_mesh=self.global_mesh)
+
         # note: our implementation of parallel residuals is not optimized for efficiency
         # but instead aims to guarantee an identical init for controlled experiments.
-        r1 = MultiHeadAttention(self.hps, self.global_mesh)(RMSNorm(self.hps, "a")(x))
+        r1 = MultiHeadAttention(**kws)(RMSNorm(**kws, suffix="a")(x))
         r1 = sharding_constraint(r1, MESH_AXES["XNY"], self.global_mesh)
 
         if not self.hps.parallel_res:
             x += r1
             x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
-        r2 = MultiLayerPerceptron(self.hps, self.global_mesh)(RMSNorm(self.hps, "f")(x))
+        r2 = MultiLayerPerceptron(**kws)(RMSNorm(**kws, suffix="f")(x))
         r2 = sharding_constraint(r2, MESH_AXES["XNY"], self.global_mesh)
 
         if not self.hps.parallel_res:
@@ -405,7 +408,7 @@ class Unembedding(nn.Module):
     @nn.compact
     def __call__(self, x):
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-        x = RMSNorm(self.hps, "u")(x)
+        x = RMSNorm(self.hps, self.global_mesh, "u")(x)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
         u_init = init.zeros
