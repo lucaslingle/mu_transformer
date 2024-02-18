@@ -14,7 +14,7 @@ args = parser.parse_args()
 sns.set_theme(style="darkgrid")
 sns.set(font_scale=0.5)
 
-df = pd.read_csv("foo.csv", sep=",", header=0)
+df = pd.read_csv("main_results.csv", sep=",", header=0)
 df = df[df["Group"] == args.group]
 df["log2_LR"] = df["LR"].map(lambda y: math.log2(y))
 print(df.head())
