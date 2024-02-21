@@ -727,7 +727,7 @@ def save_eval_loss():
             data=[
                 [
                     FLAGS.experiment_group,
-                    FLAGS.config.parameterization,
+                    FLAGS.config.adam_rule,
                     FLAGS.config.d_model,
                     FLAGS.config.lr_base,
                     eval_loss,
