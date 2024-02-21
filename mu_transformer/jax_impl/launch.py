@@ -120,7 +120,35 @@ def schedule_factory():
     )
 
 
-def get_lrs():
+def get_standard_lrs():
+    lr = FLAGS.config.lr_base
+    return {
+        # embeddings
+        "w_e": lr,
+        # attention
+        "g_a": lr,
+        "w_aq": lr,
+        "w_ak": lr,
+        "w_av": lr,
+        "w_ao": lr,
+        "b_aq": lr,
+        "b_ak": lr,
+        "b_av": lr,
+        "b_ao": lr,
+        # feed-forward
+        "g_f": lr,
+        "w_fi": lr,
+        "w_fo": lr,
+        "b_fi": lr,
+        "b_fo": lr,
+        # unembedding
+        "g_u": lr,
+        "w_u": lr,
+        "b_u": lr,
+    }
+
+
+def get_mup_lrs():
     lr = FLAGS.config.lr_base
     wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
     return {
@@ -147,6 +175,15 @@ def get_lrs():
         "w_u": lr / wm,
         "b_u": lr,
     }
+
+
+def get_lrs():
+    p = FLAGS.config.adam_rule
+    if p == "sp":
+        return get_standard_lrs()
+    if p == "mup":
+        return get_mup_lrs()
+    raise NotImplementedError(f"Unrecognized adam_rule: {p}")
 
 
 def get_wd_mask():

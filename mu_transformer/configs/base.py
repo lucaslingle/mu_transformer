@@ -59,6 +59,7 @@ def get_base_config():
     config.adam_b2 = 0.95  # adam second moment ema rate
     config.adam_eps = 1e-8  # adam epsilon
     config.adam_mu_dtype = "bfloat16"  # adam first moment dtype
+    config.adam_rule = "mup"  # mup or sp
     config.wd = 0.0  # weight decay
 
     # periodic action settings
