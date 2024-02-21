@@ -120,35 +120,7 @@ def schedule_factory():
     )
 
 
-def get_standard_lrs():
-    lr = FLAGS.config.lr_base
-    return {
-        # embeddings
-        "w_e": lr,
-        # attention
-        "g_a": lr,
-        "w_aq": lr,
-        "w_ak": lr,
-        "w_av": lr,
-        "w_ao": lr,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
-        # feed-forward
-        "g_f": lr,
-        "w_fi": lr,
-        "w_fo": lr,
-        "b_fi": lr,
-        "b_fo": lr,
-        # unembedding
-        "g_u": lr,
-        "w_u": lr,
-        "b_u": lr,
-    }
-
-
-def get_mup_lrs():
+def get_lrs():
     lr = FLAGS.config.lr_base
     wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
     return {
@@ -175,47 +147,6 @@ def get_mup_lrs():
         "w_u": lr / wm,
         "b_u": lr,
     }
-
-
-def get_spectral_lrs():
-    lr = FLAGS.config.lr_base
-    wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
-    return {
-        # embeddings
-        "w_e": lr * wm,
-        # attention
-        "g_a": lr * wm,
-        "w_aq": lr,
-        "w_ak": lr,
-        "w_av": lr,
-        "w_ao": lr,
-        "b_aq": lr * wm,
-        "b_ak": lr * wm,
-        "b_av": lr * wm,
-        "b_ao": lr * wm,
-        # feed-forward
-        "g_f": lr * wm,
-        "w_fi": lr,
-        "w_fo": lr,
-        "b_fi": lr * wm,
-        "b_fo": lr * wm,
-        # unembedding
-        "g_u": lr * wm,
-        "w_u": lr,
-        "b_u": lr * wm,
-    }
-
-
-@functools.lru_cache(maxsize=1)
-def get_lrs():
-    p = FLAGS.config.parameterization
-    if p == "sp":
-        return get_standard_lrs()
-    if p == "mup":
-        return get_mup_lrs()
-    if p == "spectral":
-        return get_spectral_lrs()
-    raise NotImplementedError(f"Unrecognized parameterization name: {p}")
 
 
 def get_wd_mask():
@@ -308,7 +239,6 @@ def automatic_modelname_factory():
         "mutransformer",
         dataset_name,
         FLAGS.experiment_group,
-        FLAGS.config.parameterization,
         FLAGS.config.model_size,
         f"a{lr[0]}point{lr[1]}",
         f"b{global_batch_size_factory()}",
@@ -832,7 +762,7 @@ def main(argv):
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_paper_chinchilla",
+            project="mu_transformer_paper_improved",
             group=FLAGS.experiment_group,
             config=vars(FLAGS.config)["_fields"],
             resume="never" if FLAGS.wb_run is None else "must",

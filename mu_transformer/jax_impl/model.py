@@ -32,7 +32,6 @@ MESH_AXES = Dimensions(X="X", Y="Y", N=None)
 
 @struct.dataclass
 class TransformerConfig:
-    parameterization: str
     param_dtype: Any
     dtype: Any
     output_logits_dtype: Any
@@ -40,13 +39,15 @@ class TransformerConfig:
     d_model: int
     d_head: int
     ff_multiple: int
+    q_init: str
+    u_init: str
+    qk_scale: float
     rotary_base: int
     act_name: str
     act_square: bool
     norm_eps: float
     norm_gains: bool
     proj_biases: bool
-    parallel_res: bool
     n_layer: int
     n_vocab: int
     bos_token_id: int
@@ -171,14 +172,12 @@ class MultiHeadAttention(nn.Module):
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
 
-        # zero init; appdx d.2
-        q_init = init.zeros
-        # normal, var 1/fan_in; table 3
-        kv_init = init.normal(self.hps.d_model**-0.5)
-        # normal, var 1/fan_in; table 3 with nh*dh=dm.
-        o_init = init.normal(self.hps.d_model**-0.5)
-        # bias init
+        stddev = self.hps.d_model**-0.5
+        q_init = {"zero": init.zeros, "vs": init.normal(stddev)}[self.hps.q_init]
+        kv_init = init.normal(stddev)
+        o_init = init.normal(stddev)
         b_init = init.zeros
+
         wq = self.param(
             "w_aq",
             nn.with_partitioning(q_init, MESH_AXES["XYN"], self.global_mesh),
@@ -254,7 +253,7 @@ class MultiHeadAttention(nn.Module):
             self.sow("intermediates", "aqr_l1", coord_check_l1(q))
             self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
-        mult = jnp.array([self.hps.d_head**-0.5], dtype=self.hps.dtype)
+        mult = jnp.array([self.hps.qk_scale**0.5], dtype=self.hps.dtype)
         s = jnp.einsum("bhid,bhjd->bhij", q * mult, k * mult)
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
@@ -294,12 +293,11 @@ class MultiLayerPerceptron(nn.Module):
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
 
-        # table 3
-        i_init = init.normal(self.hps.d_model**-0.5)
-        # table 3 with dff = dm * ff_multiple
-        o_init = init.normal((self.hps.d_model * self.hps.ff_multiple) ** -0.5)
-        # bias init
+        stddev = self.hps.d_model**-0.5
+        i_init = init.normal(stddev)
+        o_init = init.normal(stddev)
         b_init = init.zeros
+
         wi = self.param(
             "w_fi",
             nn.with_partitioning(i_init, MESH_AXES["XY"], self.global_mesh),
@@ -331,7 +329,7 @@ class MultiLayerPerceptron(nn.Module):
         if self.hps.proj_biases:
             x += bi.astype(self.hps.dtype)[None, None, ...]  # noqa
             x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-        self.sow("intermediates", "fp_l1", coord_check_l1(x))
+        self.sow("intermediates", "fh_l1", coord_check_l1(x))
 
         x = getattr(jax.nn, self.hps.act_name)(x)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
@@ -357,24 +355,11 @@ class TransformerBlock(nn.Module):
     def __call__(self, x, _):
         kws = dict(hps=self.hps, global_mesh=self.global_mesh)
 
-        # note: our implementation of parallel residuals is not optimized for efficiency
-        # but instead aims to guarantee an identical init for controlled experiments.
-        r1 = MultiHeadAttention(**kws)(RMSNorm(**kws, suffix="a")(x))
-        r1 = sharding_constraint(r1, MESH_AXES["XNY"], self.global_mesh)
+        x += MultiHeadAttention(**kws)(RMSNorm(**kws, suffix="a")(x))
+        x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
-        if not self.hps.parallel_res:
-            x += r1
-            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-
-        r2 = MultiLayerPerceptron(**kws)(RMSNorm(**kws, suffix="f")(x))
-        r2 = sharding_constraint(r2, MESH_AXES["XNY"], self.global_mesh)
-
-        if not self.hps.parallel_res:
-            x += r2
-            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-        else:
-            x += r1 + r2
-            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+        x += MultiLayerPerceptron(**kws)(RMSNorm(**kws, suffix="f")(x))
+        x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
         return x, None
 
@@ -411,7 +396,8 @@ class Unembedding(nn.Module):
         x = RMSNorm(self.hps, self.global_mesh, "u")(x)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
-        u_init = init.zeros
+        stddev = self.hps.d_model**-0.5
+        u_init = {"zero": init.zeros, "vs": init.normal(stddev)}[self.hps.u_init]
         b_init = init.zeros
         wu = self.param(
             "w_u",

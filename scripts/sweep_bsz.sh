@@ -1,7 +1,7 @@
 #!/bin/bash
 
 Help() {
-  echo "Syntax: sweep_biases.sh [s|l|h]"
+  echo "Syntax: sweep_bsz.sh [s|l|h]"
   echo "options:"
   echo "s     Size of model (small, medium, large)."
   echo "l     -Log2 of starting lr in sweep, defaults to zero."
@@ -10,7 +10,7 @@ Help() {
 }
 
 
-GROUP_NAME="biases";
+GROUP_NAME="bsz";
 while getopts "s:l:h" option; do
   case $option in
     s)
@@ -30,6 +30,7 @@ done
 for i in $(seq "$LR_IDX_START" 2 10);
 do
     LR=$(bc -l <<< "2 ^(-$i)");
+    BSZ=$(bc -l <<< "2 ^(16)");
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
         --experiment_group="$GROUP_NAME" \
         --config="mu_transformer/configs/$SIZE_NAME.py" \
@@ -39,5 +40,7 @@ do
         --config.is_sweep=True \
         --config.lr_base="$LR" \
         --config.force_download=False \
-        --config.proj_biases=True;
+        --config.tokens_per_global_batch="$BSZ" \
+        --config.n_warmup_step=16000 \
+        --config.n_pretrain_step=192000;
 done

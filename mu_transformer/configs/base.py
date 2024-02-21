@@ -33,24 +33,22 @@ def get_base_config():
     config.force_download = True  # should be true unless you know what you're doing
 
     # architecture
-    # options for parameterization: sp, mup, spectral
-    #     sp = standard parameterization w/ zero-init on query, unembedding projections.
-    #     mup = max update parameterization w/ rel scaling
-    #     spectral = spectral init w/ rel scaling
-    config.parameterization = "mup"
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
     config.output_logits_dtype = "bfloat16"  # for bfloat16 grad; is fp32 during eval
     config.n_layer = 12  # depth, should stay const for mu-transfer
     config.d_base = 128  # base model width for relative scaling rules
+    config.d_head = 128
     config.ff_multiple = 4  # mlp hidden width multiple
+    config.q_init = "vs"  # query projection init: vs, zero
+    config.u_init = "zero"  # unembedding projection init: vs, zero
+    config.qk_scale = 1 / 128
     config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
     config.act_name = "relu"  # any activation defined in jax.nn
     config.act_square = False  # activation squaring
     config.norm_eps = 1e-8  # rmsnorm epsilon
     config.norm_gains = False  # rmsnorm gains
     config.proj_biases = False  # projections with bias
-    config.parallel_res = False  # apply attn and mlp blocks in parallel
 
     # optimization
     config.tokens_per_global_batch = 2**20  # batch size * sequence len
