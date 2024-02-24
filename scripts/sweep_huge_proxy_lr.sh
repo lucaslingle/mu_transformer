@@ -37,6 +37,7 @@ do
         --config.lr_base="$LR" \
         --config.force_download=False \
         --config.dtype=bfloat16 \
+        --config.d_base=256 \
         --config.d_model=256 \
         --config.d_head=256 \
         --config.qk_scale=0.00390625 \
