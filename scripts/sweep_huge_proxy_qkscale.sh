@@ -34,7 +34,7 @@ do
         --mode="train" \
         --wb_enabled=True \
         --config.is_sweep=True \
-        --config.lr_base=0.00625 \
+        --config.lr_base=0.015625 \
         --config.force_download=False \
         --config.dtype=bfloat16 \
         --config.d_base=256 \
