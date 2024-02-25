@@ -33,6 +33,8 @@ do
         --workdir="gs://tpu_persist_bucket/mu_transformer_scaling/" \
         --mode="train" \
         --wb_enabled=True \
+        --load_suffix="qkscale_$QK_SCALE" \
+        --save_suffix="qkscale_$QK_SCALE" \
         --config.is_sweep=True \
         --config.lr_base=0.015625 \
         --config.force_download=False \
