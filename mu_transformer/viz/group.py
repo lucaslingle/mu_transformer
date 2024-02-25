@@ -14,35 +14,29 @@ args = parser.parse_args()
 sns.set_theme(style="darkgrid")
 sns.set(font_scale=0.5)
 
-df = pd.read_csv("main_results.csv", sep=",", header=0)
+df = pd.read_csv("main_results.csv", sep="	", header=0)
 df = df[df["Group"] == args.group]
 df["log2_LR"] = df["LR"].map(lambda y: math.log2(y))
 print(df.head())
 
-# Plot the responses for different events and regions
-g = sns.FacetGrid(
+ax = sns.lineplot(
     data=df,
-    col="Rule",
+    x="log2_LR",
+    y="Loss",
     hue="Width",
-    palette="viridis",
-    col_order=["sp", "mup", "spectral"],
-    height=2,
-    aspect=1.0,
-    gridspec_kws={"wspace": 0.15, "hspace": 0.10},
+    palette=sns.color_palette("viridis", n_colors=3),
 )
-g.tight_layout()
+ax.set_title(args.group, fontsize=10)
+ax.set_xlabel("log2(η)", fontsize=8)
+ax.set_ylabel("Validation Loss", fontsize=8)
+ax.set(xticks=np.arange(-10, 1, 2))
+ax.set(yticks=np.arange(2, 5, 0.5))
 
-g.figure.subplots_adjust(top=0.9)
-g.set_titles("{col_name}")
-g.map(sns.lineplot, "log2_LR", "Loss", legend="brief", linewidth=1.0)
-g.add_legend(title="width")
-g.figure.subplots_adjust(left=0.1)  # also try 0.05 for paper spacing it may look better
-g.figure.subplots_adjust(bottom=0.2)
-g.set_xlabels("log2(lr)")
-g.set_ylabels("val loss")
-g.set(xticks=np.arange(-10, 1, 2))
-g.set(yticks=np.arange(2, 7, 1))
-g.tick_params(axis="both", pad=0)
-plt.ylim(2, 6)
+ax.tick_params(axis="x", labelsize=8)
+ax.tick_params(axis="y", labelsize=8)
+
+ax.legend(fontsize=8)
+
+plt.ylim(2, 4)
 plt.xlim(-10, 0)
 plt.savefig(f"{args.group}.pdf", format="pdf")
