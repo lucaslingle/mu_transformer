@@ -30,13 +30,13 @@ ax.set_title(args.group, fontsize=10)
 ax.set_xlabel("log2(η)", fontsize=8)
 ax.set_ylabel("Validation Loss", fontsize=8)
 ax.set(xticks=np.arange(-10, 1, 2))
-ax.set(yticks=np.arange(2, 5, 0.5))
+ax.set(yticks=np.arange(2, 7, 0.5))
 
 ax.tick_params(axis="x", labelsize=8)
 ax.tick_params(axis="y", labelsize=8)
 
 ax.legend(fontsize=8)
 
-plt.ylim(2, 4)
+plt.ylim(2, 6)
 plt.xlim(-10, 0)
 plt.savefig(f"{args.group}.pdf", format="pdf")
