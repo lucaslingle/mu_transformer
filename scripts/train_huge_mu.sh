@@ -12,7 +12,7 @@
     --config.dtype=bfloat16 \
     --config.d_base=256 \
     --config.d_head=256 \
-    --config.qk_scale="$QK_SCALE" \
+    --config.qk_scale=0.001953125 \
     --config.u_init=zero \
     --config.act_square=True \
     --config.adam_rule=mup \
