@@ -741,12 +741,13 @@ def main(argv):
     del argv
     logging.info("=== Start of main() ===")
     logging.info(f"Python version: {sys.version.__repr__()}")
-    try:
-        jax.distributed.initialize()
-    except Exception as e:
-        logging.warning("Jax distributed did not init successfully.")
-        logging.warning("Exception was:")
-        logging.warning(e)
+    jax.distributed.initialize()
+    # try:
+    #     jax.distributed.initialize()
+    # except Exception as e:
+    #     logging.warning("Jax distributed did not init successfully.")
+    #     logging.warning("Exception was:")
+    #     logging.warning(e)
     logging.info(f"JAX process: {jax.process_index()} / {jax.process_count()}")
     logging.info("=== Flags: ===")
     logging.info(f"experiment_group: {FLAGS.experiment_group}")
