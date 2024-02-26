@@ -32,15 +32,15 @@ poetry install --with tpu --without cpu;  # TPU
 
 ### Default config
 
-To train a tiny model on OpenWebText for 10K steps, you can run
+To train a small model with the default settings, you can run
 ```
 poetry run python3 mu_transformer/jax_impl/launch.py \
-    --config=mu_transformer/configs/tiny.py \
+    --config=mu_transformer/configs/small.py \
     --mode=train \
     --workdir=/tmp/workdir;
 ```
 A series of model configs, each increasing model size by about 16x, are provided.   
-Settings follow ```base.py```, with exception of mesh, width, and head sizes. 
+Settings follow ```base.py```, with exception of mesh dimensions and the model width. 
 
 The small model should be a sufficient proxy for hyperparameter search. 
 However, you may wish to change the batch size, sequence length, number of layers, and training steps to match your target setting. 
