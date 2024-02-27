@@ -14,6 +14,7 @@
 import math
 import os
 import posixpath
+import time
 from typing import Optional
 
 import blobfile
@@ -186,7 +187,7 @@ def write_dataset_to_memmap(
             try:
                 batch = next(ds)["ids"]
             except BaseException as e:
-                pass
+                time.sleep(10)
         arr_batch = np.array(batch, dtype=arr_dtype).reshape(-1)
         arr[idx : idx + n_write_tokens_per_iter] = arr_batch
         idx += n_write_tokens_per_iter
