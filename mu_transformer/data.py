@@ -181,7 +181,12 @@ def write_dataset_to_memmap(
     arr = np.memmap(temp_fp, dtype=arr_dtype, mode="w+", shape=(n_shard_tokens,))
     idx = 0
     for _ in tqdm.tqdm(range(n_write_iters), desc=f"Writing {temp_fp} with memmap"):
-        batch = next(ds)["ids"]
+        batch = None
+        while batch is None:
+            try:
+                batch = next(ds)["ids"]
+            except BaseException as e:
+                pass
         arr_batch = np.array(batch, dtype=arr_dtype).reshape(-1)
         arr[idx : idx + n_write_tokens_per_iter] = arr_batch
         idx += n_write_tokens_per_iter
