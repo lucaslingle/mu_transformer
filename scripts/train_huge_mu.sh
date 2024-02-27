@@ -21,4 +21,4 @@
     --config.n_warmup_step=15000 \
     --config.n_pretrain_step=180000 \
     --config.n_mesh_rows=64 \
-    --config.n_mesh_cols=8;
+    --config.n_mesh_cols=4;
