@@ -15,6 +15,7 @@
     --config.qk_scale=0.0625 \
     --config.u_init=vs \
     --config.act_square=True \
+    --config.norm_eps=0.000001 \
     --config.adam_rule=sp \
     --config.wd=0.0001 \
     --config.n_warmup_step=15000 \
