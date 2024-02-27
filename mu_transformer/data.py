@@ -83,7 +83,8 @@ def write_dataset_to_memmap(
     if blobfile.exists(workdir_fp):
         logging.info(f"Mem-mapped file exists at {workdir_fp}, skipping write...")
         return workdir_fp
-    os.remove(temp_fp)
+    if os.path.exists(temp_fp):
+        os.remove(temp_fp)
 
     # get tokenizer info
     assert hftr_tokenizer.is_fast
