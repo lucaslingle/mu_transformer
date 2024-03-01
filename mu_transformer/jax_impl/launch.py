@@ -113,12 +113,12 @@ def schedule_factory():
     decay_steps = FLAGS.config.n_pretrain_step - FLAGS.config.n_warmup_step  # const aft
     minval = 1e-4
     warmup = optax.linear_schedule(minval, 1.0, transition_steps=warmup_steps)
-    if FLAGS.config.lr_schedule == "linear":
+    if FLAGS.config.lr_schedule_name == "linear":
         decay = optax.linear_schedule(1.0, minval, transition_steps=decay_steps)
-    elif FLAGS.config.lr_schedule == "cosine":
+    elif FLAGS.config.lr_schedule_name == "cosine":
         decay = optax.cosine_decay_schedule(1.0, alpha=minval, decay_steps=decay_steps)
     else:
-        raise NotImplementedError(f"Unsupported schedule: {FLAGS.config.lr_schedule}")
+        raise NotImplementedError(f"Unsupported sched: {FLAGS.config.lr_schedule_name}")
     return optax.join_schedules([warmup, decay], boundaries=[warmup_steps])
 
 
