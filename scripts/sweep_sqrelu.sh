@@ -1,7 +1,7 @@
 #!/bin/bash
 
 Help() {
-  echo "Syntax: sweep_nonlin.sh [s|l|h]"
+  echo "Syntax: sweep_sqrelu.sh [s|l|h]"
   echo "options:"
   echo "s     Size of model (small, medium, large)."
   echo "l     -Log2 of starting lr in sweep, defaults to zero."
@@ -10,7 +10,7 @@ Help() {
 }
 
 
-GROUP_NAME="nonlin";
+GROUP_NAME="sqrelu";
 while getopts "s:l:h" option; do
   case $option in
     s)
