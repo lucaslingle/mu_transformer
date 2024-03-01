@@ -604,7 +604,7 @@ def train_loop():
             logging.debug("Done with print action...")
 
         # occasionally perform an evaluation and save a checkpoint on improvement
-        if (step % FLAGS.config.n_save_step == 0) or step == n_total_step:
+        if (step % FLAGS.config.n_save_step == 0 and step > 0) or step == n_total_step:
             state = jax.block_until_ready(state)
             # stop profiler
             if jax.process_index() == 0 and step == 2 * FLAGS.config.n_save_step:
