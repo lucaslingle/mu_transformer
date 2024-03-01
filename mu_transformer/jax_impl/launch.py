@@ -557,54 +557,8 @@ def train_loop():
     # the user should set n_finetune_step > 0 if and only if currently fine-tuning.
     n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
     for step in range(start_step, n_total_step + 1):
-        logging.debug(f"Training step {step}...")
-        batch = get_batch(
-            train_ds_shard,
-            batch_size=batch_size,
-            sequence_len=FLAGS.config.sequence_len,
-            step=step,
-        )
-        logging.debug("Got batch...")
-        logging.debug(f"Batch shape (local): {batch.shape}")
-
-        # distribute local batch arrays to global batch arrays
-        logging.debug("Distributing batch to global array...")
-        batch = to_global_array(batch, global_mesh)
-        batch = jax.block_until_ready(batch) if log_level_is_debug else batch
-        logging.debug("Finished distributing batch to global array...")
-        logging.debug(f"Batch shape (global): {batch.shape}")
-
-        # run a training step
-        logging.debug("Starting train step...")
-        state, metrics = train_step(state, batch=batch)
-        state = jax.block_until_ready(state) if log_level_is_debug else state
-        metrics = jax.block_until_ready(metrics) if log_level_is_debug else metrics
-        logging.debug("Finished train step...")
-
-        # occasionally print metrics
-        if step % FLAGS.config.n_print_step == 0:
-            state = jax.block_until_ready(state)
-            metrics = {k: get_scalar_on_host(v) for k, v in metrics.items()}
-            metrics = jax.block_until_ready(metrics)
-            logging.debug("Starting print action...")
-            end_time = time.perf_counter()
-            sec_per_step = (end_time - start_time) / FLAGS.config.n_print_step
-            essentials = {
-                "step": step,
-                "sec_per_step": sec_per_step,
-                "loss_avg": metrics.get("loss_avg"),
-                "val_loss_avg": val_metrics.get("loss_avg"),
-                "tpuv3_mfu": get_tpuv3_mfu(metrics["param_count_total"], sec_per_step),
-            }
-            logging.info(essentials)
-            if jax.process_index() == 0:
-                metrics.update(essentials)
-                wandb.log(metrics)
-            start_time = end_time
-            logging.debug("Done with print action...")
-
         # occasionally perform an evaluation and save a checkpoint on improvement
-        if (step % FLAGS.config.n_save_step == 0 and step > 0) or step == n_total_step:
+        if (step % FLAGS.config.n_save_step == 0) or step == n_total_step:
             state = jax.block_until_ready(state)
             # stop profiler
             if jax.process_index() == 0 and step == 2 * FLAGS.config.n_save_step:
@@ -635,6 +589,51 @@ def train_loop():
                     # create_perfetto_trace=True,  # write extra trace file for perfetto
                 )
             logging.debug("Done with evaluation action...")
+
+        # do the training step
+        logging.debug(f"Training step {step}...")
+        batch = get_batch(
+            train_ds_shard,
+            batch_size=batch_size,
+            sequence_len=FLAGS.config.sequence_len,
+            step=step,
+        )
+        logging.debug("Got batch...")
+        logging.debug(f"Batch shape (local): {batch.shape}")
+        # distribute local batch arrays to global batch arrays
+        logging.debug("Distributing batch to global array...")
+        batch = to_global_array(batch, global_mesh)
+        batch = jax.block_until_ready(batch) if log_level_is_debug else batch
+        logging.debug("Finished distributing batch to global array...")
+        logging.debug(f"Batch shape (global): {batch.shape}")
+        # run a training step
+        logging.debug("Starting train step...")
+        state, metrics = train_step(state, batch=batch)
+        state = jax.block_until_ready(state) if log_level_is_debug else state
+        metrics = jax.block_until_ready(metrics) if log_level_is_debug else metrics
+        logging.debug("Finished train step...")
+
+        # occasionally print metrics
+        if step % FLAGS.config.n_print_step == 0:
+            state = jax.block_until_ready(state)
+            metrics = {k: get_scalar_on_host(v) for k, v in metrics.items()}
+            metrics = jax.block_until_ready(metrics)
+            logging.debug("Starting print action...")
+            end_time = time.perf_counter()
+            sec_per_step = (end_time - start_time) / FLAGS.config.n_print_step
+            essentials = {
+                "step": step,
+                "sec_per_step": sec_per_step,
+                "loss_avg": metrics.get("loss_avg"),
+                "val_loss_avg": val_metrics.get("loss_avg"),
+                "tpuv3_mfu": get_tpuv3_mfu(metrics["param_count_total"], sec_per_step),
+            }
+            logging.info(essentials)
+            if jax.process_index() == 0:
+                metrics.update(essentials)
+                wandb.log(metrics)
+            start_time = end_time
+            logging.debug("Done with print action...")
 
 
 @jax.jit
