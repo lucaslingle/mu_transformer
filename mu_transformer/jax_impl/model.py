@@ -34,7 +34,6 @@ MESH_AXES = Dimensions(X="X", Y="Y", N=None)
 class TransformerConfig:
     param_dtype: Any
     dtype: Any
-    output_logits_dtype: Any
     sequence_len: int
     d_model: int
     d_head: int
