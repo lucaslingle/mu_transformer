@@ -39,9 +39,12 @@ class TransformerConfig:
     d_model: int
     d_head: int
     ff_multiple: int
+    e_norm: bool
     q_init: str
+    r_init: str
     u_init: str
     qk_scale: float
+    qk_norm: bool
     rotary_base: int
     act_name: str
     act_square: bool
@@ -175,7 +178,7 @@ class MultiHeadAttention(nn.Module):
         stddev = self.hps.d_model**-0.5
         q_init = {"zero": init.zeros, "vs": init.normal(stddev)}[self.hps.q_init]
         kv_init = init.normal(stddev)
-        o_init = init.normal(stddev)
+        o_init = {"zero": init.zeros, "vs": init.normal(stddev)}[self.hps.r_init]
         b_init = init.zeros
 
         wq = self.param(
@@ -245,6 +248,11 @@ class MultiHeadAttention(nn.Module):
         self.sow("intermediates", "ak_l1", coord_check_l1(k))
         self.sow("intermediates", "av_l1", coord_check_l1(v))
 
+        if self.hps.qk_norm:
+            # maybe should not use with gains since the gains will be tied for all heads
+            q = RMSNorm(self.hps, self.global_mesh, "aq")(q)
+            k = RMSNorm(self.hps, self.global_mesh, "ak")(k)
+
         if self.hps.rotary_base > 0:
             q = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(q)
             k = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(k)
@@ -293,9 +301,11 @@ class MultiLayerPerceptron(nn.Module):
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
 
-        stddev = self.hps.d_model**-0.5
-        i_init = init.normal(stddev)
-        o_init = init.normal(stddev)
+        i_init = init.normal(self.hps.d_model**-0.5)
+        o_init = {
+            "zero": init.zeros,
+            "vs": init.normal((self.hps.d_model * self.hps.ff_multiple) ** -0.5),
+        }[self.hps.r_init]
         b_init = init.zeros
 
         wi = self.param(
@@ -383,6 +393,10 @@ class Embedding(nn.Module):
             axis=1,
         )
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+
+        if self.hps.e_norm:
+            x = RMSNorm(self.hps, self.global_mesh, "e")(x)
+            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         return x
 
 
@@ -397,7 +411,11 @@ class Unembedding(nn.Module):
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
         stddev = self.hps.d_model**-0.5
-        u_init = {"zero": init.zeros, "vs": init.normal(stddev)}[self.hps.u_init]
+        u_init = {
+            "zero": init.zeros,
+            "sp": init.normal(stddev),
+            "mup": init.normal(stddev**2),
+        }[self.hps.u_init]
         b_init = init.zeros
         wu = self.param(
             "w_u",
@@ -414,7 +432,7 @@ class Unembedding(nn.Module):
             )
 
         if self.hps.is_train:
-            output_logits_dtype = self.hps.output_logits_dtype
+            output_logits_dtype = self.hps.dtype
         else:
             output_logits_dtype = self.hps.param_dtype
 

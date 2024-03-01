@@ -111,22 +111,27 @@ def param_label_fn(params):
 def schedule_factory():
     warmup_steps = FLAGS.config.n_warmup_step
     decay_steps = FLAGS.config.n_pretrain_step - FLAGS.config.n_warmup_step  # const aft
-    return optax.join_schedules(
-        [
-            optax.linear_schedule(0.0001, end_value=1.0, transition_steps=warmup_steps),
-            optax.linear_schedule(1.0, end_value=0.1, transition_steps=decay_steps),
-        ],
-        boundaries=[warmup_steps],
-    )
+    minval = 1e-4
+    warmup = optax.linear_schedule(minval, 1.0, transition_steps=warmup_steps)
+    if FLAGS.config.lr_schedule == "linear":
+        decay = optax.linear_schedule(1.0, minval, transition_steps=decay_steps)
+    elif FLAGS.config.lr_schedule == "cosine":
+        decay = optax.cosine_decay_schedule(1.0, alpha=minval, decay_steps=decay_steps)
+    else:
+        raise NotImplementedError(f"Unsupported schedule: {FLAGS.config.lr_schedule}")
+    return optax.join_schedules([warmup, decay], boundaries=[warmup_steps])
 
 
 def get_standard_lrs():
     lr = FLAGS.config.lr_base
     return {
         # embeddings
+        "g_e": lr,
         "w_e": lr,
         # attention
         "g_a": lr,
+        "g_aq": lr,
+        "g_ak": lr,
         "w_aq": lr,
         "w_ak": lr,
         "w_av": lr,
@@ -153,9 +158,12 @@ def get_mup_lrs():
     wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
     return {
         # embeddings
+        "g_e": lr,
         "w_e": lr,
         # attention
         "g_a": lr,
+        "g_aq": lr,
+        "g_ak": lr,
         "w_aq": lr / wm,
         "w_ak": lr / wm,
         "w_av": lr / wm,
@@ -178,12 +186,12 @@ def get_mup_lrs():
 
 
 def get_lrs():
-    p = FLAGS.config.adam_rule
+    p = FLAGS.config.optim_rule
     if p == "sp":
         return get_standard_lrs()
     if p == "mup":
         return get_mup_lrs()
-    raise NotImplementedError(f"Unrecognized adam_rule: {p}")
+    raise NotImplementedError(f"Unrecognized optim_rule: {p}")
 
 
 def get_wd_mask():
@@ -193,17 +201,28 @@ def get_wd_mask():
 
 
 def grad_transform_factory():
-    optimizer_kws = dict(
-        b1=FLAGS.config.adam_b1,
-        b2=FLAGS.config.adam_b2,
-        eps=FLAGS.config.adam_eps,
-        mu_dtype=FLAGS.config.adam_mu_dtype,
-    )
     chain = []
     if FLAGS.config.grad_clip > 0.0:
         chain.append(optax.clip_by_global_norm(FLAGS.config.grad_clip))
+    if FLAGS.config.optim_name == "adam":
+        optimizer_kws = dict(
+            b1=0.9,
+            b2=0.95,
+            eps=1e-8,
+            mu_dtype=FLAGS.config.dtype,
+        )
+        optimizer_cls = optax.adam
+    elif FLAGS.config.optim_name == "lion":
+        optimizer_kws = dict(
+            b1=0.95,
+            b2=0.98,
+            mu_dtype=FLAGS.config.dtype,
+        )
+        optimizer_cls = optax.lion
+    else:
+        raise NotImplementedError(f"Unsupported optimizer: {FLAGS.config.optim_name}")
     optimizer = optax.multi_transform(
-        jtu.tree_map(lambda lr: optax.adam(lr, **optimizer_kws), get_lrs()),
+        jtu.tree_map(lambda lr: optimizer_cls(lr, **optimizer_kws), get_lrs()),
         param_labels=param_label_fn,
     )
     chain.append(optimizer)
@@ -727,7 +746,7 @@ def save_eval_loss():
             data=[
                 [
                     FLAGS.experiment_group,
-                    FLAGS.config.adam_rule,
+                    FLAGS.config.lr_scaling_rule,
                     FLAGS.config.d_model,
                     FLAGS.config.lr_base,
                     eval_loss,

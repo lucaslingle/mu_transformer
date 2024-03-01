@@ -35,18 +35,20 @@ def get_base_config():
     # architecture
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
-    config.output_logits_dtype = "bfloat16"  # for bfloat16 grad; is fp32 during eval
-    config.n_layer = 12  # depth, should stay const for mu-transfer
+    config.n_layer = 24  # depth, should stay const for mu-transfer
     config.d_base = 128  # base model width for relative scaling rules
     config.d_head = 128
     config.ff_multiple = 4  # mlp hidden width multiple
+    config.e_norm = False  # normalize the embeddings using rmsnorm?
     config.q_init = "vs"  # query projection init: vs, zero
-    config.u_init = "zero"  # unembedding projection init: vs, zero
+    config.r_init = "zero"  # residual projection init: vs, zero
+    config.u_init = "mup"  # unembedding projection init: mup, sp, zero
     config.qk_scale = 1 / 128
+    config.qk_norm = False  # normalize queries and keys using rmsnorm?
     config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
     config.act_name = "relu"  # any activation defined in jax.nn
     config.act_square = False  # activation squaring
-    config.norm_eps = 1e-8  # rmsnorm epsilon
+    config.norm_eps = 1e-6  # rmsnorm epsilon
     config.norm_gains = False  # rmsnorm gains
     config.proj_biases = False  # projections with bias
 
@@ -55,19 +57,17 @@ def get_base_config():
     config.grad_acc_steps = 1  # steps per parameter update (for micro-batching)
     config.grad_clip = 1.0  # grad clip max l2 norm
     config.lr_base = 1.0  # base learning rate
-    config.adam_b1 = 0.9  # adam first moment ema rate
-    config.adam_b2 = 0.95  # adam second moment ema rate
-    config.adam_eps = 1e-8  # adam epsilon
-    config.adam_mu_dtype = "bfloat16"  # adam first moment dtype
-    config.adam_rule = "mup"  # mup or sp
+    config.lr_schedule_name = "linear"
+    config.optim_name = "adam"
+    config.optim_rule = "mup"  # mup or sp
     config.wd = 0.0  # weight decay
 
     # periodic action settings
     config.n_print_step = 100  # print every
     config.n_save_step = 1000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
-    config.n_warmup_step = 1_000  # warmup steps during pretraining
-    config.n_pretrain_step = 12_000  # pretraining steps
+    config.n_warmup_step = 2_000  # warmup steps during pretraining
+    config.n_pretrain_step = 24_000  # pretraining steps
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
     config.no_checkpoint = False  # skip saving the model
 
