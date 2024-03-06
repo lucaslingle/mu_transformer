@@ -39,5 +39,5 @@ do
         --config.is_sweep=True \
         --config.lr_base="$LR" \
         --config.force_download=False \
-        --config.r_init="vs";
+        --config.r_init="zero";
 done

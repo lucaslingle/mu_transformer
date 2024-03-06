@@ -39,5 +39,5 @@ do
         --config.is_sweep=True \
         --config.lr_base="$LR" \
         --config.force_download=False \
-        --config.wd=0.0001;
+        --config.wd=0.1;
 done
