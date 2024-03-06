@@ -46,7 +46,6 @@ from mu_transformer.jax_impl.shard import get_namedsharding
 from mu_transformer.jax_impl.shard import sharding_constraint
 from mu_transformer.jax_impl.shard import to_global_array
 from mu_transformer.jax_impl.sow import split_and_name
-from mu_transformer.jax_impl.tree import flattened_traversal
 
 
 FLAGS = flags.FLAGS
@@ -194,12 +193,6 @@ def get_lrs():
     raise NotImplementedError(f"Unrecognized optim_rule: {p}")
 
 
-def get_wd_mask():
-    return flattened_traversal(
-        lambda path, _: True if path[-1].startswith("w_") else False
-    )
-
-
 def grad_transform_factory():
     chain = []
     if FLAGS.config.grad_clip > 0.0:
@@ -210,6 +203,7 @@ def grad_transform_factory():
             b2=0.98,
             eps=1e-9,
             mu_dtype=FLAGS.config.dtype,
+            weight_decay=FLAGS.config.wd,
         )
         optimizer_cls = optax.adam
     elif FLAGS.config.optim_name == "lion":
@@ -217,6 +211,7 @@ def grad_transform_factory():
             b1=0.95,
             b2=0.98,
             mu_dtype=FLAGS.config.dtype,
+            weight_decay=FLAGS.config.wd,
         )
         optimizer_cls = optax.lion
     else:
@@ -226,8 +221,6 @@ def grad_transform_factory():
         param_labels=param_label_fn,
     )
     chain.append(optimizer)
-    if FLAGS.config.wd > 0.0:
-        chain.append(optax.add_decayed_weights(-FLAGS.config.wd, get_wd_mask()))
     chain.append(optax.scale_by_schedule(schedule_factory()))
     tx = optax.chain(*chain)
     if FLAGS.config.grad_acc_steps > 1:
