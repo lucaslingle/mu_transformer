@@ -207,8 +207,8 @@ def grad_transform_factory():
     if FLAGS.config.optim_name == "adam":
         optimizer_kws = dict(
             b1=0.9,
-            b2=0.95,
-            eps=1e-8,
+            b2=0.98,
+            eps=1e-9,
             mu_dtype=FLAGS.config.dtype,
         )
         optimizer_cls = optax.adam
