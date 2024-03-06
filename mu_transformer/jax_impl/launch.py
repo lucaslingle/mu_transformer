@@ -197,7 +197,8 @@ def grad_transform_factory():
     chain = []
     if FLAGS.config.grad_clip > 0.0:
         chain.append(optax.clip_by_global_norm(FLAGS.config.grad_clip))
-    if FLAGS.config.optim_name == "adam":
+    if FLAGS.config.optim_name == "adamw":
+        optimizer_cls = optax.adamw
         optimizer_kws = dict(
             b1=0.9,
             b2=0.98,
@@ -205,15 +206,14 @@ def grad_transform_factory():
             mu_dtype=FLAGS.config.dtype,
             weight_decay=FLAGS.config.wd,
         )
-        optimizer_cls = optax.adam
     elif FLAGS.config.optim_name == "lion":
+        optimizer_cls = optax.lion
         optimizer_kws = dict(
             b1=0.95,
             b2=0.98,
             mu_dtype=FLAGS.config.dtype,
             weight_decay=FLAGS.config.wd,
         )
-        optimizer_cls = optax.lion
     else:
         raise NotImplementedError(f"Unsupported optimizer: {FLAGS.config.optim_name}")
     optimizer = optax.multi_transform(

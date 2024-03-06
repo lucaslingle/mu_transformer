@@ -58,7 +58,7 @@ def get_base_config():
     config.grad_clip = 1.0  # grad clip max l2 norm
     config.lr_base = 1.0  # base learning rate
     config.lr_schedule_name = "linear"
-    config.optim_name = "adam"
+    config.optim_name = "adamw"
     config.optim_rule = "mup"  # mup or sp
     config.wd = 0.0  # weight decay
 
