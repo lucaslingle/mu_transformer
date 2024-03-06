@@ -27,7 +27,7 @@ while getopts "s:l:h" option; do
 done
 
 
-for i in $(seq "$LR_IDX_START" 2 10);
+for i in $(seq "$LR_IDX_START" 1 10);
 do
     LR=$(bc -l <<< "2 ^(-$i)");
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
