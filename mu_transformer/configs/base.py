@@ -60,6 +60,9 @@ def get_base_config():
     config.lr_schedule_name = "linear"
     config.optim_name = "adamw"
     config.optim_rule = "mup"  # mup or sp
+    config.optim_beta1 = 0.9
+    config.optim_beta2 = 0.98
+    config.optim_eps = 10**-9
     config.wd = 0.0  # weight decay
 
     # periodic action settings

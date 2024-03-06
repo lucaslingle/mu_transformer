@@ -19,8 +19,8 @@ def get_config():
     config.model_size = "huge"
 
     # mesh
-    config.n_mesh_rows = 32
-    config.n_mesh_cols = 4
+    config.n_mesh_rows = 64
+    config.n_mesh_cols = 8
 
     # width
     config.d_model = 8192

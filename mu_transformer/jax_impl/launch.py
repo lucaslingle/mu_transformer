@@ -200,17 +200,17 @@ def grad_transform_factory():
     if FLAGS.config.optim_name == "adamw":
         optimizer_cls = optax.adamw
         optimizer_kws = dict(
-            b1=0.9,
-            b2=0.98,
-            eps=1e-9,
+            b1=FLAGS.config.optim_beta1,
+            b2=FLAGS.config.optim_beta2,
+            eps=FLAGS.config.optim_eps,
             mu_dtype=FLAGS.config.dtype,
             weight_decay=FLAGS.config.wd,
         )
     elif FLAGS.config.optim_name == "lion":
         optimizer_cls = optax.lion
         optimizer_kws = dict(
-            b1=0.95,
-            b2=0.98,
+            b1=FLAGS.config.optim_beta1,
+            b2=FLAGS.config.optim_beta2,
             mu_dtype=FLAGS.config.dtype,
             weight_decay=FLAGS.config.wd,
         )
