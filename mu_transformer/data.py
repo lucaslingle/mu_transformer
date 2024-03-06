@@ -91,7 +91,7 @@ def write_dataset_to_memmap(
     assert hftr_tokenizer.is_fast
 
     # get available splits, and pick one.
-    hfds_splits_set = set(hfds.get_dataset_split_names(hfds_identifier))
+    hfds_splits_set = set(hfds.get_dataset_split_names(hfds_identifier, hfds_config))
     if hfds_splits_set != {"train", "validation", "test"}:
         # we'll split the training data later, since there aren't enough provided splits
         hfds_split = "train"

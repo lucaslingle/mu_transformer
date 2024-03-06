@@ -23,13 +23,13 @@ def get_base_config():
     config.is_sweep = False
 
     # huggingface tokenizer and dataset settings
-    config.hftr_tokenizer_name = "GPT2TokenizerFast"
-    config.hftr_tokenizer_instance = "gpt2"
-    config.hfds_identifier = "EleutherAI/the_pile_deduplicated"
-    config.hfds_config = None
+    config.hftr_tokenizer_name = "T5TokenizerFast"
+    config.hftr_tokenizer_instance = "t5-base"
+    config.hfds_identifier = "c4"
+    config.hfds_config = "en"
     config.hfds_datacol = "text"
     config.hfds_buffer_size = 1024  # example buffer length for batched tokenization
-    config.sequence_len = 512
+    config.sequence_len = 256
     config.force_download = True  # should be true unless you know what you're doing
 
     # architecture
@@ -41,7 +41,7 @@ def get_base_config():
     config.ff_multiple = 4  # mlp hidden width multiple
     config.e_norm = False  # normalize the embeddings using rmsnorm?
     config.q_init = "vs"  # query projection init: vs, zero
-    config.r_init = "zero"  # residual projection init: vs, zero
+    config.r_init = "vs"  # residual projection init: vs, zero
     config.u_init = "mup"  # unembedding projection init: mup, sp, zero
     config.qk_scale = 1 / 128
     config.qk_norm = False  # normalize queries and keys using rmsnorm?
@@ -53,7 +53,7 @@ def get_base_config():
     config.proj_biases = False  # projections with bias
 
     # optimization
-    config.tokens_per_global_batch = 2**20  # batch size * sequence len
+    config.tokens_per_global_batch = 2**18  # batch size * sequence len
     config.grad_acc_steps = 1  # steps per parameter update (for micro-batching)
     config.grad_clip = 1.0  # grad clip max l2 norm
     config.lr_base = 1.0  # base learning rate
@@ -64,10 +64,10 @@ def get_base_config():
 
     # periodic action settings
     config.n_print_step = 100  # print every
-    config.n_save_step = 4000  # checkpoint every
+    config.n_save_step = 1000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
-    config.n_warmup_step = 2_000  # warmup steps during pretraining
-    config.n_pretrain_step = 24_000  # pretraining steps
+    config.n_warmup_step = 10_000  # warmup steps during pretraining
+    config.n_pretrain_step = 125_000  # pretraining steps
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
     config.no_checkpoint = False  # skip saving the model
 
