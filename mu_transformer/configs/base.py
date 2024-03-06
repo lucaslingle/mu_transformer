@@ -28,7 +28,7 @@ def get_base_config():
     config.hfds_identifier = "c4"
     config.hfds_config = "en"
     config.hfds_datacol = "text"
-    config.hfds_buffer_size = 1024  # example buffer length for batched tokenization
+    config.hfds_buffer_size = 512  # example buffer length for batched tokenization
     config.sequence_len = 256
     config.force_download = True  # should be true unless you know what you're doing
 
