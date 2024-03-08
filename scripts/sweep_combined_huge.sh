@@ -19,9 +19,9 @@ do
         --config.n_layer=12 \
         --config.e_norm=True \
         --config.act_square=True \
-        --config.n_pretrain_step=180000 \
-        --config.n_warmup_step=15000 \
-        --config.tokens_per_global_batch=1048576 \
+        --config.n_pretrain_step=90000 \
+        --config.n_warmup_step=7000 \
+        --config.tokens_per_global_batch=2097152 \
         --config.optim_beta1=0.9 \
         --config.optim_beta2=0.95 \
         --config.optim_eps=0.00000001 \
