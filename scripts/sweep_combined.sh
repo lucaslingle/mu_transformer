@@ -3,7 +3,7 @@
 GROUP_NAME="combined";
 for size in "small" "medium" "large";
 do
-    for i in $(seq 2 1 10)
+    for i in $(seq 2 2 10)
     do
         echo "VERIFY EVERYTHING IN THE CONFIG PRINTED!!!"
         LR=$(bc -l <<< "2 ^(-$i)");

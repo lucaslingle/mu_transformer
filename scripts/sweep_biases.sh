@@ -3,7 +3,7 @@
 GROUP_NAME="biases";
 for size in "small" "medium" "large";
 do
-    for i in $(seq 2 1 10)
+    for i in $(seq 2 2 10)
     do
         LR=$(bc -l <<< "2 ^(-$i)");
         ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
