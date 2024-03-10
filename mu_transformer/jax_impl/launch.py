@@ -826,8 +826,8 @@ def main(argv):
             done_fn = "done.txt"
             done_fp = posixpath.join(modeldir_factory("load", "checkpoints"), done_fn)
             local_done_fp = f"/tmp/{done_fn}"
-            os.remove(local_done_fp)
             if not blobfile.exists(done_fp):
+                os.remove(local_done_fp)
                 train_loop()
                 save_eval_loss()
                 os.mknod(local_done_fp)
