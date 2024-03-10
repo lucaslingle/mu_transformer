@@ -12,12 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import functools
+import os
 import posixpath
 import re
 import sys
 import time
 from typing import Set
 
+import blobfile
 import flax
 import flax.linen as nn
 import jax
@@ -820,9 +822,17 @@ def main(argv):
         )
 
     if FLAGS.mode == "train":
-        train_loop()
         if FLAGS.config.is_sweep:
-            save_eval_loss()
+            done_fn = "done.txt"
+            done_fp = posixpath.join(modeldir_factory("load", "checkpoints"), done_fn)
+            local_done_fp = f"/tmp/{done_fn}"
+            if not blobfile.exists(done_fp):
+                train_loop()
+                save_eval_loss()
+                os.mknod(local_done_fp)
+                blobfile.copy(local_done_fp, done_fp, overwrite=True)
+        else:
+            train_loop()
     elif FLAGS.mode in {"validation", "test"}:
         eval_metrics = eval_loop(params=None, n_eval_step=None, mode=FLAGS.mode)
         eval_loss = eval_metrics["loss_avg"]
