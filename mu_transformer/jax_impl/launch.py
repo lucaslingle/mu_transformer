@@ -831,6 +831,7 @@ def main(argv):
                 save_eval_loss()
                 os.mknod(local_done_fp)
                 blobfile.copy(local_done_fp, done_fp, overwrite=True)
+                os.remove(local_done_fp)
         else:
             train_loop()
     elif FLAGS.mode in {"validation", "test"}:
