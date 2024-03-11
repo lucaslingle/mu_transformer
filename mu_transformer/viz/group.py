@@ -39,4 +39,4 @@ ax.legend(title="Width", fontsize=10, title_fontsize=10)
 
 plt.ylim(2, 5)
 plt.xlim(-10, -2)
-plt.savefig(f"{args.group}.pdf", format="pdf")
+plt.savefig(f"outputs/{args.group}.pdf", format="pdf")
