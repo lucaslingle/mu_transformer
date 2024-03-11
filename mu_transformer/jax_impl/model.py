@@ -23,6 +23,7 @@ from flax import struct
 from flax.linen import partitioning as nnp
 
 from mu_transformer.dims import Dimensions
+from mu_transformer.jax_impl.math import cdiv
 from mu_transformer.jax_impl.shard import sharding_constraint
 from mu_transformer.jax_impl.sow import coord_check_l1
 
@@ -37,7 +38,7 @@ class TransformerConfig:
     sequence_len: int
     d_model: int
     d_head: int
-    ff_multiple: int
+    ff_multiple: float
     e_norm: bool
     q_init: str
     r_init: str
@@ -291,11 +292,19 @@ class MultiLayerPerceptron(nn.Module):
 
     @nn.compact
     def __call__(self, x):
+        # note: if ff_mult is int and d_m % d_mxu == 0, then d_ff_pre == ff_mult * d_m
+        # note: if act_swiglu is false, then d_ff_post == d_ff_pre
+        act_swiglu = self.hps.act_name == "swiglu"
+        d_mxu = 256 if act_swiglu else 128
+        d_ff_pre = cdiv(int(self.hps.ff_multiple * self.hps.d_model), d_mxu) * d_mxu
+        d_ff_post = d_ff_pre // 2 if act_swiglu else d_ff_pre
+
         shapes = Dimensions(
             B=x.shape[0],
             T=self.hps.sequence_len,
             M=self.hps.d_model,
-            F=self.hps.d_model * self.hps.ff_multiple,
+            E=d_ff_pre,
+            F=d_ff_post,
         )
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
@@ -303,14 +312,14 @@ class MultiLayerPerceptron(nn.Module):
         i_init = init.normal(self.hps.d_model**-0.5)
         o_init = {
             "zero": init.zeros,
-            "vs": init.normal((self.hps.d_model * self.hps.ff_multiple) ** -0.5),
+            "vs": init.normal(d_ff_post**-0.5),
         }[self.hps.r_init]
         b_init = init.zeros
 
         wi = self.param(
             "w_fi",
             nn.with_partitioning(i_init, MESH_AXES["XY"], self.global_mesh),
-            shapes["MF"],
+            shapes["ME"],
             self.hps.param_dtype,
         )
         wo = self.param(
@@ -323,7 +332,7 @@ class MultiLayerPerceptron(nn.Module):
             bi = self.param(
                 "b_fi",
                 nn.with_partitioning(b_init, MESH_AXES["Y"], self.global_mesh),
-                shapes["F"],
+                shapes["E"],
                 self.hps.param_dtype,
             )
             bo = self.param(
@@ -340,8 +349,16 @@ class MultiLayerPerceptron(nn.Module):
             x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fh_l1", coord_check_l1(x))
 
-        x = getattr(jax.nn, self.hps.act_name)(x)
-        x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+        if act_swiglu:
+            x1, x2 = jnp.split(x, 2, axis=-1)
+            x1 = sharding_constraint(x1, MESH_AXES["XNY"], self.global_mesh)
+            x2 = sharding_constraint(x2, MESH_AXES["XNY"], self.global_mesh)
+            x = x1 * jax.nn.silu(x2)
+            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+        else:
+            x = getattr(jax.nn, self.hps.act_name)(x)
+            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+
         if self.hps.act_square:
             x = jnp.square(x)
             x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)

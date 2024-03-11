@@ -38,7 +38,7 @@ def get_base_config():
     config.n_layer = 24  # depth, should stay const for mu-transfer
     config.d_base = 128  # base model width for relative scaling rules
     config.d_head = 128
-    config.ff_multiple = 4  # mlp hidden width multiple
+    config.ff_multiple = 4  # mlp width multiple (prior to swiglu split, if applicable)
     config.e_norm = False  # normalize the embeddings using rmsnorm?
     config.q_init = "vs"  # query projection init: vs, zero
     config.r_init = "vs"  # residual projection init: vs, zero
@@ -46,7 +46,7 @@ def get_base_config():
     config.qk_scale = 1 / 128
     config.qk_norm = False  # normalize queries and keys using rmsnorm?
     config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
-    config.act_name = "relu"  # any activation defined in jax.nn
+    config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
     config.act_square = False  # activation squaring
     config.norm_eps = 1e-6  # rmsnorm epsilon
     config.norm_gains = False  # rmsnorm gains
