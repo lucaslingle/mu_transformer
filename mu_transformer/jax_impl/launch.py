@@ -323,7 +323,7 @@ def checkpoint_manager_factory(option):
         checkpointers=ocp.Checkpointer(ocp.PyTreeCheckpointHandler()),
         options=ocp.CheckpointManagerOptions(
             create=True,
-            max_to_keep=5,
+            max_to_keep=1,
             save_interval_steps=1,
             step_prefix="state",
         ),
