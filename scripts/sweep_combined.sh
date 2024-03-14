@@ -3,7 +3,7 @@
 GROUP_NAME="combined";
 for size in "small" "medium" "large";
 do
-    for i in $(seq 2 2 10)
+    for i in $(seq 4 2 8)
     do
         echo "VERIFY EVERYTHING IN THE CONFIG PRINTED!!!"
         LR=$(bc -l <<< "2 ^(-$i)");
@@ -17,7 +17,7 @@ do
             --config.lr_base="$LR" \
             --config.force_download=False \
             --config.n_layer=12 \
-            --config.e_norm=True \
+            --config.q_init="zero" \
             --config.act_square=True \
             --config.n_save_step=2500 \
             --config.n_pretrain_step=90000 \
