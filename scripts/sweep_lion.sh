@@ -13,8 +13,9 @@ do
             --mode="train" \
             --wb_enabled=True \
             --config.is_sweep=True \
-            --config.lr_base="$LR" \
             --config.force_download=False \
+            --config.n_data_shard=16 \
+            --config.lr_base="$LR" \
             --config.optim_name=lion \
             --config.optim_beta1=0.95 \
             --config.optim_beta2=0.98;
