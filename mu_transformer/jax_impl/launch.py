@@ -514,8 +514,8 @@ def train_loop():
     logging.info("Creating dataset...")
     n_host = jax.process_count()
     host_id = jax.process_index()
-    n_shard = FLAGS.config.n_data_shard or n_host
-    n_host_per_shard = n_host // n_shard  # n_data_shard = n_host on smallest runs
+    n_shard = FLAGS.config.n_ds_shard or n_host
+    n_host_per_shard = n_host // n_shard  # n_ds_shard = n_host on smallest runs
     global_batch_size = global_batch_size_factory()
     batch_size_per_host = global_batch_size // n_host
     shard_id = host_id // n_host_per_shard
@@ -670,8 +670,8 @@ def eval_loop(params, ds_shard=None, n_eval_step=None, mode=None):
     logging.info("Creating dataset...")
     n_host = jax.process_count()
     host_id = jax.process_index()
-    n_shard = FLAGS.config.n_data_shard
-    n_host_per_shard = n_host // n_shard  # n_data_shard = n_host on smallest runs
+    n_shard = FLAGS.config.n_ds_shard
+    n_host_per_shard = n_host // n_shard  # n_ds_shard = n_host on smallest runs
     global_batch_size = global_batch_size_factory()
     batch_size_per_host = global_batch_size // n_host
     shard_id = host_id // n_host_per_shard
@@ -798,9 +798,9 @@ def main(argv):
     assert FLAGS.config.d_model % FLAGS.config.d_head == 0
 
     n_host = jax.process_count()
-    n_data_shard = FLAGS.config.n_data_shards
-    assert n_host >= n_data_shard
-    assert n_host % n_data_shard == 0
+    n_ds_shard = FLAGS.config.n_ds_shard
+    assert n_host >= n_ds_shard
+    assert n_host % n_ds_shard == 0
 
     n_device = jax.device_count()
     n_example = global_batch_size_factory()
