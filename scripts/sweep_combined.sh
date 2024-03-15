@@ -20,7 +20,7 @@ do
             --config.n_layer=12 \
             --config.q_init="zero" \
             --config.act_square=True \
-            --config.n_save_step=2500 \
+            --config.n_save_step=500 \
             --config.n_pretrain_step=90000 \
             --config.n_warmup_step=7000 \
             --config.tokens_per_global_batch=2097152 \
