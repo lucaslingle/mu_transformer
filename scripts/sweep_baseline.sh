@@ -14,7 +14,7 @@ do
             --wb_enabled=True \
             --config.is_sweep=True \
             --config.force_download=False \
-            --config.n_data_shard=16 \
+            --config.n_ds_shard=16 \
             --config.lr_base="$LR" \
             --config.dtype=bfloat16;
     done
