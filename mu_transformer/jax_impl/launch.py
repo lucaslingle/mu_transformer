@@ -512,7 +512,15 @@ def train_loop():
         start_step = 0
 
     logging.info("Creating dataset...")
-    batch_size = global_batch_size_factory() // jax.process_count()
+    n_host = jax.process_count()
+    host_id = jax.process_index()
+    n_shard = FLAGS.config.n_data_shard
+    n_host_per_shard = n_host // n_shard  # n_data_shard = n_host on smallest runs
+    global_batch_size = global_batch_size_factory()
+    batch_size_per_host = global_batch_size // n_host
+    shard_id = host_id // n_host_per_shard
+    subshard_id = host_id % n_host_per_shard
+
     train_ds_shard = get_dataset(
         hfds_identifier=FLAGS.config.hfds_identifier,
         hfds_config=FLAGS.config.hfds_config,
@@ -520,10 +528,10 @@ def train_loop():
         hfds_buffer_size=FLAGS.config.hfds_buffer_size,
         hftr_tokenizer=tokenizer_factory(),
         split_name="train",
-        batch_size=batch_size,
+        batch_size=batch_size_per_host,
         sequence_len=FLAGS.config.sequence_len,
-        pcount=jax.process_count(),
-        pindex=jax.process_index(),
+        n_shard=n_shard,
+        shard_id=shard_id,
         workdir=FLAGS.workdir,
         force_download=FLAGS.config.force_download,
     )
@@ -534,10 +542,10 @@ def train_loop():
         hfds_buffer_size=FLAGS.config.hfds_buffer_size,
         hftr_tokenizer=tokenizer_factory(),
         split_name="validation",
-        batch_size=batch_size,
+        batch_size=batch_size_per_host,
         sequence_len=FLAGS.config.sequence_len,
-        pcount=jax.process_count(),
-        pindex=jax.process_index(),
+        n_shard=n_shard,
+        shard_id=shard_id,
         workdir=FLAGS.workdir,
         force_download=FLAGS.config.force_download,
     )
@@ -567,7 +575,7 @@ def train_loop():
             logging.debug("Starting evaluation action...")
             val_metrics = eval_loop(
                 state.params,
-                dataset_shard=val_ds_shard,
+                ds_shard=val_ds_shard,
                 n_eval_step=FLAGS.config.n_eval_step,
             )
             if best_val_loss > val_metrics["loss_avg"]:
@@ -588,8 +596,10 @@ def train_loop():
         # do the training step
         logging.debug(f"Training step {step}...")
         batch = get_batch(
-            train_ds_shard,
-            batch_size=batch_size,
+            shard=train_ds_shard,
+            n_subshard=n_host_per_shard,
+            subshard_id=subshard_id,
+            batch_size=batch_size_per_host,
             sequence_len=FLAGS.config.sequence_len,
             step=step,
         )
@@ -642,7 +652,7 @@ def eval_step(params, batch):
     return metrics
 
 
-def eval_loop(params, dataset_shard=None, n_eval_step=None, mode=None):
+def eval_loop(params, ds_shard=None, n_eval_step=None, mode=None):
     logging.info("Entering eval loop function...")
     if params is None:
         rng_init, _ = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
@@ -658,32 +668,47 @@ def eval_loop(params, dataset_shard=None, n_eval_step=None, mode=None):
         del state
 
     logging.info("Creating dataset...")
-    batch_size = global_batch_size_factory() // jax.process_count()  # per host
-    if dataset_shard is None:
-        dataset_shard = get_dataset(
+    n_host = jax.process_count()
+    host_id = jax.process_index()
+    n_shard = FLAGS.config.n_data_shard
+    n_host_per_shard = n_host // n_shard  # n_data_shard = n_host on smallest runs
+    global_batch_size = global_batch_size_factory()
+    batch_size_per_host = global_batch_size // n_host
+    shard_id = host_id // n_host_per_shard
+    subshard_id = host_id % n_host_per_shard
+    if ds_shard is None:
+        ds_shard = get_dataset(
             hfds_identifier=FLAGS.config.hfds_identifier,
             hfds_config=FLAGS.config.hfds_config,
             hfds_datacol=FLAGS.config.hfds_datacol,
             hfds_buffer_size=FLAGS.config.hfds_buffer_size,
             hftr_tokenizer=tokenizer_factory(),
             split_name=mode,
-            batch_size=batch_size,
+            batch_size=batch_size_per_host,
             sequence_len=FLAGS.config.sequence_len,
-            pcount=jax.process_count(),
-            pindex=jax.process_index(),
+            n_shard=n_shard,
+            shard_id=shard_id,
             workdir=FLAGS.workdir,
             force_download=FLAGS.config.force_download,
         )
+    n_batch_per_subshard = count_batches(
+        shard=ds_shard,
+        n_subshard=n_host_per_shard,
+        batch_size=batch_size_per_host,
+        sequence_len=FLAGS.config.sequence_len,
+    )
 
     global_mesh = global_mesh_factory()
     acc = None
     log_level_is_debug = logging.get_verbosity() == 1
     start_time = time.perf_counter()
-    for i in range(count_batches(dataset_shard, batch_size, FLAGS.config.sequence_len)):
+    for i in range(n_batch_per_subshard):
         logging.info(f"eval step {i}...")
         batch = get_batch(
-            dataset_shard,
-            batch_size=batch_size,
+            shard=ds_shard,
+            n_subshard=n_host_per_shard,
+            subshard_id=subshard_id,
+            batch_size=batch_size_per_host,
             sequence_len=FLAGS.config.sequence_len,
             step=i,
         )
@@ -732,7 +757,7 @@ def eval_loop(params, dataset_shard=None, n_eval_step=None, mode=None):
 
 
 def save_eval_loss():
-    eval_loss = eval_loop(params=None, n_eval_step=None, mode="validation")["loss_avg"]
+    eval_loss = eval_loop(params=None, mode="validation")["loss_avg"]
     logging.info(f"Eval loss: {eval_loss}")
     if jax.process_index() == 0:
         table = wandb.Table(
@@ -755,12 +780,6 @@ def main(argv):
     logging.info("=== Start of main() ===")
     logging.info(f"Python version: {sys.version.__repr__()}")
     jax.distributed.initialize()
-    # try:
-    #     jax.distributed.initialize()
-    # except Exception as e:
-    #     logging.warning("Jax distributed did not init successfully.")
-    #     logging.warning("Exception was:")
-    #     logging.warning(e)
     logging.info(f"JAX process: {jax.process_index()} / {jax.process_count()}")
     logging.info("=== Flags: ===")
     logging.info(f"experiment_group: {FLAGS.experiment_group}")
@@ -777,6 +796,12 @@ def main(argv):
         logging.info(f"{k}: {v}")
     assert FLAGS.config.d_model >= FLAGS.config.d_head
     assert FLAGS.config.d_model % FLAGS.config.d_head == 0
+
+    n_host = jax.process_count()
+    n_data_shard = FLAGS.config.n_data_shards
+    assert n_host >= n_data_shard
+    assert n_host % n_data_shard == 0
+
     n_device = jax.device_count()
     n_example = global_batch_size_factory()
     d_model = FLAGS.config.d_model

@@ -31,6 +31,7 @@ def get_base_config():
     config.hfds_buffer_size = 512  # example buffer length for batched tokenization
     config.sequence_len = 256
     config.force_download = True  # should be true unless you know what you're doing
+    config.n_data_shard = 16
 
     # architecture
     config.param_dtype = "float32"  # master copy of weights in fp32

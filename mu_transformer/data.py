@@ -19,6 +19,7 @@ from typing import Optional
 
 import blobfile
 import datasets as hfds
+import jax
 import numpy as np
 import tqdm
 import transformers as hftr
@@ -61,10 +62,6 @@ def get_arr_dtype(vocab_size):
     return np.uint16
 
 
-# todo: maybe fix up the splitting logic to use the official vat/test split as test,
-#   if only one of them is provided.
-#   can then use a subset of official training split for validation,
-#   if an official validation split is not available.
 def write_dataset_to_memmap(
     hfds_identifier: str,
     hfds_config: str,
@@ -74,11 +71,11 @@ def write_dataset_to_memmap(
     split_name: str,
     batch_size: int,  # batch size per host
     sequence_len: int,
-    pcount: int,
-    pindex: int,
+    n_shard: int,
+    shard_id: int,
     workdir: str,
 ) -> str:
-    workdir_fp = get_shard_fp(workdir, hfds_identifier, split_name, pcount, pindex)
+    workdir_fp = get_shard_fp(workdir, hfds_identifier, split_name, n_shard, shard_id)
     temp_fp = posixpath.join("/tmp/", posixpath.split(workdir_fp)[-1])
 
     if blobfile.exists(workdir_fp):
@@ -87,8 +84,8 @@ def write_dataset_to_memmap(
     if os.path.exists(temp_fp):
         os.remove(temp_fp)
 
-    # get tokenizer info
     assert hftr_tokenizer.is_fast
+    assert n_shard == jax.process_count()  # during writing we assume n_shard = n_host
 
     # get available splits, and pick one.
     hfds_splits_set = set(hfds.get_dataset_split_names(hfds_identifier, hfds_config))
@@ -111,7 +108,7 @@ def write_dataset_to_memmap(
     # shard by host, then tokenize the host's shard only
     def processing_fn(examples):
         examples = examples[hfds_datacol]
-        examples = [e for i, e in enumerate(examples) if i % pcount == pindex]
+        examples = [e for i, e in enumerate(examples) if i % n_shard == shard_id]
         ids = hftr_tokenizer(
             examples,
             padding="max_length",
@@ -123,7 +120,7 @@ def write_dataset_to_memmap(
     ds = ds.map(
         processing_fn,
         batched=True,
-        batch_size=hfds_buffer_size * pcount,
+        batch_size=hfds_buffer_size * n_shard,
         remove_columns=list(ds.column_names),
     )
 
@@ -135,7 +132,7 @@ def write_dataset_to_memmap(
     except AttributeError as exep:
         logging.error("You're using a bad dataset, it has no num_examples metadata...")
         raise exep
-    sharded_canonical_count = canonical_count // pcount
+    sharded_canonical_count = canonical_count // n_shard
     ds = ds.take(sharded_canonical_count)
 
     # if need be, split the training set into train/validation/test.
@@ -202,12 +199,12 @@ def read_dataset_to_memmap(
     hfds_identifier: str,
     hftr_tokenizer: hftr.PreTrainedTokenizerFast,
     split_name: str,
-    pcount: int,
-    pindex: int,
+    n_shard: int,
+    shard_id: int,
     workdir: str,
     force_download: bool,
 ) -> np.ndarray:
-    workdir_fp = get_shard_fp(workdir, hfds_identifier, split_name, pcount, pindex)
+    workdir_fp = get_shard_fp(workdir, hfds_identifier, split_name, n_shard, shard_id)
     temp_fp = posixpath.join("/tmp/", posixpath.split(workdir_fp)[-1])
 
     if force_download or not blobfile.exists(temp_fp):
@@ -229,8 +226,8 @@ def get_dataset(
     split_name: str,
     batch_size: int,  # batch size per host
     sequence_len: int,
-    pcount: int,
-    pindex: int,
+    n_shard: int,
+    shard_id: int,
     workdir: str,
     force_download: bool,
 ) -> np.ndarray:
@@ -244,8 +241,8 @@ def get_dataset(
         split_name=split_name,
         batch_size=batch_size,
         sequence_len=sequence_len,
-        pcount=pcount,
-        pindex=pindex,
+        n_shard=n_shard,
+        shard_id=shard_id,
         workdir=workdir,
     )
     logging.info("Calling read_dataset_to_memmap...")
@@ -253,28 +250,43 @@ def get_dataset(
         hfds_identifier=hfds_identifier,
         hftr_tokenizer=hftr_tokenizer,
         split_name=split_name,
-        pcount=pcount,
-        pindex=pindex,
+        n_shard=n_shard,
+        shard_id=shard_id,
         workdir=workdir,
         force_download=force_download,
     )
     return arr
 
 
-def get_batch(arr, batch_size, sequence_len, step, out_dtype=np.int32):
-    # todo: support shuffle indices
-    chunk_size = batch_size * sequence_len
-    n_chunks = arr.shape[0] // chunk_size
-    assert arr.shape[0] == n_chunks * chunk_size
-    folded_step = step % n_chunks
-    batch = arr[chunk_size * folded_step : chunk_size * (folded_step + 1)]
+def get_batch(
+    shard, n_subshard, subshard_id, batch_size, sequence_len, step, out_dtype=np.int32
+):
+    assert shard.ndim == 1
+    shard_len = shard.shape[0]
+    subshard_len = shard.shape[0] // n_subshard
+    batch_len = batch_size * sequence_len
+
+    n_batch_per_subshard = subshard_len // batch_len
+    assert shard_len == n_subshard * n_batch_per_subshard * batch_len
+
+    subshard_start = subshard_id * subshard_len
+    folded_step = step % n_batch_per_subshard
+
+    batch_start = subshard_start + folded_step * batch_len
+    batch_end = batch_start + batch_len
+
+    batch = shard[batch_start:batch_end]
     batch = np.reshape(batch, [batch_size, sequence_len])
     batch = batch.astype(out_dtype)
     return batch
 
 
-def count_batches(arr, batch_size, sequence_len):
-    assert arr.ndim == 1
-    count = arr.shape[0]
-    assert count % (batch_size * sequence_len) == 0
-    return count // (batch_size * sequence_len)
+def count_batches(shard, n_subshard, batch_size, sequence_len):
+    assert shard.ndim == 1
+    shard_len = shard.shape[0]
+    subshard_len = shard.shape[0] // n_subshard
+    batch_len = batch_size * sequence_len
+
+    n_batch_per_subshard = subshard_len // batch_len
+    assert shard_len == n_subshard * n_batch_per_subshard * batch_len
+    return n_batch_per_subshard
