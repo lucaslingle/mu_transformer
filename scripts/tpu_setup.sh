@@ -1,4 +1,6 @@
 set -e;
+pgrep -f 'unattended-upgrade' | xargs sudo kill -s 9;
+sudo apt remove unattended-upgrades -y;
 sudo apt update;
 sudo apt install python3-venv -y;
 sudo apt install python3.8-venv -y;

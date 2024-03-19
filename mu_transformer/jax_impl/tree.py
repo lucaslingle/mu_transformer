@@ -11,18 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import jax
-import jax.numpy as jnp
+from flax import traverse_util
 
 
-def coord_check_l1(act):
-    # https://github.com/microsoft/mup?tab=readme-ov-file#coord-check
-    stat = jax.lax.stop_gradient(jnp.mean(jnp.abs(act)))
-    return stat
+def flattened_traversal(fn):
+    def mask(tree):
+        flat = traverse_util.flatten_dict(tree)
+        return traverse_util.unflatten_dict({k: fn(k, v) for k, v in flat.items()})
 
-
-def split_coord_checks(name, stat_tensor):
-    # for logging. splits the sown stats by layer when using remat_scan or scan(remat),
-    # after they've been stacked into a single output tensor
-    stats = jnp.split(stat_tensor, stat_tensor.shape[0], axis=0)
-    return {f"{name}_{i:02}": stats[i] for i in range(stat_tensor.shape[0])}
+    return mask

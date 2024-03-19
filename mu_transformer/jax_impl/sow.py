@@ -11,19 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from mu_transformer.configs.base import get_base_config
+import jax
+import jax.numpy as jnp
 
 
-def get_config():
-    config = get_base_config()
-    config.model_size = "tiny"
+def coord_check_l1(act):
+    # https://github.com/microsoft/mup?tab=readme-ov-file#coord-check
+    stat = jax.lax.stop_gradient(jnp.mean(jnp.abs(act)))
+    return stat
 
-    # mesh
-    config.n_mesh_rows = 8
-    config.n_mesh_cols = 1
-    config.n_mesh_planes = 1
 
-    # width
-    config.d_model = 256
-
-    return config
+def split_and_name(name, stat_tensor):
+    # for logging. splits the sown stats by layer when using remat_scan or scan(remat),
+    # after they've been stacked into a single output tensor
+    stats = jnp.split(stat_tensor, stat_tensor.shape[0], axis=0)
+    return {f"{name}_{i:02}": stats[i] for i in range(stat_tensor.shape[0])}

@@ -32,4 +32,4 @@ class Dimensions:
 
     def __getitem__(self, keys):
         assert isinstance(keys, str)
-        return [self._get_kv(k) for k in keys]
+        return tuple([self._get_kv(k) for k in keys])
