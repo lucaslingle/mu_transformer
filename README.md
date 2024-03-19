@@ -11,7 +11,7 @@
 Transformer decoder with [Mu-Parameterization](https://arxiv.org/abs/2203.03466) in Jax/Flax.
 
 - Passes the correctness tests: *wider is better throughout training* and *coordinate checking*.
-- Supports fully-sharded data parallelism (FSDP) using strategy from the [GSPMD paper](https://arxiv.org/abs/2105.04663).
+- Supports fully-sharded data parallelism (FSDP) using the strategy from the [GSPMD paper](https://arxiv.org/abs/2105.04663).
 - Supports mixed precision training, performing forward/backward in bfloat16.
 - Supports any huggingface text dataset and tokenizer.
 - Supports bitwise-deterministic training and dataset caching on GCS. 
@@ -84,7 +84,7 @@ poetry run python3 mu_transformer/jax_impl/launch.py \
 - Uses relative scaling rules, similar to Appendix B.1 of Tensor Programs V.
 - Requires ```config.d_base``` fixed across model sizes for mu-transfer to work. 
 - Requires ```config.d_head``` fixed across model sizes for mu-transfer to work. 
-- Requires ```config.ff_multiple``` fixes across model sizes for mu-transfer to work. 
+- Requires ```config.ff_multiple``` fixed across model sizes for mu-transfer to work. 
 - Parameterizes ```config.qk_scale``` used by muP as a freely settable constant.
 - When changing ```config.d_head``` from the default, you should also change ```config.qk_scale```. 
 
