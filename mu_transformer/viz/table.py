@@ -55,3 +55,4 @@ for i, width in enumerate([128, 2048, 512], 1):
 print(lines[0])
 print(lines[2])
 print(lines[1])
+print("\midrule")
