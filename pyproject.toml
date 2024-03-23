@@ -7,8 +7,8 @@ license = "Apache License 2.0"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-# python = ">=3.9,<3.10.dev0"
-python = "3.10.*"
+python = ">=3.9,<3.10.dev0"  # tpu v3
+# python = "3.10.*"  # tpu v4
 absl-py = "2.0.0"
 blobfile = "2.1.1"
 chex = "0.1.85"
