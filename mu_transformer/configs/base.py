@@ -51,6 +51,7 @@ def get_base_config():
     config.act_square = False  # activation squaring
     config.norm_eps = 1e-6  # rmsnorm epsilon
     config.norm_gains = False  # rmsnorm gains
+    config.norm_gains_type = "vector"  # vector or scalar
     config.proj_biases = False  # projections with bias
 
     # optimization

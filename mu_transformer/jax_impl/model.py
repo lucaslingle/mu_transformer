@@ -49,6 +49,7 @@ class TransformerConfig:
     act_square: bool
     norm_eps: float
     norm_gains: bool
+    norm_gains_type: str
     proj_biases: bool
     n_layer: int
     n_vocab: int
@@ -77,10 +78,13 @@ class RMSNorm(nn.Module):
         rms = jnp.sqrt(ms + eps)
         normed = x / rms[..., None]
         if self.hps.norm_gains:
+            g_is_scalar = self.hps.norm_gains_type == "scalar"
+            g_shape = [1] if g_is_scalar else [self.hps.d_model]
+            g_mesh = MESH_AXES["N"] if g_is_scalar else MESH_AXES["Y"]
             normed *= self.param(
                 "g_" + self.suffix,
-                nn.with_partitioning(init.ones, MESH_AXES["Y"], self.global_mesh),
-                [self.hps.d_model],
+                nn.with_partitioning(init.ones, g_mesh, self.global_mesh),
+                g_shape,
                 self.hps.param_dtype,
             ).astype(self.hps.dtype)[None, None, ...]
         return normed
