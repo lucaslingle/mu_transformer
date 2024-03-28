@@ -35,6 +35,7 @@ do
         --config.force_download=False \
         --config.n_ds_shard=16 \
         --config.lr_base="$LR" \
+        --config.proj_biases=True \
         --config.norm_gains=True \
         --config.optim_rule="sp";
 done;
