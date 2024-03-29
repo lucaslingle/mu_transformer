@@ -355,7 +355,7 @@ class MultiLayerPerceptron(nn.Module):
         if self.hps.act_name == "swiglu":
             # a more communication-efficient implementation of swiglu would define
             # two separate projections for xg, xf with the same sharding.
-            xg, xf = jnp.split(x, 2, axis=-2)
+            xg, xf = jnp.split(x, 2, axis=-1)
             x = jax.nn.silu(xg) * xf
         else:
             x = getattr(jax.nn, self.hps.act_name)(x)
