@@ -295,7 +295,10 @@ class MultiLayerPerceptron(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        d_ff = self.hps.ff_multiple * self.hps.d_model
+        d_ff = int(self.hps.ff_multiple * self.hps.d_model)
+        if self.hps.act_name == "swiglu":
+            d_ff = (d_ff // 2) * 2
+
         shapes = Dimensions(
             B=x.shape[0],
             T=self.hps.sequence_len,
@@ -345,8 +348,19 @@ class MultiLayerPerceptron(nn.Module):
             x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fh_l1", coord_check_l1(x))
 
-        x = getattr(jax.nn, self.hps.act_name)(x)
-        x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+        if self.hps.act_name == "swiglu":
+            # our implementation of swiglu involves some cross-device communication
+            # when the number of device mesh columns Y is > 1.
+            #
+            # a more communication-efficient implementation would define
+            # two separate projections for xg, xf with the same sharding.
+            xg, xf = jnp.split(x, 2, axis=-2)
+            xg = jax.nn.silu(xg)
+            x = xg * xf
+            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+        else:
+            x = getattr(jax.nn, self.hps.act_name)(x)
+            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         if self.hps.act_square:
             x = jnp.square(x)
             x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)

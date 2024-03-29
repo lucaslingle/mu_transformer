@@ -47,7 +47,7 @@ def get_base_config():
     config.qk_scale = 1 / 128
     config.qk_norm = False  # normalize queries and keys using rmsnorm?
     config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
-    config.act_name = "relu"  # any activation defined in jax.nn
+    config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
     config.act_square = False  # activation squaring
     config.norm_eps = 1e-6  # rmsnorm epsilon
     config.norm_gains = False  # rmsnorm gains
