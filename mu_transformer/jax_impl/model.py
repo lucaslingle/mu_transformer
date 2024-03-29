@@ -295,15 +295,19 @@ class MultiLayerPerceptron(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        d_ff = int(self.hps.ff_multiple * self.hps.d_model)
+        d_ff_in = int(self.hps.ff_multiple * self.hps.d_model)
         if self.hps.act_name == "swiglu":
-            d_ff = (d_ff // 2) * 2
+            d_ff_in = (d_ff_in // 2) * 2
+            d_ff_out = d_ff_in // 2
+        else:
+            d_ff_out = d_ff_in
 
         shapes = Dimensions(
             B=x.shape[0],
             T=self.hps.sequence_len,
             M=self.hps.d_model,
-            F=d_ff,
+            E=d_ff_in,
+            F=d_ff_out,
         )
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
@@ -311,14 +315,14 @@ class MultiLayerPerceptron(nn.Module):
         i_init = init.normal(self.hps.d_model**-0.5)
         o_init = {
             "zero": init.zeros,
-            "vs": init.normal(d_ff**-0.5),
+            "vs": init.normal(d_ff_out**-0.5),
         }[self.hps.r_init]
         b_init = init.zeros
 
         wi = self.param(
             "w_fi",
             nn.with_partitioning(i_init, MESH_AXES["XY"], self.global_mesh),
-            shapes["MF"],
+            shapes["ME"],
             self.hps.param_dtype,
         )
         wo = self.param(
@@ -331,7 +335,7 @@ class MultiLayerPerceptron(nn.Module):
             bi = self.param(
                 "b_fi",
                 nn.with_partitioning(b_init, MESH_AXES["Y"], self.global_mesh),
-                shapes["F"],
+                shapes["E"],
                 self.hps.param_dtype,
             )
             bo = self.param(
@@ -341,7 +345,7 @@ class MultiLayerPerceptron(nn.Module):
                 self.hps.param_dtype,
             )
 
-        x = jnp.einsum("btm,mf->btf", x, wi.astype(self.hps.dtype))
+        x = jnp.einsum("btm,me->bte", x, wi.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         if self.hps.proj_biases:
             x += bi.astype(self.hps.dtype)[None, None, ...]  # noqa
@@ -349,18 +353,14 @@ class MultiLayerPerceptron(nn.Module):
         self.sow("intermediates", "fh_l1", coord_check_l1(x))
 
         if self.hps.act_name == "swiglu":
-            # our implementation of swiglu involves some cross-device communication
-            # when the number of device mesh columns Y is > 1.
-            #
-            # a more communication-efficient implementation would define
+            # a more communication-efficient implementation of swiglu would define
             # two separate projections for xg, xf with the same sharding.
             xg, xf = jnp.split(x, 2, axis=-2)
-            xg = jax.nn.silu(xg)
-            x = xg * xf
-            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+            x = jax.nn.silu(xg) * xf
         else:
             x = getattr(jax.nn, self.hps.act_name)(x)
-            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+        x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+
         if self.hps.act_square:
             x = jnp.square(x)
             x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
