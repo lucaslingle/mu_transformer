@@ -27,7 +27,7 @@ seaborn = "^0.13.2"
 tensorflow = "2.12.1"
 tqdm = "4.66.1"
 transformers = "4.36.2"
-wandb = "^0.16.1"
+wandb = "^0.16.5"
 
 [tool.poetry.group.cpu.dependencies]
 jax = {extras = ["cpu"], version = "0.4.24"}
