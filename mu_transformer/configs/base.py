@@ -46,6 +46,7 @@ def get_base_config():
     config.u_init = "mup"  # unembedding projection init: mup, sp, zero
     config.qk_scale = 1 / 128
     config.qk_norm = False  # normalize queries and keys using rmsnorm?
+    config.kv_mqa = False
     config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
     config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
     config.act_square = False  # activation squaring
