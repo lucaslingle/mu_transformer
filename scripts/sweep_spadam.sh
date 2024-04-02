@@ -1,7 +1,7 @@
 #!/bin/bash
 
 Help() {
-  echo "Syntax: sweep_spadam.sh [l|h]"
+  echo "Syntax: sweep_sp.sh [l|h]"
   echo "options:"
   echo "l     -log2(LR): a positive integer."
   echo "h     Print this Help."
@@ -21,7 +21,7 @@ while getopts "l:h" option; do
   esac
 done
 
-GROUP_NAME="spadam";
+GROUP_NAME="sp";
 LR=$(bc -l <<< "2 ^(-$LR_IDX)");
 for size in "small" "medium" "large";
 do
@@ -37,5 +37,7 @@ do
         --config.lr_base="$LR" \
         --config.proj_biases=True \
         --config.norm_gains=True \
+        --config.qk_scale=0.08838834764831845 \
+        --config.uinit="sp" \
         --config.optim_rule="sp";
 done;
