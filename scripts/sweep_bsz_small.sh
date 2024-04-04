@@ -22,7 +22,7 @@ while getopts "l:h" option; do
 done
 
 GROUP_NAME="smol";
-LR=$(bc -l <<< "2 ^(-$LR_IDX-1)");
+LR=$(bc -l <<< "2 ^(-$LR_IDX-1)");  # -1 in exp to mult all LR by .5 for 4x bsz decrease
 for size in "small" "medium" "large";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \

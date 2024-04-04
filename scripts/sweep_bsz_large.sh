@@ -22,7 +22,7 @@ while getopts "l:h" option; do
 done
 
 GROUP_NAME="yuge";
-LR=$(bc -l <<< "2 ^(-$LR_IDX+1)");  # +1 to exp, to mult all LR by 2 for 4x bsz increase
+LR=$(bc -l <<< "2 ^(-$LR_IDX+1)");  # +1 in exp to mult all LR by 2 for 4x bsz increase
 for size in "small" "medium" "large";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
