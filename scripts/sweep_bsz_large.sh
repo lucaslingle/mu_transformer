@@ -21,8 +21,8 @@ while getopts "l:h" option; do
   esac
 done
 
-GROUP_NAME="bsz";
-LR=$(bc -l <<< "2 ^(-$LR_IDX)");
+GROUP_NAME="bsz_large";
+LR=$(bc -l <<< "2 ^(-$LR_IDX+1)");  # +1 to exp, to mult all LR by 2 for 4x bsz increase
 for size in "small" "medium" "large";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
@@ -37,9 +37,9 @@ do
         --config.lr_base="$LR" \
         --config.dtype=bfloat16 \
         --config.tokens_per_global_batch=1048576 \
-        --config.optim_beta1=0.9 \
-        --config.optim_beta2=0.95 \
-        --config.optim_eps=0.00000001 \
-        --config.n_warmup_step=2400 \
-        --config.n_pretrain_step=30000;
+        --config.optim_beta1=0.6 \
+        --config.optim_beta2=0.92 \
+        --config.optim_eps=0.000000005 \
+        --config.n_warmup_step=2500 \
+        --config.n_pretrain_step=31250;
 done

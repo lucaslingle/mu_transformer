@@ -21,8 +21,8 @@ while getopts "l:h" option; do
   esac
 done
 
-GROUP_NAME="tinybsz";
-LR=$(bc -l <<< "2 ^(-$LR_IDX)");
+GROUP_NAME="bsz_small";
+LR=$(bc -l <<< "2 ^(-$LR_IDX-1)");
 for size in "small" "medium" "large";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
@@ -37,9 +37,9 @@ do
         --config.lr_base="$LR" \
         --config.dtype=bfloat16 \
         --config.tokens_per_global_batch=65536 \
-        --config.optim_beta1=0.9 \
-        --config.optim_beta2=0.999 \
-        --config.optim_eps=0.00000001 \
+        --config.optim_beta1=0.975 \
+        --config.optim_beta2=0.995 \
+        --config.optim_eps=0.00000002 \
         --config.n_warmup_step=40000 \
         --config.n_pretrain_step=500000;
 done
