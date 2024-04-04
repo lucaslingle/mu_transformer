@@ -37,9 +37,9 @@ do
         --config.lr_base="$LR" \
         --config.dtype=bfloat16 \
         --config.tokens_per_global_batch=65536 \
-        --config.optim_beta1=0.975 \
-        --config.optim_beta2=0.995 \
-        --config.optim_eps=0.00000002 \
+        --config.optim_beta1=0.9 \
+        --config.optim_beta2=0.98 \
+        --config.optim_eps=0.00000001 \
         --config.n_warmup_step=40000 \
         --config.n_pretrain_step=500000;
 done
