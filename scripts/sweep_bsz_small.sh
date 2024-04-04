@@ -21,7 +21,7 @@ while getopts "l:h" option; do
   esac
 done
 
-GROUP_NAME="bsz_small";
+GROUP_NAME="smol";
 LR=$(bc -l <<< "2 ^(-$LR_IDX-1)");
 for size in "small" "medium" "large";
 do
