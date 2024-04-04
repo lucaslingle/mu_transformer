@@ -39,7 +39,7 @@ do
         --config.tokens_per_global_batch=1048576 \
         --config.optim_beta1=0.9 \
         --config.optim_beta2=0.98 \
-        --config.optim_eps=0.00000001 \
+        --config.optim_eps=0.000000001 \
         --config.n_warmup_step=2500 \
         --config.n_pretrain_step=31250;
 done
