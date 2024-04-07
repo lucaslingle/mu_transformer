@@ -38,6 +38,6 @@ do
         --config.proj_biases=True \
         --config.norm_gains=True \
         --config.qk_scale=0.08838834764831845 \
-        --config.uinit="sp" \
+        --config.u_init="sp" \
         --config.optim_rule="sp";
 done;
