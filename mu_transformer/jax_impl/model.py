@@ -44,11 +44,13 @@ class TransformerConfig:
     u_init: str
     qk_scale: float
     qk_norm: bool
+    kv_mqa: bool
     rotary_base: int
     act_name: str
     act_square: bool
     norm_eps: float
     norm_gains: bool
+    norm_gains_type: str
     proj_biases: bool
     n_layer: int
     n_vocab: int
@@ -77,18 +79,22 @@ class RMSNorm(nn.Module):
         rms = jnp.sqrt(ms + eps)
         normed = x / rms[..., None]
         if self.hps.norm_gains:
+            g_is_scalar = self.hps.norm_gains_type == "scalar"
+            g_shape = [1] if g_is_scalar else [self.hps.d_model]
+            g_mesh = MESH_AXES["N"] if g_is_scalar else MESH_AXES["Y"]
             normed *= self.param(
                 "g_" + self.suffix,
-                nn.with_partitioning(init.ones, MESH_AXES["Y"], self.global_mesh),
-                [self.hps.d_model],
+                nn.with_partitioning(init.ones, g_mesh, self.global_mesh),
+                g_shape,
                 self.hps.param_dtype,
             ).astype(self.hps.dtype)[None, None, ...]
         return normed
 
 
 class RotaryEncoding(nn.Module):
-    rotary_base: float
+    hps: TransformerConfig
     global_mesh: jax.sharding.Mesh
+    is_keys: bool
 
     @nn.compact
     def __call__(self, x):
@@ -101,7 +107,7 @@ class RotaryEncoding(nn.Module):
 
         dimensions = jnp.arange(width // 2)  # half each for sin and cos
         dimensions = sharding_constraint(dimensions, MESH_AXES["N"], self.global_mesh)
-        ang_freqs = jnp.power(self.rotary_base, -dimensions / (width // 2))
+        ang_freqs = jnp.power(self.hps.rotary_base, -dimensions / (width // 2))
         ang_freqs = ang_freqs[None, ...]  # expand along length axis
         ang_freqs = sharding_constraint(ang_freqs, MESH_AXES["NN"], self.global_mesh)
 
@@ -124,17 +130,20 @@ class RotaryEncoding(nn.Module):
         chex.assert_shape(cos, [1, 1, length, width // 2])
         chex.assert_shape(sin, [1, 1, length, width // 2])
 
+        broadcast = self.hps.kv_mqa and self.is_keys
+        mesh_axes = MESH_AXES["XNNN"] if broadcast else MESH_AXES["XYNN"]
+
         even, odd = jnp.split(x, 2, axis=-1)
-        even = sharding_constraint(even, MESH_AXES["XYNN"], self.global_mesh)
-        odd = sharding_constraint(odd, MESH_AXES["XYNN"], self.global_mesh)
+        even = sharding_constraint(even, mesh_axes, self.global_mesh)
+        odd = sharding_constraint(odd, mesh_axes, self.global_mesh)
 
         r_even = even * cos - odd * sin
         r_odd = even * sin + odd * cos
-        r_even = sharding_constraint(r_even, MESH_AXES["XYNN"], self.global_mesh)
-        r_odd = sharding_constraint(r_odd, MESH_AXES["XYNN"], self.global_mesh)
+        r_even = sharding_constraint(r_even, mesh_axes, self.global_mesh)
+        r_odd = sharding_constraint(r_odd, mesh_axes, self.global_mesh)
 
         r = jnp.concatenate([r_even, r_odd], axis=-1)
-        r = sharding_constraint(r, MESH_AXES["XYNN"], self.global_mesh)
+        r = sharding_constraint(r, mesh_axes, self.global_mesh)
         chex.assert_shape(r, x.shape)
         return r
 
@@ -170,6 +179,7 @@ class MultiHeadAttention(nn.Module):
             M=self.hps.d_model,
             D=self.hps.d_head,
             H=self.hps.d_model // self.hps.d_head,
+            I=1,
         )
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
@@ -180,6 +190,8 @@ class MultiHeadAttention(nn.Module):
         o_init = {"zero": init.zeros, "vs": init.normal(stddev)}[self.hps.r_init]
         b_init = init.zeros
 
+        w_kv_mesh_axes = MESH_AXES["XNN"] if self.hps.kv_mqa else MESH_AXES["XYN"]
+        w_kv_shape = shapes["MID"] if self.hps.kv_mqa else shapes["MHD"]
         wq = self.param(
             "w_aq",
             nn.with_partitioning(q_init, MESH_AXES["XYN"], self.global_mesh),
@@ -188,14 +200,14 @@ class MultiHeadAttention(nn.Module):
         )
         wk = self.param(
             "w_ak",
-            nn.with_partitioning(kv_init, MESH_AXES["XYN"], self.global_mesh),
-            shapes["MHD"],
+            nn.with_partitioning(kv_init, w_kv_mesh_axes, self.global_mesh),
+            w_kv_shape,
             self.hps.param_dtype,
         )
         wv = self.param(
             "w_av",
-            nn.with_partitioning(kv_init, MESH_AXES["XYN"], self.global_mesh),
-            shapes["MHD"],
+            nn.with_partitioning(kv_init, w_kv_mesh_axes, self.global_mesh),
+            w_kv_shape,
             self.hps.param_dtype,
         )
         wo = self.param(
@@ -205,6 +217,8 @@ class MultiHeadAttention(nn.Module):
             self.hps.param_dtype,
         )
         if self.hps.proj_biases:
+            b_kv_mesh_axes = MESH_AXES["NN"] if self.hps.kv_mqa else MESH_AXES["YN"]
+            b_kv_shape = shapes["ID"] if self.hps.kv_mqa else shapes["HD"]
             bq = self.param(
                 "b_aq",
                 nn.with_partitioning(b_init, MESH_AXES["YN"], self.global_mesh),
@@ -213,14 +227,14 @@ class MultiHeadAttention(nn.Module):
             )
             bk = self.param(
                 "b_ak",
-                nn.with_partitioning(b_init, MESH_AXES["YN"], self.global_mesh),
-                shapes["HD"],
+                nn.with_partitioning(b_init, b_kv_mesh_axes, self.global_mesh),
+                b_kv_shape,
                 self.hps.param_dtype,
             )
             bv = self.param(
                 "b_av",
-                nn.with_partitioning(b_init, MESH_AXES["YN"], self.global_mesh),
-                shapes["HD"],
+                nn.with_partitioning(b_init, b_kv_mesh_axes, self.global_mesh),
+                b_kv_shape,
                 self.hps.param_dtype,
             )
             bo = self.param(
@@ -230,19 +244,20 @@ class MultiHeadAttention(nn.Module):
                 self.hps.param_dtype,
             )
 
+        kv_mesh_axes = MESH_AXES["XNNN"] if self.hps.kv_mqa else MESH_AXES["XYNN"]
         q = jnp.einsum("bim,mhd->bhid", x, wq.astype(self.hps.dtype))
         k = jnp.einsum("bim,mhd->bhid", x, wk.astype(self.hps.dtype))
         v = jnp.einsum("bim,mhd->bhid", x, wv.astype(self.hps.dtype))
         q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
-        k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
-        v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
+        k = sharding_constraint(k, kv_mesh_axes, self.global_mesh)
+        v = sharding_constraint(v, kv_mesh_axes, self.global_mesh)
         if self.hps.proj_biases:
             q += jnp.expand_dims(bq.astype(self.hps.dtype), (0, 2))  # noqa
             k += jnp.expand_dims(bk.astype(self.hps.dtype), (0, 2))  # noqa
             v += jnp.expand_dims(bv.astype(self.hps.dtype), (0, 2))  # noqa
             q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
-            k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
-            v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
+            k = sharding_constraint(k, kv_mesh_axes, self.global_mesh)
+            v = sharding_constraint(v, kv_mesh_axes, self.global_mesh)
         self.sow("intermediates", "aq_l1", coord_check_l1(q))
         self.sow("intermediates", "ak_l1", coord_check_l1(k))
         self.sow("intermediates", "av_l1", coord_check_l1(v))
@@ -253,10 +268,10 @@ class MultiHeadAttention(nn.Module):
             k = RMSNorm(self.hps, self.global_mesh, "ak")(k)
 
         if self.hps.rotary_base > 0:
-            q = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(q)
-            k = RotaryEncoding(self.hps.rotary_base, self.global_mesh)(k)
+            q = RotaryEncoding(self.hps, self.global_mesh, is_keys=False)(q)
+            k = RotaryEncoding(self.hps, self.global_mesh, is_keys=True)(k)
             q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
-            k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
+            k = sharding_constraint(k, kv_mesh_axes, self.global_mesh)
             self.sow("intermediates", "aqr_l1", coord_check_l1(q))
             self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
@@ -291,12 +306,19 @@ class MultiLayerPerceptron(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        d_ff = self.hps.ff_multiple * self.hps.d_model
+        d_ff_in = int(self.hps.ff_multiple * self.hps.d_model)
+        if self.hps.act_name == "swiglu":
+            d_ff_in = (d_ff_in // 2) * 2
+            d_ff_out = d_ff_in // 2
+        else:
+            d_ff_out = d_ff_in
+
         shapes = Dimensions(
             B=x.shape[0],
             T=self.hps.sequence_len,
             M=self.hps.d_model,
-            F=d_ff,
+            E=d_ff_in,
+            F=d_ff_out,
         )
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
@@ -304,14 +326,14 @@ class MultiLayerPerceptron(nn.Module):
         i_init = init.normal(self.hps.d_model**-0.5)
         o_init = {
             "zero": init.zeros,
-            "vs": init.normal(d_ff**-0.5),
+            "vs": init.normal(d_ff_out**-0.5),
         }[self.hps.r_init]
         b_init = init.zeros
 
         wi = self.param(
             "w_fi",
             nn.with_partitioning(i_init, MESH_AXES["XY"], self.global_mesh),
-            shapes["MF"],
+            shapes["ME"],
             self.hps.param_dtype,
         )
         wo = self.param(
@@ -324,7 +346,7 @@ class MultiLayerPerceptron(nn.Module):
             bi = self.param(
                 "b_fi",
                 nn.with_partitioning(b_init, MESH_AXES["Y"], self.global_mesh),
-                shapes["F"],
+                shapes["E"],
                 self.hps.param_dtype,
             )
             bo = self.param(
@@ -334,15 +356,22 @@ class MultiLayerPerceptron(nn.Module):
                 self.hps.param_dtype,
             )
 
-        x = jnp.einsum("btm,mf->btf", x, wi.astype(self.hps.dtype))
+        x = jnp.einsum("btm,me->bte", x, wi.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         if self.hps.proj_biases:
             x += bi.astype(self.hps.dtype)[None, None, ...]  # noqa
             x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fh_l1", coord_check_l1(x))
 
-        x = getattr(jax.nn, self.hps.act_name)(x)
+        if self.hps.act_name == "swiglu":
+            # a more communication-efficient implementation of swiglu would define
+            # two separate projections for xg, xf with the same sharding.
+            xg, xf = jnp.split(x, 2, axis=-1)
+            x = jax.nn.silu(xg) * xf
+        else:
+            x = getattr(jax.nn, self.hps.act_name)(x)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+
         if self.hps.act_square:
             x = jnp.square(x)
             x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
