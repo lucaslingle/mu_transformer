@@ -1,7 +1,8 @@
 #!/bin/bash
 
+GROUP_NAME="bsz_large";
 Help() {
-  echo "Syntax: sweep_bsz_large.sh [l|h]"
+  echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
   echo "l     -log2(LR): a positive integer."
   echo "h     Print this Help."
@@ -21,8 +22,7 @@ while getopts "l:h" option; do
   esac
 done
 
-GROUP_NAME="yuge";
-LR=$(bc -l <<< "2 ^(-$LR_IDX+1)");  # +1 in exp to mult all LR by 2 for 4x bsz increase
+LR=$(bc -l <<< "2 ^(-$LR_IDX+1)");  # add +1 to exponent to mult LRs by 2x.
 for size in "small" "medium" "large";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
