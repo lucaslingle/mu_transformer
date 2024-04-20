@@ -1,7 +1,8 @@
 #!/bin/bash
 
+GROUP_NAME="sp";
 Help() {
-  echo "Syntax: sweep_sp.sh [l|h]"
+  echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
   echo "l     -log2(LR): a positive integer."
   echo "h     Print this Help."
@@ -21,7 +22,6 @@ while getopts "l:h" option; do
   esac
 done
 
-GROUP_NAME="sp";
 LR=$(bc -l <<< "2 ^(-$LR_IDX)");
 for size in "small" "medium" "large";
 do
