@@ -1,6 +1,6 @@
 #!/bin/bash
 
-GROUP_NAME="combined";
+GROUP_NAME="combined_no_wd";
 Help() {
   echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
