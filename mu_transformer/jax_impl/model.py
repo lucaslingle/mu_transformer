@@ -24,7 +24,6 @@ from flax.linen import partitioning as nnp
 
 from mu_transformer.dims import Dimensions
 from mu_transformer.jax_impl.shard import sharding_constraint
-from mu_transformer.jax_impl.sow import coord_check_l1
 
 INFTY_APPROX = 1e30
 MESH_AXES = Dimensions(X="X", Y="Y", N=None)
@@ -167,7 +166,6 @@ class MultiHeadAttention(nn.Module):
             C=self.downsample,
         )
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-        self.sow("intermediates", "ax_l1", coord_check_l1(x))
 
         stddev = self.hps.d_model**-0.5
         q_init = {"zero": init.zeros, "vs": init.normal(stddev)}[self.hps.q_init]
@@ -205,16 +203,9 @@ class MultiHeadAttention(nn.Module):
         q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
         k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
         v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
-        self.sow("intermediates", "aq_l1", coord_check_l1(q))
-        self.sow("intermediates", "ak_l1", coord_check_l1(k))
-        self.sow("intermediates", "av_l1", coord_check_l1(v))
 
         q = RotaryEncoding(self.hps, self.global_mesh, is_keys=False)(q)
         k = RotaryEncoding(self.hps, self.global_mesh, is_keys=True)(k)
-        q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
-        k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
-        self.sow("intermediates", "aqr_l1", coord_check_l1(q))
-        self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
         if self.downsample > 1:
             wl = self.param(
@@ -245,22 +236,18 @@ class MultiHeadAttention(nn.Module):
         mult = jnp.array([self.hps.qk_scale ** 0.5], dtype=self.hps.dtype)
         s = jnp.einsum("bhid,bhjd->bhij", q * mult, k * mult)
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
-        self.sow("intermediates", "as_l1", coord_check_l1(s))
 
         s = CausalMask(self.hps.sequence_len, self.global_mesh, self.downsample)(s)
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
 
         p = jax.nn.softmax(s, axis=-1)
         p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
-        self.sow("intermediates", "ap_l1", coord_check_l1(p))
 
         o = jnp.einsum("bhij,bhjd->bhid", p, v)
         o = sharding_constraint(o, MESH_AXES["XYNN"], self.global_mesh)
-        self.sow("intermediates", "ao_l1", coord_check_l1(o))
 
         r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.hps.dtype))
         r = sharding_constraint(r, MESH_AXES["XNY"], self.global_mesh)
-        self.sow("intermediates", "ar_l1", coord_check_l1(r))
         return r
 
 
@@ -278,7 +265,6 @@ class MultiLayerPerceptron(nn.Module):
             F=d_ff,
         )
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-        self.sow("intermediates", "fx_l1", coord_check_l1(x))
 
         i_init = init.normal(self.hps.d_model**-0.5)
         o_init = {
@@ -301,7 +287,6 @@ class MultiLayerPerceptron(nn.Module):
 
         x = jnp.einsum("btm,mf->btf", x, wi.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-        self.sow("intermediates", "fh_l1", coord_check_l1(x))
 
         x = getattr(jax.nn, self.hps.act_name)(x)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
@@ -309,11 +294,9 @@ class MultiLayerPerceptron(nn.Module):
         if self.hps.act_square:
             x = jnp.square(x)
             x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-        self.sow("intermediates", "fa_l1", coord_check_l1(x))
 
         x = jnp.einsum("btf,fm->btm", x, wo.astype(self.hps.dtype))
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-        self.sow("intermediates", "fr_l1", coord_check_l1(x))
         return x
 
 
@@ -351,8 +334,6 @@ class HCTransformerBlock(nn.Module):
             metadata_params={nn.PARTITION_NAME: None},
         )(**kws, downsample=1)(x, None)
         x, _ = nnp.remat(TransformerBlock)(**kws, downsample=self.kv_downsample)(x, None)
-
-        # todo: deal with sowing
         return x
 
 
