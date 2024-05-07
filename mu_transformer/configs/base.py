@@ -18,7 +18,7 @@ def get_base_config():
     config = config_dict.ConfigDict()
 
     # logging/plotting
-    config.sow_intermediates = True
+    config.sow_intermediates = True  # deal with this for hc transformer
     config.sow_param_info = True
     config.is_sweep = False
 
@@ -40,20 +40,16 @@ def get_base_config():
     config.d_base = 128  # base model width for relative scaling rules
     config.d_head = 128
     config.ff_multiple = 4  # mlp width multiple
-    config.e_norm = False  # normalize the embeddings using rmsnorm?
-    config.q_init = "vs"  # query projection init: vs, zero
+    config.q_init = "zero"  # query projection init: vs, zero
     config.r_init = "vs"  # residual projection init: vs, zero
     config.u_init = "mup"  # unembedding projection init: mup, sp, zero
     config.qk_scale = 1 / 128
-    config.qk_norm = False  # normalize queries and keys using rmsnorm?
-    config.kv_mqa = False
-    config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
+    config.kv_downsample = 4  # for hc transformer, how much to downsample?
+    config.hc_stack_depth = 0  # for hc transformer, use > 0.
+    config.rotary_base = 10_000
     config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
-    config.act_square = False  # activation squaring
+    config.act_square = True  # activation squaring
     config.norm_eps = 1e-6  # rmsnorm epsilon
-    config.norm_gains = False  # rmsnorm gains
-    config.norm_gains_type = "vector"  # vector or scalar
-    config.proj_biases = False  # projections with bias
 
     # optimization
     config.tokens_per_global_batch = 2**18  # batch size * sequence len
@@ -66,7 +62,7 @@ def get_base_config():
     config.optim_beta1 = 0.9
     config.optim_beta2 = 0.98
     config.optim_eps = 10**-9
-    config.wd = 0.0  # weight decay
+    config.wd = 0.1  # weight decay
 
     # periodic action settings
     config.n_print_step = 100  # print every
