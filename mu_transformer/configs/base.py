@@ -18,8 +18,6 @@ def get_base_config():
     config = config_dict.ConfigDict()
 
     # logging/plotting
-    config.sow_intermediates = True  # deal with this for hc transformer
-    config.sow_param_info = True
     config.is_sweep = False
 
     # huggingface tokenizer and dataset settings

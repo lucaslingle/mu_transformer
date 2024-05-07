@@ -47,7 +47,6 @@ from mu_transformer.jax_impl.model import TransformerConfig
 from mu_transformer.jax_impl.shard import get_namedsharding
 from mu_transformer.jax_impl.shard import sharding_constraint
 from mu_transformer.jax_impl.shard import to_global_array
-from mu_transformer.jax_impl.sow import split_and_name
 
 
 FLAGS = flags.FLAGS
@@ -381,12 +380,7 @@ def loss_fn(params, batch, config, global_mesh):
     batch = sharding_constraint(batch, MESH_AXES["XN"], global_mesh)
     init_args = [config, global_mesh]
     apply_args = [{"params": params}, batch]  # tokens shifted internally by model
-    if FLAGS.config.sow_intermediates:
-        logits, mv = Transformer(*init_args).apply(*apply_args, mutable="intermediates")
-        sown = clean_and_flatten(mv["intermediates"], split_filter={""})  # split all
-    else:
-        logits = Transformer(*init_args).apply(*apply_args)
-        sown = dict()
+    logits = Transformer(*init_args).apply(*apply_args)
     terms = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=batch)
     terms = sharding_constraint(terms, MESH_AXES["XN"], global_mesh)
     mask = get_loss_mask(
@@ -397,7 +391,7 @@ def loss_fn(params, batch, config, global_mesh):
         loss_term_avg=jnp.mean(mask * terms),
         loss_mask_avg=jnp.mean(mask),
     )
-    return metrics["loss_term_avg"], dict(**metrics, **sown)
+    return metrics["loss_term_avg"], metrics
 
 
 def get_current_lr(name, step):
@@ -421,20 +415,8 @@ def train_step(state, batch):
     metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
     # Compute param count
     metrics["param_count_total"] = size_pytree(state.params)
-    if FLAGS.config.sow_param_info:
-        # Maybe save update coordinate size (here, mean abs), scaled by current lr
-        step = state.step
-        p_old = state.params
-        state = state.apply_gradients(grads=grads)  # do update
-        p_new = state.params
-        p_old = clean_and_flatten(p_old, split_filter={"w_a", "w_f", "g_a", "g_f"})
-        p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f", "g_a", "g_f"})
-        p_update = jtu.tree_map(lambda a, b: jnp.mean(jnp.abs(a - b)), p_new, p_old)
-        p_update = {f"uu_{k}": v / get_current_lr(k, step) for k, v in p_update.items()}
-    else:
-        state = state.apply_gradients(grads=grads)  # do update
-        p_update = dict()
-    return state, dict(**metrics, **p_update)
+    state = state.apply_gradients(grads=grads)  # do update
+    return state, metrics
 
 
 def get_tpuv3_mfu(param_count, sec_per_step):
