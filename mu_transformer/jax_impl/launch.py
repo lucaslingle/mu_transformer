@@ -127,30 +127,18 @@ def get_standard_lrs():
     lr = FLAGS.config.lr_base
     return {
         # embeddings
-        "g_e": lr,
         "w_e": lr,
         # attention
-        "g_a": lr,
-        "g_aq": lr,
-        "g_ak": lr,
         "w_aq": lr,
         "w_ak": lr,
         "w_av": lr,
+        "w_al": lr,
         "w_ao": lr,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
         # feed-forward
-        "g_f": lr,
         "w_fi": lr,
         "w_fo": lr,
-        "b_fi": lr,
-        "b_fo": lr,
         # unembedding
-        "g_u": lr,
         "w_u": lr,
-        "b_u": lr,
     }
 
 
@@ -159,30 +147,18 @@ def get_mup_lrs():
     wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
     return {
         # embeddings
-        "g_e": lr,
         "w_e": lr,
         # attention
-        "g_a": lr,
-        "g_aq": lr,
-        "g_ak": lr,
         "w_aq": lr / wm,
         "w_ak": lr / wm,
         "w_av": lr / wm,
+        "w_al": lr / wm,
         "w_ao": lr / wm,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
         # feed-forward
-        "g_f": lr,
         "w_fi": lr / wm,
         "w_fo": lr / wm,
-        "b_fi": lr,
-        "b_fo": lr,
         # unembedding
-        "g_u": lr,
         "w_u": lr / wm,
-        "b_u": lr,
     }
 
 
