@@ -21,10 +21,10 @@ def get_base_config():
     config.is_sweep = False
 
     # huggingface tokenizer and dataset settings
-    config.hftr_tokenizer_name = "T5TokenizerFast"
-    config.hftr_tokenizer_instance = "t5-base"
-    config.hfds_identifier = "c4"
-    config.hfds_config = "en"
+    config.hftr_tokenizer_name = "GPT2TokenizerFast"
+    config.hftr_tokenizer_instance = "gpt-2"
+    config.hfds_identifier = "EleutherAI/the_pile_deduplicated"
+    config.hfds_config = None
     config.hfds_datacol = "text"
     config.hfds_buffer_size = 512  # example buffer length for batched tokenization
     config.sequence_len = 256
@@ -41,13 +41,13 @@ def get_base_config():
     config.q_init = "zero"  # query projection init: vs, zero
     config.r_init = "vs"  # residual projection init: vs, zero
     config.u_init = "mup"  # unembedding projection init: mup, sp, zero
-    config.qk_scale = 1 / 128
-    config.kv_downsample = 4  # for hc transformer, how much to downsample?
-    config.hc_stack_depth = 0  # for hc transformer, use > 0.
+    config.attn_scale = 1 / 128
     config.rotary_base = 10_000
+    config.hc_stack_depth = 0  # for hc transformer, use > 0.
+    config.kv_downsample = 1  # for hc transformer, how much to downsample?
+    config.window_len = 0  # full attn: 0, swa: >0, if >0 require divisor of sequence_len
     config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
     config.act_square = True  # activation squaring
-    config.norm_eps = 1e-6  # rmsnorm epsilon
 
     # optimization
     config.tokens_per_global_batch = 2**18  # batch size * sequence len

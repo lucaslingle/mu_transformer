@@ -40,11 +40,13 @@ class TransformerConfig:
     q_init: str
     r_init: str
     u_init: str
-    qk_scale: float
+    attn_scale: float
     rotary_base: int
+    hc_stack_depth: int
+    kv_downsample: int
+    window_len: int
     act_name: str
     act_square: bool
-    norm_eps: float
     n_layer: int
     n_vocab: int
     bos_token_id: int
@@ -64,10 +66,11 @@ class RMSNorm(nn.Module):
     hps: TransformerConfig
     global_mesh: jax.sharding.Mesh
     suffix: str
+    norm_eps: float = 1e-6
 
     @nn.compact
     def __call__(self, x):
-        eps = jnp.array([self.hps.norm_eps], dtype=x.dtype)
+        eps = jnp.array([self.norm_eps], dtype=x.dtype)
         ms = jnp.mean(jnp.square(x), axis=-1)
         rms = jnp.sqrt(ms + eps)
         normed = x / rms[..., None]
@@ -131,6 +134,8 @@ class CausalMask(nn.Module):
     length: int
     global_mesh: jax.sharding.Mesh
     downsample: int
+    window: bool
+    transpose: bool = False
 
     @nn.compact
     def __call__(self, x):
@@ -139,22 +144,29 @@ class CausalMask(nn.Module):
         i = sharding_constraint(i, MESH_AXES["NN"], self.global_mesh)
         j = sharding_constraint(j, MESH_AXES["NN"], self.global_mesh)
         mask = jnp.less(i, j)  # i.e., j > i, indicator masks out non-causal connections
+        if self.transpose:
+            assert self.downsample == 1
+            mask = jnp.transpose(mask)
         mask = sharding_constraint(mask, MESH_AXES["NN"], self.global_mesh)
         mask = mask[None, None, ...]
-        mask = sharding_constraint(mask, MESH_AXES["NNNN"], self.global_mesh)
+        if self.window:
+            mask = mask[None, ...]
+        mesh_axes = MESH_AXES["NNNN"] if not self.window else MESH_AXES["NNNNN"]
+        mask = sharding_constraint(mask, mesh_axes, self.global_mesh)
         x = x - jnp.array([INFTY_APPROX], dtype=x.dtype) * mask
-        x = sharding_constraint(x, MESH_AXES["XYNN"], self.global_mesh)
+        x = sharding_constraint(x, mesh_axes, self.global_mesh)
         return x
-
 
 
 class MultiHeadAttention(nn.Module):
     hps: TransformerConfig
     global_mesh: jax.sharding.Mesh
     downsample: int
+    window_len: int
 
     @nn.compact
     def __call__(self, x):
+        assert not ((self.window_len > 0) and (self.downsample > 1))
         shapes = Dimensions(
             B=x.shape[0],
             T=self.hps.sequence_len,
@@ -162,9 +174,12 @@ class MultiHeadAttention(nn.Module):
             D=self.hps.d_head,
             H=self.hps.d_model // self.hps.d_head,
             I=1,
-            R=T // self.downsample,
+            R=self.hps.sequence_len // self.downsample,
             C=self.downsample,
+            L=self.hps.sequence_len // self.window_len,
+            W=self.window_len,
         )
+
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
         stddev = self.hps.d_model**-0.5
@@ -204,10 +219,13 @@ class MultiHeadAttention(nn.Module):
         k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
         v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
 
-        q = RotaryEncoding(self.hps, self.global_mesh, is_keys=False)(q)
-        k = RotaryEncoding(self.hps, self.global_mesh, is_keys=True)(k)
+        q = RotaryEncoding(self.hps, self.global_mesh)(q)
+        k = RotaryEncoding(self.hps, self.global_mesh)(k)
+        q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
+        k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
 
         if self.downsample > 1:
+            # NOTE: we will assume there is no swa if downsample > 1
             wl = self.param(
                 "w_al",
                 nn.with_partitioning(w_init, MESH_AXES["XY"], self.global_mesh),
@@ -233,18 +251,79 @@ class MultiHeadAttention(nn.Module):
             v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
             v = jnp.pad(v[..., 0:-1, :], ((0, 0), (0, 0), (1, 0), (0, 0)))
 
-        mult = jnp.array([self.hps.qk_scale ** 0.5], dtype=self.hps.dtype)
-        s = jnp.einsum("bhid,bhjd->bhij", q * mult, k * mult)
-        s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
+        mult = jnp.array([self.hps.attn_scale ** 0.5], dtype=self.hps.dtype)
+        if self.window_len == 0:
+            s = jnp.einsum("bhid,bhjd->bhij", q * mult, k * mult)
+            s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
+            s = CausalMask(
+                sequence_len=self.hps.sequence_len,
+                global_mesh=self.global_mesh,
+                downsample=self.downsample,
+                window=False,
+            )(s)
+            s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
+            p = jax.nn.softmax(s, axis=-1)
+            p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
+            o = jnp.einsum("bhij,bhjd->bhid", p, v)
+            o = sharding_constraint(o, MESH_AXES["XYNN"], self.global_mesh)
+        else:
+            # todo: doing the reshape inside each call is likely slower even after compile,
+            #  but is simpler to read so used for this impl
+            q = jnp.reshape(q, shape["BHLWD"])
+            k = jnp.reshape(k, shape["BHLWD"])
+            v = jnp.reshape(v, shape["BHLWD"])
 
-        s = CausalMask(self.hps.sequence_len, self.global_mesh, self.downsample)(s)
-        s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
+            s_now = jnp.einsum("bhnid,bhnjd->bhnij", q * mult, k * mult)
+            s_now = sharding_constraint(s_now, MESH_AXES["XYNNN"], self.global_mesh)
+            s_now = CausalMask(
+                sequence_len=self.hps.sequence_len,
+                global_mesh=self.global_mesh,
+                downsample=1,
+                window=True,
+            )(s_now)
+            s_now = sharding_constraint(s_now, MESH_AXES["XYNNN"], self.global_mesh)
 
-        p = jax.nn.softmax(s, axis=-1)
-        p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
+            k_prev = jnp.pad(k[..., 0:-1, :, :], ((0, 0), (0, 0), (1, 0), (0, 0), (0, 0)))
+            v_prev = jnp.pad(v[..., 0:-1, :, :], ((0, 0), (0, 0), (1, 0), (0, 0), (0, 0)))
+            s_prev = jnp.einsum("bhnid,bhnjd->bhnij", q * mult, k_prev * mult)
+            s_prev = CausalMask(
+                sequence_len=self.hps.sequence_len,
+                global_mesh=self.global_mesh,
+                downsample=1,
+                window=True,
+                transpose=True,
+            )(s_prev)
+            s_prev = jnp.pad(
+                s_prev[..., 1:, :, :],
+                ((0, 0), (0, 0), (1, 0), (0, 0), (0, 0)),
+                constant_values=-INFTY_APPROX,
+            )
 
-        o = jnp.einsum("bhij,bhjd->bhid", p, v)
-        o = sharding_constraint(o, MESH_AXES["XYNN"], self.global_mesh)
+            s_now_max = jnp.max(s_now, axis=-1)
+            s_prev_max = jnp.max(s_prev, axis=-1)
+            s_max = jnp.maximum(s_now_max, s_prev_max)
+            s_max = jax.lax.stop_gradient(s_max)
+            s_now -= s_max[..., None]
+            s_prev -= s_max[..., None]
+
+            p_now = jnp.exp(s_now)
+            p_prev = jnp.exp(s_prev)
+            p_now = sharding_constraint(p_now, MESH_AXES["XYNNN"], self.global_mesh)
+            p_prev = sharding_constraint(p_prev, MESH_AXES["XYNNN"], self.global_mesh)
+
+            d_now = jnp.sum(p_now, axis=-1)
+            d_prev = jnp.sum(p_prev, axis=-1)
+            d = d_now + d_prev
+            p_now /= d
+            p_prev /= d
+
+            o_now = jnp.einsum("bhnij,bhnjd->bhnid", p_now, v)
+            o_now = sharding_constraint(o_now, MESH_AXES["XYNNN"], self.global_mesh)
+
+            o_prev = jnp.einsum("bhnij,bhnjd->bhnid", p_prev, v_prev)
+            o_prev = sharding_constraint(o_prev, MESH_AXES["XYNNN"], self.global_mesh)
+
+            o = o_now + o_prev
 
         r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.hps.dtype))
         r = sharding_constraint(r, MESH_AXES["XNY"], self.global_mesh)
@@ -304,12 +383,14 @@ class TransformerBlock(nn.Module):
     hps: TransformerConfig
     global_mesh: jax.sharding.Mesh
     downsample: int
+    window_len: int
 
     @nn.compact
     def __call__(self, x, _):
         kws = dict(hps=self.hps, global_mesh=self.global_mesh)
+        extras = dict(downsample=downsample, window_len=window_len)
 
-        x += MultiHeadAttention(**kws, downsample=downsample)(RMSNorm(**kws, suffix="a")(x))
+        x += MultiHeadAttention(**kws, **extras)(RMSNorm(**kws, suffix="a")(x))
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
         x += MultiLayerPerceptron(**kws)(RMSNorm(**kws, suffix="f")(x))
@@ -325,6 +406,9 @@ class HCTransformerBlock(nn.Module):
     @nn.compact
     def __call__(self, x):
         kws = dict(hps=self.hps, global_mesh=self.global_mesh)
+        extras_1 = dict(downsample=1, window_len=self.hps.window_len)
+        extras_2 = dict(downsample=self.kv_downsample, window_len=0)
+
         x, _ = nn.scan(
             nnp.remat(TransformerBlock),
             length=self.hps.hc_stack_depth - 1,
@@ -332,8 +416,9 @@ class HCTransformerBlock(nn.Module):
             variable_broadcast=False,
             split_rngs=dict(params=True),
             metadata_params={nn.PARTITION_NAME: None},
-        )(**kws, downsample=1)(x, None)
-        x, _ = nnp.remat(TransformerBlock)(**kws, downsample=self.kv_downsample)(x, None)
+        )(**kws, **extras_1)(x, None)
+
+        x, _ = nnp.remat(TransformerBlock)(**kws, **extras_2)(x, None)
         return x
 
 
@@ -398,9 +483,9 @@ class Transformer(nn.Module):
         x = jnp.pad(x[:, 0:-1], ((0, 0), (1, 0)), constant_values=self.hps.bos_token_id)
         x = nnp.remat(Embedding)(self.hps, self.global_mesh)(x)
 
-        use_hc = self.hps.hc_stack_depth == 0
-        block_cls = TransformerBlock if use_hc else HCTransformerBlock
-        n_block = self.hps.n_layer if use_hc else self.hps.n_layer // self.hc_stack_depth
+        use_hc = self.hps.hc_stack_depth > 0
+        block_cls = HCTransformerBlock if use_hc else TransformerBlock
+        n_block = self.hps.n_layer // self.hc_stack_depth if use_hc else self.hps.n_layer
         x, _ = nn.scan(
             nnp.remat(block_cls),
             length=n_block,
