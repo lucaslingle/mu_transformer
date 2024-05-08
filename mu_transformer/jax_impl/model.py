@@ -324,6 +324,8 @@ class MultiHeadAttention(nn.Module):
             o_prev = sharding_constraint(o_prev, MESH_AXES["XYNNN"], self.global_mesh)
 
             o = o_now + o_prev
+            o = jnp.reshape(o, shapes["BHTD"])
+            o = sharding_constraint(o, MESH_AXES["XYNN"], self.global_mesh)
 
         r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.hps.dtype))
         r = sharding_constraint(r, MESH_AXES["XNY"], self.global_mesh)
