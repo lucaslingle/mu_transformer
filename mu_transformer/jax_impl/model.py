@@ -134,7 +134,7 @@ class CausalMask(nn.Module):
     @nn.compact
     def __call__(self, x):
         i = jnp.arange(self.length)[..., None]
-        j = jnp.arange(self.length // self.downsample)[None, ...] * self.downsample
+        j = jnp.arange(self.length)[None, ...]
         i = sharding_constraint(i, MESH_AXES["NN"], self.global_mesh)
         j = sharding_constraint(j, MESH_AXES["NN"], self.global_mesh)
         mask = jnp.less(i, j)  # i.e., j > i, indicator masks out non-causal connections
@@ -265,14 +265,11 @@ class MultiLayerPerceptron(nn.Module):
 class TransformerBlock(nn.Module):
     hps: TransformerConfig
     global_mesh: jax.sharding.Mesh
-    downsample: int
-    window_len: int
 
     @nn.compact
     def __call__(self, x, _):
         kws = dict(hps=self.hps, global_mesh=self.global_mesh)
-        extras = dict(downsample=downsample, window_len=window_len)
-        x += MultiHeadAttention(**kws, **extras)(RMSNorm(**kws, suffix="a")(x))
+        x += MultiHeadAttention(**kws)(RMSNorm(**kws, suffix="a")(x))
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         x += MultiLayerPerceptron(**kws)(RMSNorm(**kws, suffix="f")(x))
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
