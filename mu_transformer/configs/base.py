@@ -43,9 +43,6 @@ def get_base_config():
     config.u_init = "mup"  # unembedding projection init: mup, sp, zero
     config.attn_scale = 1 / 128
     config.rotary_base = 10_000
-    config.hc_stack_depth = 0  # for hc transformer, use > 0.
-    config.kv_downsample = 1  # for hc transformer, how much to downsample?
-    config.window_len = 0  # full attn: 0, swa: >0, if >0 require divisor of sequence_len
     config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
     config.act_square = True  # activation squaring
 
