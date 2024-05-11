@@ -27,7 +27,7 @@ def get_base_config():
     config.hfds_config = None
     config.hfds_datacol = "text"
     config.hfds_buffer_size = 512  # example buffer length for batched tokenization
-    config.sequence_len = 256
+    config.sequence_len = 2048
     config.force_download = True  # should be true unless you know what you're doing
     config.n_ds_shard = 0  # 0 = shard by host; less < n_host = subshard existing shards
 
