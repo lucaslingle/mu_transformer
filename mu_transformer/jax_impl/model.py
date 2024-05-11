@@ -44,6 +44,7 @@ class TransformerConfig:
     rotary_base: int
     act_name: str
     act_square: bool
+    n_topk: int
     n_layer: int
     n_vocab: int
     bos_token_id: int
@@ -127,22 +128,33 @@ class RotaryEncoding(nn.Module):
         return r
 
 
-class CausalMask(nn.Module):
-    length: int
+class AttentionMask(nn.Module):
+    hps: TransformerConfig
     global_mesh: jax.sharding.Mesh
 
     @nn.compact
     def __call__(self, x):
-        i = jnp.arange(self.length)[..., None]
-        j = jnp.arange(self.length)[None, ...]
+        infty = jnp.array([INFTY_APPROX], dtype=x.dtype)
+        i = jnp.arange(self.hps.sequence_len)[..., None]
+        j = jnp.arange(self.hps.sequence_len)[None, ...]
         i = sharding_constraint(i, MESH_AXES["NN"], self.global_mesh)
         j = sharding_constraint(j, MESH_AXES["NN"], self.global_mesh)
         mask = jnp.less(i, j)  # i.e., j > i, indicator masks out non-causal connections
         mask = sharding_constraint(mask, MESH_AXES["NN"], self.global_mesh)
         mask = mask[None, None, ...]
         mask = sharding_constraint(mask,  MESH_AXES["NNNN"], self.global_mesh)
-        x = x - jnp.array([INFTY_APPROX], dtype=x.dtype) * mask
-        x = sharding_constraint(x,  MESH_AXES["NNNN"], self.global_mesh)
+        x = x - infty * mask
+        x = sharding_constraint(x, MESH_AXES["NNNN"], self.global_mesh)
+        if self.hps.n_topk > 0:
+            topk_vals, _ = jax.lax.top_k(x, k=self.hps.n_topk, axis=-1)
+            topk_vals = sharding_constraint(topk_vals, MESH_AXES["XYNN"], self.global_mesh)
+            topkth_val = topk_vals[..., -1:]  # the topk vals are sorted in descending order
+            topkth_val = sharding_constraint(topkth_val, MESH_AXES["XYNN"], self.global_mesh)
+            mask = jnp.less(x, topkth_val)
+            x = x - infty * mask
+        # note even though we are applying -infty twice, it will not affect anything
+        # since each row of attn matrix will have at least one entry not on the order of -infty
+        # so the max will be subtracted in softmax logits based on that one!
         return x
 
 
@@ -205,8 +217,9 @@ class MultiHeadAttention(nn.Module):
         mult = jnp.array([self.hps.attn_scale ** 0.5], dtype=self.hps.dtype)
         s = jnp.einsum("bhid,bhjd->bhij", q * mult, k * mult)
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
-        s = CausalMask(self.hps.sequence_len, self.global_mesh)(s)
+        s = AttentionMask(self.hps, self.global_mesh)(s)
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
+
         p = jax.nn.softmax(s, axis=-1)
         p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
         o = jnp.einsum("bhij,bhjd->bhid", p, v)
