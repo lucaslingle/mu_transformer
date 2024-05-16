@@ -186,12 +186,47 @@ def get_mup_lrs():
     }
 
 
+def get_abs_mup_lrs():
+    lr = FLAGS.config.lr_base
+    dm = FLAGS.config.d_model
+    dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
+    return {
+        # embeddings
+        "g_e": lr,
+        "w_e": lr,
+        # attention
+        "g_a": lr,
+        "g_aq": lr,
+        "g_ak": lr,
+        "w_aq": lr / dm,
+        "w_ak": lr / dm,
+        "w_av": lr / dm,
+        "w_ao": lr / dm,
+        "b_aq": lr,
+        "b_ak": lr,
+        "b_av": lr,
+        "b_ao": lr,
+        # feed-forward
+        "g_f": lr,
+        "w_fi": lr / dm,
+        "w_fo": lr / dff,
+        "b_fi": lr,
+        "b_fo": lr,
+        # unembedding
+        "g_u": lr,
+        "w_u": lr / dm,
+        "b_u": lr,
+    }
+
+
 def get_lrs():
     p = FLAGS.config.optim_rule
     if p == "sp":
         return get_standard_lrs()
     if p == "mup":
         return get_mup_lrs()
+    if p == "abs_mup":
+        return get_abs_mup_lrs()
     raise NotImplementedError(f"Unrecognized optim_rule: {p}")
 
 
