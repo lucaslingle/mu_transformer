@@ -40,11 +40,11 @@ class TransformerConfig:
     q_init: str
     r_init: str
     u_init: str
-    attn_scale: float
     rotary_base: int
+    attn_scale: float
+    attn_topk: int
     act_name: str
     act_square: bool
-    n_topk: int
     n_layer: int
     n_vocab: int
     bos_token_id: int
@@ -145,8 +145,8 @@ class AttentionMask(nn.Module):
         mask = sharding_constraint(mask,  MESH_AXES["NNNN"], self.global_mesh)
         x = x - infty * mask
         x = sharding_constraint(x, MESH_AXES["NNNN"], self.global_mesh)
-        if self.hps.n_topk > 0:
-            topk_vals, _ = jax.lax.top_k(x, k=self.hps.n_topk, axis=-1)
+        if self.hps.attn_topk > 0:
+            topk_vals, _ = jax.lax.top_k(x, k=self.hps.attn_topk, axis=-1)
             topk_vals = sharding_constraint(topk_vals, MESH_AXES["XYNN"], self.global_mesh)
             topkth_val = topk_vals[..., -1:]  # the topk vals are sorted in descending order
             topkth_val = sharding_constraint(topkth_val, MESH_AXES["XYNN"], self.global_mesh)

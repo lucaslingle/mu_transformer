@@ -21,13 +21,13 @@ def get_base_config():
     config.is_sweep = False
 
     # huggingface tokenizer and dataset settings
-    config.hftr_tokenizer_name = "GPT2TokenizerFast"
-    config.hftr_tokenizer_instance = "gpt-2"
-    config.hfds_identifier = "EleutherAI/the_pile_deduplicated"
-    config.hfds_config = None
+    config.hftr_tokenizer_name = "T5TokenizerFast"
+    config.hftr_tokenizer_instance = "t5-base"
+    config.hfds_identifier = "c4"
+    config.hfds_config = "en"
     config.hfds_datacol = "text"
     config.hfds_buffer_size = 512  # example buffer length for batched tokenization
-    config.sequence_len = 2048
+    config.sequence_len = 256
     config.force_download = True  # should be true unless you know what you're doing
     config.n_ds_shard = 0  # 0 = shard by host; less < n_host = subshard existing shards
 
@@ -38,13 +38,14 @@ def get_base_config():
     config.d_base = 128  # base model width for relative scaling rules
     config.d_head = 128
     config.ff_multiple = 4  # mlp width multiple
-    config.q_init = "zero"  # query projection init: vs, zero
+    config.q_init = "vs"  # query projection init: vs, zero
     config.r_init = "vs"  # residual projection init: vs, zero
     config.u_init = "mup"  # unembedding projection init: mup, sp, zero
+    config.attn_topk = -1
     config.attn_scale = 1 / 128
     config.rotary_base = 10_000
     config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
-    config.act_square = True  # activation squaring
+    config.act_square = False  # activation squaring
 
     # optimization
     config.tokens_per_global_batch = 2**18  # batch size * sequence len
@@ -57,7 +58,7 @@ def get_base_config():
     config.optim_beta1 = 0.9
     config.optim_beta2 = 0.98
     config.optim_eps = 10**-9
-    config.wd = 0.1  # weight decay
+    config.wd = 0.0  # weight decay
 
     # periodic action settings
     config.n_print_step = 100  # print every
