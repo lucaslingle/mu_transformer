@@ -236,7 +236,7 @@ class MultiLayerPerceptron(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        d_ff = self.hps.d_model * self.ff_multiple
+        d_ff = self.hps.d_model * self.hps.ff_multiple
         shapes = Dimensions(
             B=x.shape[0],
             T=self.hps.sequence_len,
