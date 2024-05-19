@@ -1,18 +1,18 @@
 #!/bin/bash
 
-GROUP_NAME="abs_smallheads";
+GROUP_NAME="baseline_abs";
 Help() {
   echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
-  echo "l     -log2(LR): a positive integer."
+  echo "a     LR: a positive float."
   echo "h     Print this Help."
   echo
 }
 
-while getopts "l:h" option; do
+while getopts "a:h" option; do
   case $option in
-    l)
-      LR_IDX=$OPTARG;;
+    a)
+      LR=$OPTARG;;
     h)
       Help
       exit;;
@@ -22,7 +22,6 @@ while getopts "l:h" option; do
   esac
 done
 
-LR=$(bc -l <<< "2 ^(-$LR_IDX)");
 for size in "small" "medium" "large";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
