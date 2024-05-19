@@ -1,6 +1,6 @@
 #!/bin/bash
 
-GROUP_NAME="quartersparse";
+GROUP_NAME="sparse16";
 Help() {
   echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
@@ -36,5 +36,5 @@ do
         --config.n_ds_shard=16 \
         --config.lr_base="$LR" \
         --config.dtype=bfloat16 \
-        --config.attn_topk=64;
+        --config.attn_topk=16;
 done;
