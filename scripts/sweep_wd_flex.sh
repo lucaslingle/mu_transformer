@@ -13,13 +13,13 @@ Help() {
 while getopts "l:w:t:h" option; do
   case $option in
     l)
-      LR_IDX=$OPTARG;;
-      LR=$(bc -l <<< "2 ^(-$LR_IDX)");
+      LR_IDX=$OPTARG;
+      LR=$(bc -l <<< "2 ^(-$LR_IDX)");;
     w)
       WD=$OPTARG;;
     t)
-      T=$OPTARG;;
-      WU=$(bc -l <<< "0.08 * $T / 1");
+      T=$OPTARG;
+      WU=$(bc -l <<< "0.08 * $T / 1");;
     h)
       Help
       exit;;
