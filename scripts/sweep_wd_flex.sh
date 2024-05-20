@@ -1,8 +1,7 @@
 #!/bin/bash
 
-GROUP_NAME="wd_flex";
 Help() {
-  echo "Syntax: sweep_$GROUP_NAME.sh [l|w|t|h]"
+  echo "Syntax: sweep_wd_flex.sh [l|w|t|h]"
   echo "options:"
   echo "l     -log2(LR): a positive integer."
   echo "w     WD: a non-negative float."
@@ -29,6 +28,7 @@ while getopts "l:w:t:h" option; do
       exit;;
   esac
 done
+GROUP_NAME="wd_flex_${WD}_${T}";
 
 for size in "small" "medium" "large";
 do
