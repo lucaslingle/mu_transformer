@@ -14,12 +14,12 @@ while getopts "l:w:t:h" option; do
   case $option in
     l)
       LR_IDX=$OPTARG;
-      LR=$(bc -l <<< "2 ^(-$LR_IDX)");;
+      LR=$(python3 -c "print(2 ** -$LR_IDX)");;
     w)
       WD=$OPTARG;;
     t)
       T=$OPTARG;
-      WU=$(bc -l <<< "0.08 * $T / 1");;
+      WU=$(python3 -c "print(int(0.08 * $T))");;
     h)
       Help
       exit;;
