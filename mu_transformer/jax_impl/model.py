@@ -76,13 +76,13 @@ class XLayerNorm(nn.Module):
             x *= 1 + self.param(
                 "g_" + self.suffix,
                 nn.with_partitioning(init.zeros, [d], self.global_mesh),
-                MESH_AXES["NNY"],
+                MESH_AXES["Y"],
                 self.hps.param_dtype,
             )[None, None, ...].astype(self.hps.dtype)
             x += self.param(
                 "b_" + self.suffix,
                 nn.with_partitioning(init.zeros, [d], self.global_mesh),
-                MESH_AXES["NNY"],
+                MESH_AXES["Y"],
                 self.hps.param_dtype,
             )[None, None, ...].astype(self.hps.dtype)
         return x
