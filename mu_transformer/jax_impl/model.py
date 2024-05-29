@@ -238,19 +238,19 @@ class MultiHeadAttention(nn.Module):
             k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
             v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
             q = (
-                q[:, :, 0:-2, :] * cq[None, 0, :, :] +
-                q[:, :, 1:-1, :] * cq[None, 1, :, :] +
-                q[:, :, 2:, :] * cq[None, 2, :, :]
+                q[:, :, 0:-2, :] * cq[None, 0, :, None, :] +
+                q[:, :, 1:-1, :] * cq[None, 1, :, None, :] +
+                q[:, :, 2:, :] * cq[None, 2, :, None, :]
             )
             k = (
-                k[:, :, 0:-2, :] * ck[None, 0, :, :] +
-                k[:, :, 1:-1, :] * ck[None, 1, :, :] +
-                k[:, :, 2:, :] * ck[None, 2, :, :]
+                k[:, :, 0:-2, :] * ck[None, 0, :, None, :] +
+                k[:, :, 1:-1, :] * ck[None, 1, :, None, :] +
+                k[:, :, 2:, :] * ck[None, 2, :, None, :]
             )
             v = (
-                v[:, :, 0:-2, :] * cv[None, 0, :, :] +
-                v[:, :, 1:-1, :] * cv[None, 1, :, :] +
-                v[:, :, 2:, :] * cv[None, 2, :, :]
+                v[:, :, 0:-2, :] * cv[None, 0, :, None, :] +
+                v[:, :, 1:-1, :] * cv[None, 1, :, None, :] +
+                v[:, :, 2:, :] * cv[None, 2, :, None, :]
             )
             q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
             k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
@@ -283,9 +283,9 @@ class MultiHeadAttention(nn.Module):
                 cg = self.param("c_ag", *c_args).astype(self.hps.dtype)
                 g = jnp.pad(g, ((0, 0), (0, 0), (2, 0), (0, 0)))
                 g = (
-                    g[:, :, 0:-2, :] * cg[None, 0, :, :] +
-                    g[:, :, 1:-1, :] * cg[None, 1, :, :] +
-                    g[:, :, 2:, :] * cg[None, 2, :, :]
+                    g[:, :, 0:-2, :] * cg[None, 0, :, None, :] +
+                    g[:, :, 1:-1, :] * cg[None, 1, :, None, :] +
+                    g[:, :, 2:, :] * cg[None, 2, :, None, :]
                 )
                 g = sharding_constraint(g, MESH_AXES["XYNN"], self.global_mesh)
             v = v * jax.nn.silu(g)
