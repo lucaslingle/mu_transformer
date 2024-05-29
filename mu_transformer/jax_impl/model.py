@@ -337,7 +337,7 @@ class MultiLayerPerceptron(nn.Module):
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
 
         i_init = init.normal(self.hps.d_model**-0.5)
-        o_init = init.normal(d_ff_out**-0.5)
+        o_init = init.normal(d_ff**-0.5)
 
         wi = self.param(
             "w_fi",
