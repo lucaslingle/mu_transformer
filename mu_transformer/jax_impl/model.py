@@ -76,14 +76,14 @@ class XLayerNorm(nn.Module):
         if self.hps.norm_trainable:
             x *= one + self.param(
                 "g_" + self.suffix,
-                nn.with_partitioning(init.zeros, [m], self.global_mesh),
-                MESH_AXES["Y"],
+                nn.with_partitioning(init.zeros, MESH_AXES["Y"], self.global_mesh),
+                [m],
                 self.hps.param_dtype,
             )[None, None, ...].astype(self.hps.dtype)
             x += self.param(
                 "b_" + self.suffix,
-                nn.with_partitioning(init.zeros, [m], self.global_mesh),
-                MESH_AXES["Y"],
+                nn.with_partitioning(init.zeros, MESH_AXES["Y"], self.global_mesh),
+                [m],
                 self.hps.param_dtype,
             )[None, None, ...].astype(self.hps.dtype)
         return x
@@ -105,14 +105,14 @@ class QKLayerNorm(nn.Module):
         if self.hps.norm_trainable:
             x *= one + self.param(
                 "g_" + self.suffix,
-                nn.with_partitioning(init.zeros, [h, 1, d], self.global_mesh),
-                MESH_AXES["YNN"],
+                nn.with_partitioning(init.zeros, MESH_AXES["YNN"], self.global_mesh),
+                [h, 1, d],
                 self.hps.param_dtype,
             )[None, ...].astype(self.hps.dtype)
             x += self.param(
                 "b_" + self.suffix,
-                nn.with_partitioning(init.zeros, [h, 1, d], self.global_mesh),
-                MESH_AXES["YNN"],
+                nn.with_partitioning(init.zeros, MESH_AXES["YNN"], self.global_mesh),
+                [h, 1, d],
                 self.hps.param_dtype,
             )[None, ...].astype(self.hps.dtype)
         return x
