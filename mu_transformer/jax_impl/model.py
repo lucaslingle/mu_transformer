@@ -37,7 +37,7 @@ class TransformerConfig:
     sequence_len: int
     d_model: int
     d_head: int
-    qk_scale: float
+    qkv_sepconv: bool
     qk_norm: bool
     qk_kernel: str
     v_gating: bool
@@ -199,38 +199,18 @@ class MultiHeadAttention(nn.Module):
             M=self.hps.d_model,
             D=self.hps.d_head,
             H=self.hps.d_model // self.hps.d_head,
-            I=1,
         )
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
 
-        stddev = self.hps.d_model**-0.5
-        qkvo_init = init.normal(stddev)
+        w_init = init.normal(self.hps.d_model**-0.5)
+        i_init = nn.with_partitioning(w_init, MESH_AXES["XYN"], self.global_mesh)
+        o_init = nn.with_partitioning(w_init, MESH_AXES["YNX"], self.global_mesh)
 
-        wq = self.param(
-            "w_aq",
-            nn.with_partitioning(qkvo_init, MESH_AXES["XYN"], self.global_mesh),
-            shapes["MHD"],
-            self.hps.param_dtype,
-        )
-        wk = self.param(
-            "w_ak",
-            nn.with_partitioning(qkvo_init, MESH_AXES["XYN"], self.global_mesh),
-            shapes["MHD"],
-            self.hps.param_dtype,
-        )
-        wv = self.param(
-            "w_av",
-            nn.with_partitioning(qkvo_init, MESH_AXES["XYN"], self.global_mesh),
-            shapes["MHD"],
-            self.hps.param_dtype,
-        )
-        wo = self.param(
-            "w_ao",
-            nn.with_partitioning(qkvo_init, MESH_AXES["YNX"], self.global_mesh),
-            shapes["HDM"],
-            self.hps.param_dtype,
-        )
+        wq = self.param("w_aq", i_init, shapes["MHD"], self.hps.param_dtype)
+        wk = self.param("w_ak", i_init, shapes["MHD"], self.hps.param_dtype)
+        wv = self.param("w_av", i_init, shapes["MHD"], self.hps.param_dtype)
+        wo = self.param("w_ao", o_init, shapes["HDM"], self.hps.param_dtype)
 
         q = jnp.einsum("bim,mhd->bhid", x, wq.astype(self.hps.dtype))
         k = jnp.einsum("bim,mhd->bhid", x, wk.astype(self.hps.dtype))
@@ -238,6 +218,39 @@ class MultiHeadAttention(nn.Module):
         q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
         k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
         v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
+
+        if self.qkv_sepconv:
+            c_init = init.normal(3 ** -0.5)
+            c_init = nn.with_partitioning(c_init, MESH_AXES["YNN"], self.global_mesh)
+            c_shape = shapes["PHD"]
+            c_args = [c_init, c_shape, self.hps.param_dtype]
+            cq = self.param("c_aq", *c_args).astype(self.hps.dtype)
+            ck = self.param("c_ak", *c_args).astype(self.hps.dtype)
+            cv = self.param("c_av", *c_args).astype(self.hps.dtype)
+            q = jnp.pad(q, ((0, 0), (0, 0), (2, 0), (0, 0)))
+            k = jnp.pad(k, ((0, 0), (0, 0), (2, 0), (0, 0)))
+            v = jnp.pad(v, ((0, 0), (0, 0), (2, 0), (0, 0)))
+            q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
+            k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
+            v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
+            q = (
+                q[:, :, 0:-2, :] * cq[None, 0, :, :] +
+                q[:, :, 1:-1, :] * cq[None, 1, :, :] +
+                q[:, :, 2:, :] * cq[None, 2, :, :]
+            )
+            k = (
+                k[:, :, 0:-2, :] * ck[None, 0, :, :] +
+                k[:, :, 1:-1, :] * ck[None, 1, :, :] +
+                k[:, :, 2:, :] * ck[None, 2, :, :]
+            )
+            v = (
+                v[:, :, 0:-2, :] * cv[None, 0, :, :] +
+                v[:, :, 1:-1, :] * cv[None, 1, :, :] +
+                v[:, :, 2:, :] * cv[None, 2, :, :]
+            )
+            q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
+            k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
+            v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
 
         if self.hps.qk_norm:
             q = QKLayerNorm(self.hps, self.global_mesh, "aq")(q)
@@ -255,14 +268,22 @@ class MultiHeadAttention(nn.Module):
         self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
         if self.hps.v_gating:
-            wg = self.param(
-                "w_ag",
-                nn.with_partitioning(qkvo_init, MESH_AXES["XYN"], self.global_mesh),
-                shapes["MHD"],
-                self.hps.param_dtype,
-            )
+            wg = self.param("w_ag", i_init, shapes["MHD"], self.hps.param_dtype)
             g = jnp.einsum("bim,mhd->bhid", x, wg.astype(self.hps.dtype))
             g = sharding_constraint(g, MESH_AXES["XYNN"], self.global_mesh)
+            if self.hps.qkv_sepconv:
+                c_init = init.normal(3 ** -0.5)
+                c_init = nn.with_partitioning(c_init, MESH_AXES["YNN"], self.global_mesh)
+                c_shape = shapes["PHD"]
+                c_args = [c_init, c_shape, self.hps.param_dtype]
+                cg = self.param("c_ag", *c_args).astype(self.hps.dtype)
+                g = jnp.pad(g, ((0, 0), (0, 0), (2, 0), (0, 0)))
+                g = (
+                    g[:, :, 0:-2, :] * cg[None, 0, :, :] +
+                    g[:, :, 1:-1, :] * cg[None, 1, :, :] +
+                    g[:, :, 2:, :] * cg[None, 2, :, :]
+                )
+                g = sharding_constraint(g, MESH_AXES["XYNN"], self.global_mesh)
             v = v * jax.nn.silu(g)
             v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "av_l1", coord_check_l1(v))

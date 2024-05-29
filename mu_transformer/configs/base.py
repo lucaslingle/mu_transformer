@@ -37,7 +37,7 @@ def get_base_config():
     config.n_layer = 24  # depth, should stay const for mu-transfer
     config.d_base = 128
     config.d_head = 128
-    config.qk_scale = 1 / 128
+    config.qkv_sepconv = False  # depthwise separable convolutions on qkv, same as primer?
     config.qk_norm = False  # normalize queries and keys using rmsnorm?
     config.qk_kernel = "softmax"  # softmax or sqrelu
     config.v_gating = False  # gate values
