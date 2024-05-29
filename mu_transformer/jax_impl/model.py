@@ -291,7 +291,7 @@ class MultiHeadAttention(nn.Module):
             v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "av_l1", coord_check_l1(v))
 
-        mult = jnp.array([self.hps.qk_scale**0.5], dtype=self.hps.dtype)
+        mult = jnp.array([self.hps.d_head**-0.5], dtype=self.hps.dtype)
         s = jnp.einsum("bhid,bhjd->bhij", q * mult, k * mult)
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
