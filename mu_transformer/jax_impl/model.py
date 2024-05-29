@@ -202,6 +202,7 @@ class MultiHeadAttention(nn.Module):
             M=self.hps.d_model,
             D=self.hps.d_head,
             H=self.hps.d_model // self.hps.d_head,
+            P=3,  # primer kernel size
         )
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "ax_l1", coord_check_l1(x))
