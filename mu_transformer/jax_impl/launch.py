@@ -701,8 +701,8 @@ def main(argv):
     assert n_head >= n_col  # parallelize heads across columns
     assert n_head % n_col == 0
 
-    assert d_ff >= n_col  # parallelize mlp hiddens across columns
-    assert d_ff % n_col == 0
+    assert d_model >= n_col  # parallelize mlp hiddens across columns
+    assert d_model % n_col == 0
 
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
