@@ -312,7 +312,7 @@ def loss_fn(params, batch, config, global_mesh):
         loss_term_avg=jnp.mean(mask * terms),
         loss_mask_avg=jnp.mean(mask),
     )
-    return metrics["loss_term_avg"], dict(**metrics, **sown)
+    return metrics["loss_term_avg"], metrics
 
 
 @functools.partial(jax.jit, donate_argnums=(0,))
@@ -330,7 +330,7 @@ def train_step(state, batch):
     # Compute param count
     metrics["param_count_total"] = size_pytree(state.params)
     state = state.apply_gradients(grads=grads)  # do update
-    return state, dict(**metrics, **p_update)
+    return state, metrics
 
 
 def get_tpuv3_mfu(param_count, sec_per_step):
