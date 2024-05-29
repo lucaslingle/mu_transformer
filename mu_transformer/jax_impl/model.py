@@ -68,20 +68,21 @@ class XLayerNorm(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        d = self.hps.d_model
+        m = self.hps.d_model
         eps = jnp.array([self.hps.norm_eps], dtype=x.dtype)
-        x = x - jnp.mean(x, axis=-1)[..., None]
-        x = x / jnp.sqrt(jnp.mean(jnp.square(x), axis=-1) + eps)[..., None]
+        one = jnp.array([1.0], dtype=x.dtype)
+        x -= jnp.mean(x, axis=-1)[..., None]
+        x /= jnp.sqrt(jnp.mean(jnp.square(x), axis=-1) + eps)[..., None]
         if self.hps.norm_trainable:
-            x *= 1 + self.param(
+            x *= one + self.param(
                 "g_" + self.suffix,
-                nn.with_partitioning(init.zeros, [d], self.global_mesh),
+                nn.with_partitioning(init.zeros, [m], self.global_mesh),
                 MESH_AXES["Y"],
                 self.hps.param_dtype,
             )[None, None, ...].astype(self.hps.dtype)
             x += self.param(
                 "b_" + self.suffix,
-                nn.with_partitioning(init.zeros, [d], self.global_mesh),
+                nn.with_partitioning(init.zeros, [m], self.global_mesh),
                 MESH_AXES["Y"],
                 self.hps.param_dtype,
             )[None, None, ...].astype(self.hps.dtype)
@@ -95,20 +96,22 @@ class QKLayerNorm(nn.Module):
 
     @nn.compact
     def __call__(self, x):
+        d = self.hps.d_head
         h = self.hps.d_model // self.hps.d_head
         eps = jnp.array([self.hps.norm_eps], dtype=x.dtype)
-        x = x - jnp.mean(x, axis=-1)[..., None]
-        x = x / jnp.sqrt(jnp.mean(jnp.square(x), axis=-1) + eps)[..., None]
+        one = jnp.array([1.0], dtype=x.dtype)
+        x -= jnp.mean(x, axis=-1)[..., None]
+        x /= jnp.sqrt(jnp.mean(jnp.square(x), axis=-1) + eps)[..., None]
         if self.hps.norm_trainable:
-            x *= 1 + self.param(
+            x *= one + self.param(
                 "g_" + self.suffix,
-                nn.with_partitioning(init.zeros, [h, 1, 1], self.global_mesh),
+                nn.with_partitioning(init.zeros, [h, 1, d], self.global_mesh),
                 MESH_AXES["YNN"],
                 self.hps.param_dtype,
             )[None, ...].astype(self.hps.dtype)
             x += self.param(
                 "b_" + self.suffix,
-                nn.with_partitioning(init.zeros, [h, 1, 1], self.global_mesh),
+                nn.with_partitioning(init.zeros, [h, 1, d], self.global_mesh),
                 MESH_AXES["YNN"],
                 self.hps.param_dtype,
             )[None, ...].astype(self.hps.dtype)
