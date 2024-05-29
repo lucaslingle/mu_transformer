@@ -677,7 +677,6 @@ def main(argv):
     n_device = jax.device_count()
     n_example = global_batch_size_factory()
     d_model = FLAGS.config.d_model
-    d_ff = FLAGS.config.d_model * FLAGS.config.ff_multiple
     n_head = FLAGS.config.d_model // FLAGS.config.d_head
     n_row = FLAGS.config.n_mesh_rows
     n_col = FLAGS.config.n_mesh_cols
@@ -689,10 +688,8 @@ def main(argv):
     assert n_head >= n_col
     assert n_head % n_col == 0
 
-    assert d_model >= n_row
-    assert d_model % n_row == 0
-    assert d_ff >= n_col
-    assert d_ff % n_col == 0
+    assert d_model >= n_col
+    assert d_model % n_col == 0
 
     # activation shape constraints
     assert n_example >= n_device  # dataloader quirk
