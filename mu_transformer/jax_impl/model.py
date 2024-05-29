@@ -266,7 +266,7 @@ class MultiHeadAttention(nn.Module):
         q = RotaryEncoding(self.hps, self.global_mesh)(q)
         k = RotaryEncoding(self.hps, self.global_mesh)(k)
         q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
-        k = sharding_constraint(k, kv_mesh_axes, self.global_mesh)
+        k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "aqr_l1", coord_check_l1(q))
         self.sow("intermediates", "akr_l1", coord_check_l1(k))
 
