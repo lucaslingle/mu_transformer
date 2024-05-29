@@ -1,6 +1,6 @@
 #!/bin/bash
 
-GROUP_NAME="all";
+GROUP_NAME="good";
 Help() {
   echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
@@ -36,6 +36,7 @@ do
         --config.n_ds_shard=16 \
         --config.lr_base="$LR" \
         --config.dtype=bfloat16 \
+        --config.qk_kernel="sqrelu" \
         --config.qkv_sepconv=True \
         --config.v_gating=True;
 done
