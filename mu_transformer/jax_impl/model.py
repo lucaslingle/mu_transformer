@@ -222,7 +222,7 @@ class MultiHeadAttention(nn.Module):
         k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
         v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
 
-        if self.qkv_sepconv:
+        if self.hps.qkv_sepconv:
             c_init = init.normal(3 ** -0.5)
             c_init = nn.with_partitioning(c_init, MESH_AXES["YNN"], self.global_mesh)
             c_shape = shapes["PHD"]
