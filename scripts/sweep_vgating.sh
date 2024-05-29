@@ -1,6 +1,6 @@
 #!/bin/bash
 
-GROUP_NAME="sp";
+GROUP_NAME="vgating";
 Help() {
   echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
@@ -35,9 +35,6 @@ do
         --config.force_download=False \
         --config.n_ds_shard=16 \
         --config.lr_base="$LR" \
-        --config.proj_biases=True \
-        --config.norm_gains=True \
-        --config.qk_scale=0.08838834764831845 \
-        --config.u_init="sp" \
-        --config.optim_rule="sp";
-done;
+        --config.dtype=bfloat16 \
+        --config.v_gating=True;
+done

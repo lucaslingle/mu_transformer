@@ -1,18 +1,18 @@
 #!/bin/bash
 
-GROUP_NAME="baseline_abs";
+GROUP_NAME="sqrelu_kernel";
 Help() {
   echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
-  echo "a     LR: a positive float."
+  echo "l     -log2(LR): a positive integer."
   echo "h     Print this Help."
   echo
 }
 
-while getopts "a:h" option; do
+while getopts "l:h" option; do
   case $option in
-    a)
-      LR=$OPTARG;;
+    l)
+      LR_IDX=$OPTARG;;
     h)
       Help
       exit;;
@@ -22,6 +22,7 @@ while getopts "a:h" option; do
   esac
 done
 
+LR=$(bc -l <<< "2 ^(-$LR_IDX)");
 for size in "small" "medium" "large";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
@@ -35,5 +36,5 @@ do
         --config.n_ds_shard=16 \
         --config.lr_base="$LR" \
         --config.dtype=bfloat16 \
-        --config.optim_rule="abs_mup";
+        --config.qk_kernel="sqrelu";
 done

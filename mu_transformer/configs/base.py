@@ -18,8 +18,6 @@ def get_base_config():
     config = config_dict.ConfigDict()
 
     # logging/plotting
-    config.sow_intermediates = True
-    config.sow_param_info = True
     config.is_sweep = False
 
     # huggingface tokenizer and dataset settings
@@ -37,36 +35,30 @@ def get_base_config():
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
     config.n_layer = 24  # depth, should stay const for mu-transfer
-    config.d_base = 128  # base model width for relative scaling rules
+    config.d_base = 128
     config.d_head = 128
-    config.ff_multiple = 4  # mlp width multiple
-    config.e_norm = False  # normalize the embeddings using rmsnorm?
-    config.q_init = "vs"  # query projection init: vs, zero
-    config.r_init = "vs"  # residual projection init: vs, zero
-    config.u_init = "mup"  # unembedding projection init: mup, sp, zero
     config.qk_scale = 1 / 128
     config.qk_norm = False  # normalize queries and keys using rmsnorm?
-    config.kv_mqa = False
-    config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
-    config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
-    config.act_square = False  # activation squaring
-    config.norm_eps = 1e-6  # rmsnorm epsilon
-    config.norm_gains = False  # rmsnorm gains
-    config.norm_gains_type = "vector"  # vector or scalar
-    config.proj_biases = False  # projections with bias
+    config.qk_kernel = "softmax"  # softmax or sqrelu
+    config.v_gating = False  # gate values
+    config.rotary_base = 10_000
+    config.act_name = "relu"  # any activation defined in jax.nn
+    config.act_square = True  # activation squaring
+    config.norm_eps = 1e-6  # layernorm epsilon
+    config.norm_trainable = True  # layernorm trainable
 
     # optimization
     config.tokens_per_global_batch = 2**18  # batch size * sequence len
     config.grad_acc_steps = 1  # steps per parameter update (for micro-batching)
     config.grad_clip = 1.0  # grad clip max l2 norm
-    config.lr_base = 1.0  # base learning rate
+    config.lr_base = 0.002  # base learning rate
     config.lr_schedule_name = "linear"
     config.optim_name = "adamw"
-    config.optim_rule = "mup"  # mup or sp
+    config.optim_rule = "sp"
     config.optim_beta1 = 0.9
     config.optim_beta2 = 0.98
     config.optim_eps = 10**-9
-    config.wd = 0.0  # weight decay
+    config.wd = 0.1  # weight decay
 
     # periodic action settings
     config.n_print_step = 100  # print every

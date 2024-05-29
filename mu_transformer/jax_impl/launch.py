@@ -112,7 +112,7 @@ def param_label_fn(params):
 def schedule_factory():
     warmup_steps = FLAGS.config.n_warmup_step
     decay_steps = FLAGS.config.n_pretrain_step - FLAGS.config.n_warmup_step  # const aft
-    minval = 1e-4
+    minval = 0.0
     warmup = optax.linear_schedule(minval, 1.0, transition_steps=warmup_steps)
     if FLAGS.config.lr_schedule_name == "linear":
         decay = optax.linear_schedule(1.0, minval, transition_steps=decay_steps)
@@ -121,113 +121,6 @@ def schedule_factory():
     else:
         raise NotImplementedError(f"Unsupported sched: {FLAGS.config.lr_schedule_name}")
     return optax.join_schedules([warmup, decay], boundaries=[warmup_steps])
-
-
-def get_standard_lrs():
-    lr = FLAGS.config.lr_base
-    return {
-        # embeddings
-        "g_e": lr,
-        "w_e": lr,
-        # attention
-        "g_a": lr,
-        "g_aq": lr,
-        "g_ak": lr,
-        "w_aq": lr,
-        "w_ak": lr,
-        "w_av": lr,
-        "w_ao": lr,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
-        # feed-forward
-        "g_f": lr,
-        "w_fi": lr,
-        "w_fo": lr,
-        "b_fi": lr,
-        "b_fo": lr,
-        # unembedding
-        "g_u": lr,
-        "w_u": lr,
-        "b_u": lr,
-    }
-
-
-def get_mup_lrs():
-    lr = FLAGS.config.lr_base
-    wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
-    return {
-        # embeddings
-        "g_e": lr,
-        "w_e": lr,
-        # attention
-        "g_a": lr,
-        "g_aq": lr,
-        "g_ak": lr,
-        "w_aq": lr / wm,
-        "w_ak": lr / wm,
-        "w_av": lr / wm,
-        "w_ao": lr / wm,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
-        # feed-forward
-        "g_f": lr,
-        "w_fi": lr / wm,
-        "w_fo": lr / wm,
-        "b_fi": lr,
-        "b_fo": lr,
-        # unembedding
-        "g_u": lr,
-        "w_u": lr / wm,
-        "b_u": lr,
-    }
-
-
-def get_abs_mup_lrs():
-    lr = FLAGS.config.lr_base
-    dm = FLAGS.config.d_model
-    dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
-    return {
-        # embeddings
-        "g_e": lr,
-        "w_e": lr,
-        # attention
-        "g_a": lr,
-        "g_aq": lr,
-        "g_ak": lr,
-        "w_aq": lr / dm,
-        "w_ak": lr / dm,
-        "w_av": lr / dm,
-        "w_ao": lr / dm,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
-        # feed-forward
-        "g_f": lr,
-        "w_fi": lr / dm,
-        "w_fo": lr / dff,
-        "b_fi": lr,
-        "b_fo": lr,
-        # unembedding
-        "g_u": lr,
-        "w_u": lr / dm,
-        "b_u": lr,
-    }
-
-
-def get_lrs():
-    p = FLAGS.config.optim_rule
-    if p == "sp":
-        return get_standard_lrs()
-    if p == "mup":
-        return get_mup_lrs()
-    if p == "abs_mup":
-        return get_abs_mup_lrs()
-    raise NotImplementedError(f"Unrecognized optim_rule: {p}")
 
 
 def grad_transform_factory():
@@ -253,10 +146,8 @@ def grad_transform_factory():
         )
     else:
         raise NotImplementedError(f"Unsupported optimizer: {FLAGS.config.optim_name}")
-    optimizer = optax.multi_transform(
-        jtu.tree_map(lambda lr: optimizer_cls(lr, **optimizer_kws), get_lrs()),
-        param_labels=param_label_fn,
-    )
+    lr = FLAGS.config.lr_base * FLAGS.config.d_base / FLAGS.config.d_model
+    optimizer = optimizer_cls(lr, **optimizer_kws)
     chain.append(optimizer)
     chain.append(optax.scale_by_schedule(schedule_factory()))
     tx = optax.chain(*chain)
@@ -322,7 +213,7 @@ def automatic_modelname_factory():
     lr = str(FLAGS.config.lr_base).split(".")
     assert len(lr) == 2
     parts = [
-        "mutransformer",
+        "qkvexperiments",
         dataset_name,
         FLAGS.experiment_group,
         FLAGS.config.model_size,
@@ -406,46 +297,11 @@ def get_loss_mask(batch, *, pad_token_id, eos_token_id):
     return loss_mask
 
 
-def maybe_untuple(maybe_tuple):
-    if isinstance(maybe_tuple, tuple):
-        if len(maybe_tuple) == 1:
-            return maybe_tuple[0]
-    return maybe_tuple
-
-
-def maybe_unbox(tensor):
-    if isinstance(tensor, flax.core.meta.Partitioned):
-        tensor = tensor.value
-    return tensor
-
-
-def clean_and_flatten(pytree, split_filter: Set[str]):
-    pytree = traverse_util.flatten_dict(pytree)
-    pytree = {k: maybe_untuple(v) for k, v in pytree.items()}
-    pytree = {k: maybe_unbox(v) for k, v in pytree.items()}
-    pytree = {
-        k: (
-            split_and_name(k[-1], v)
-            if any([s in k[-1] for s in split_filter])
-            else {k[-1]: v}
-        )
-        for k, v in pytree.items()
-    }
-    pytree = traverse_util.flatten_dict(pytree)
-    pytree = {k[-1]: v for k, v in pytree.items()}
-    return pytree
-
-
 def loss_fn(params, batch, config, global_mesh):
     batch = sharding_constraint(batch, MESH_AXES["XN"], global_mesh)
     init_args = [config, global_mesh]
     apply_args = [{"params": params}, batch]  # tokens shifted internally by model
-    if FLAGS.config.sow_intermediates:
-        logits, mv = Transformer(*init_args).apply(*apply_args, mutable="intermediates")
-        sown = clean_and_flatten(mv["intermediates"], split_filter={""})  # split all
-    else:
-        logits = Transformer(*init_args).apply(*apply_args)
-        sown = dict()
+    logits = Transformer(*init_args).apply(*apply_args)
     terms = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=batch)
     terms = sharding_constraint(terms, MESH_AXES["XN"], global_mesh)
     mask = get_loss_mask(
@@ -457,13 +313,6 @@ def loss_fn(params, batch, config, global_mesh):
         loss_mask_avg=jnp.mean(mask),
     )
     return metrics["loss_term_avg"], dict(**metrics, **sown)
-
-
-def get_current_lr(name, step):
-    name_without_layer = "_".join(name.split("_")[0:2])
-    tensor_lr = get_lrs()[name_without_layer]
-    schedule_now = schedule_factory()(step)
-    return tensor_lr * schedule_now
 
 
 @functools.partial(jax.jit, donate_argnums=(0,))
@@ -480,19 +329,7 @@ def train_step(state, batch):
     metrics["loss_avg"] = metrics["loss_term_avg"] / metrics["loss_mask_avg"]
     # Compute param count
     metrics["param_count_total"] = size_pytree(state.params)
-    if FLAGS.config.sow_param_info:
-        # Maybe save update coordinate size (here, mean abs), scaled by current lr
-        step = state.step
-        p_old = state.params
-        state = state.apply_gradients(grads=grads)  # do update
-        p_new = state.params
-        p_old = clean_and_flatten(p_old, split_filter={"w_a", "w_f", "g_a", "g_f"})
-        p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f", "g_a", "g_f"})
-        p_update = jtu.tree_map(lambda a, b: jnp.mean(jnp.abs(a - b)), p_new, p_old)
-        p_update = {f"uu_{k}": v / get_current_lr(k, step) for k, v in p_update.items()}
-    else:
-        state = state.apply_gradients(grads=grads)  # do update
-        p_update = dict()
+    state = state.apply_gradients(grads=grads)  # do update
     return state, dict(**metrics, **p_update)
 
 

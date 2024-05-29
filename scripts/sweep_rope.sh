@@ -1,6 +1,6 @@
 #!/bin/bash
 
-GROUP_NAME="combined_no_wd";
+GROUP_NAME="rope";
 Help() {
   echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
@@ -35,15 +35,6 @@ do
         --config.force_download=False \
         --config.n_ds_shard=16 \
         --config.lr_base="$LR" \
-        --config.n_layer=12 \
-        --config.q_init="zero" \
-        --config.act_square=True \
-        --config.n_save_step=500 \
-        --config.n_pretrain_step=90000 \
-        --config.n_warmup_step=7000 \
-        --config.tokens_per_global_batch=2097152 \
-        --config.optim_beta1=0.9 \
-        --config.optim_beta2=0.95 \
-        --config.optim_eps=0.00000001 \
-        --config.wd=0.0;
+        --config.dtype=bfloat16 \
+        --config.rotary_base=100_000;
 done
