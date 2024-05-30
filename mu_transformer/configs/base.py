@@ -54,7 +54,7 @@ def get_base_config():
     config.optim_beta1 = 0.9
     config.optim_beta2 = 0.98
     config.optim_eps = 10**-9
-    config.wd = 0.1  # weight decay
+    config.wd = 0.0  # weight decay
 
     # periodic action settings
     config.n_print_step = 100  # print every
