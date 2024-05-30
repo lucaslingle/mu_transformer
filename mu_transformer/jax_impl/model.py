@@ -225,7 +225,7 @@ class MultiHeadAttention(nn.Module):
 
         if self.hps.qkv_sepconv:
             c_init = init.normal(3 ** -0.5)
-            c_init = nn.with_partitioning(c_init, MESH_AXES["YNN"], self.global_mesh)
+            c_init = nn.with_partitioning(c_init, MESH_AXES["NYN"], self.global_mesh)
             c_shape = shapes["PHD"]
             c_args = [c_init, c_shape, self.hps.param_dtype]
             cq = self.param("c_aq", *c_args).astype(self.hps.dtype)
@@ -277,7 +277,7 @@ class MultiHeadAttention(nn.Module):
             g = sharding_constraint(g, MESH_AXES["XYNN"], self.global_mesh)
             if self.hps.qkv_sepconv:
                 c_init = init.normal(3 ** -0.5)
-                c_init = nn.with_partitioning(c_init, MESH_AXES["YNN"], self.global_mesh)
+                c_init = nn.with_partitioning(c_init, MESH_AXES["NYN"], self.global_mesh)
                 c_shape = shapes["PHD"]
                 c_args = [c_init, c_shape, self.hps.param_dtype]
                 cg = self.param("c_ag", *c_args).astype(self.hps.dtype)
