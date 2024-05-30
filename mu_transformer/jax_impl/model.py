@@ -258,7 +258,7 @@ class MultiHeadAttention(nn.Module):
             k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
             v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
 
-        if self.hps.v_act_name is not None:
+        if self.hps.v_act_name != "none":
             v = getattr(jax.nn, self.hps.v_act_name)(v)
             v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
             if self.hps.v_act_square:
