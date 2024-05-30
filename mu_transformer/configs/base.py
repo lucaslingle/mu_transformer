@@ -41,6 +41,8 @@ def get_base_config():
     config.qk_norm = False  # normalize queries and keys using rmsnorm?
     config.qk_kernel = "softmax"  # softmax or sqrelu
     config.v_gating = False  # gate values
+    config.v_act_name = None  # value activation: any activation defined in jax.nn, or None
+    config.v_act_square = False # value activation squaring
     config.rotary_base = 10_000
     config.act_name = "relu"  # any activation defined in jax.nn
     config.act_square = True  # activation squaring

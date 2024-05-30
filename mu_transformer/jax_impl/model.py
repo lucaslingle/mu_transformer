@@ -41,6 +41,8 @@ class TransformerConfig:
     qk_norm: bool
     qk_kernel: str
     v_gating: bool
+    v_act_name: str
+    v_act_square: bool
     rotary_base: int
     act_name: str
     act_square: bool
@@ -255,6 +257,13 @@ class MultiHeadAttention(nn.Module):
             q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
             k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
             v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
+
+        if self.hps.v_act_name is not None:
+            v = getattr(jax.nn, self.hps.v_act_name)(v)
+            v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
+            if self.hps.v_act_square:
+                v = jnp.square(v)
+                v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
 
         if self.hps.qk_norm:
             q = QKLayerNorm(self.hps, self.global_mesh, "aq")(q)
