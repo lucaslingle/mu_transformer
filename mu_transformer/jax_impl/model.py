@@ -37,15 +37,11 @@ class TransformerConfig:
     sequence_len: int
     d_model: int
     d_head: int
-    qkv_sepconv: bool
-    qk_norm: bool
-    qk_kernel: str
-    v_gating: bool
     rotary_base: int
     act_name: str
     act_square: bool
     norm_eps: float
-    norm_trainable: bool
+    norm_special: bool
     n_layer: int
     n_vocab: int
     bos_token_id: int
@@ -61,60 +57,18 @@ class TransformerConfig:
         return cls(**flt)
 
 
-class XLayerNorm(nn.Module):
+class RMSNorm(nn.Module):
     hps: TransformerConfig
     global_mesh: jax.sharding.Mesh
     suffix: str
 
     @nn.compact
     def __call__(self, x):
-        m = self.hps.d_model
         eps = jnp.array([self.hps.norm_eps], dtype=x.dtype)
-        one = jnp.array([1.0], dtype=x.dtype)
-        x -= jnp.mean(x, axis=-1)[..., None]
-        x /= jnp.sqrt(jnp.mean(jnp.square(x), axis=-1) + eps)[..., None]
-        if self.hps.norm_trainable:
-            x *= one + self.param(
-                "g_" + self.suffix,
-                nn.with_partitioning(init.zeros, MESH_AXES["Y"], self.global_mesh),
-                [m],
-                self.hps.param_dtype,
-            )[None, None, ...].astype(self.hps.dtype)
-            x += self.param(
-                "b_" + self.suffix,
-                nn.with_partitioning(init.zeros, MESH_AXES["Y"], self.global_mesh),
-                [m],
-                self.hps.param_dtype,
-            )[None, None, ...].astype(self.hps.dtype)
-        return x
-
-
-class QKLayerNorm(nn.Module):
-    hps: TransformerConfig
-    global_mesh: jax.sharding.Mesh
-    suffix: str
-
-    @nn.compact
-    def __call__(self, x):
-        d = self.hps.d_head
-        h = self.hps.d_model // self.hps.d_head
-        eps = jnp.array([self.hps.norm_eps], dtype=x.dtype)
-        one = jnp.array([1.0], dtype=x.dtype)
-        x -= jnp.mean(x, axis=-1)[..., None]
-        x /= jnp.sqrt(jnp.mean(jnp.square(x), axis=-1) + eps)[..., None]
-        if self.hps.norm_trainable:
-            x *= one + self.param(
-                "g_" + self.suffix,
-                nn.with_partitioning(init.zeros, MESH_AXES["YNN"], self.global_mesh),
-                [h, 1, d],
-                self.hps.param_dtype,
-            )[None, ...].astype(self.hps.dtype)
-            x += self.param(
-                "b_" + self.suffix,
-                nn.with_partitioning(init.zeros, MESH_AXES["YNN"], self.global_mesh),
-                [h, 1, d],
-                self.hps.param_dtype,
-            )[None, ...].astype(self.hps.dtype)
+        if self.hps.norm_special:
+            y = x / jnp.sqrt(jnp.mean(jnp.square(x), axis=-1) + eps)[..., None]
+            x = x + jax.lax.stop_gradient(y - x)
+        x = x / jnp.sqrt(jnp.mean(jnp.square(x), axis=-1) + eps)[..., None]
         return x
 
 
@@ -222,47 +176,9 @@ class MultiHeadAttention(nn.Module):
         q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
         k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
         v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
-
-        if self.hps.qkv_sepconv:
-            c_init = init.normal(3 ** -0.5)
-            c_init = nn.with_partitioning(c_init, MESH_AXES["YNN"], self.global_mesh)
-            c_shape = shapes["PHD"]
-            c_args = [c_init, c_shape, self.hps.param_dtype]
-            cq = self.param("c_aq", *c_args).astype(self.hps.dtype)
-            ck = self.param("c_ak", *c_args).astype(self.hps.dtype)
-            cv = self.param("c_av", *c_args).astype(self.hps.dtype)
-            q = jnp.pad(q, ((0, 0), (0, 0), (2, 0), (0, 0)))
-            k = jnp.pad(k, ((0, 0), (0, 0), (2, 0), (0, 0)))
-            v = jnp.pad(v, ((0, 0), (0, 0), (2, 0), (0, 0)))
-            q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
-            k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
-            v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
-            q = (
-                q[:, :, 0:-2, :] * cq[None, 0, :, None, :] +
-                q[:, :, 1:-1, :] * cq[None, 1, :, None, :] +
-                q[:, :, 2:, :] * cq[None, 2, :, None, :]
-            )
-            k = (
-                k[:, :, 0:-2, :] * ck[None, 0, :, None, :] +
-                k[:, :, 1:-1, :] * ck[None, 1, :, None, :] +
-                k[:, :, 2:, :] * ck[None, 2, :, None, :]
-            )
-            v = (
-                v[:, :, 0:-2, :] * cv[None, 0, :, None, :] +
-                v[:, :, 1:-1, :] * cv[None, 1, :, None, :] +
-                v[:, :, 2:, :] * cv[None, 2, :, None, :]
-            )
-            q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
-            k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
-            v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
-
-        if self.hps.qk_norm:
-            q = QKLayerNorm(self.hps, self.global_mesh, "aq")(q)
-            k = QKLayerNorm(self.hps, self.global_mesh, "ak")(k)
-            q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
-            k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "aq_l1", coord_check_l1(q))
         self.sow("intermediates", "ak_l1", coord_check_l1(k))
+        self.sow("intermediates", "av_l1", coord_check_l1(v))
 
         q = RotaryEncoding(self.hps, self.global_mesh)(q)
         k = RotaryEncoding(self.hps, self.global_mesh)(k)
@@ -270,27 +186,6 @@ class MultiHeadAttention(nn.Module):
         k = sharding_constraint(k, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "aqr_l1", coord_check_l1(q))
         self.sow("intermediates", "akr_l1", coord_check_l1(k))
-
-        if self.hps.v_gating:
-            wg = self.param("w_ag", i_init, shapes["MHD"], self.hps.param_dtype)
-            g = jnp.einsum("bim,mhd->bhid", x, wg.astype(self.hps.dtype))
-            g = sharding_constraint(g, MESH_AXES["XYNN"], self.global_mesh)
-            if self.hps.qkv_sepconv:
-                c_init = init.normal(3 ** -0.5)
-                c_init = nn.with_partitioning(c_init, MESH_AXES["YNN"], self.global_mesh)
-                c_shape = shapes["PHD"]
-                c_args = [c_init, c_shape, self.hps.param_dtype]
-                cg = self.param("c_ag", *c_args).astype(self.hps.dtype)
-                g = jnp.pad(g, ((0, 0), (0, 0), (2, 0), (0, 0)))
-                g = (
-                    g[:, :, 0:-2, :] * cg[None, 0, :, None, :] +
-                    g[:, :, 1:-1, :] * cg[None, 1, :, None, :] +
-                    g[:, :, 2:, :] * cg[None, 2, :, None, :]
-                )
-                g = sharding_constraint(g, MESH_AXES["XYNN"], self.global_mesh)
-            v = v * jax.nn.silu(g)
-            v = sharding_constraint(v, MESH_AXES["XYNN"], self.global_mesh)
-        self.sow("intermediates", "av_l1", coord_check_l1(v))
 
         mult = jnp.array([self.hps.d_head**-0.5], dtype=self.hps.dtype)
         s = jnp.einsum("bhid,bhjd->bhij", q * mult, k * mult)
@@ -300,12 +195,7 @@ class MultiHeadAttention(nn.Module):
         s = CausalMask(self.hps.sequence_len, self.global_mesh)(s)
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
 
-        if self.hps.qk_kernel == "softmax":
-            p = jax.nn.softmax(s, axis=-1)
-        elif self.hps.qk_kernel == "sqrelu":
-            p = jnp.square(jax.nn.relu(s))
-        else:
-            raise NotImplementedError("Unrecognized qk_kernel name")
+        p = jax.nn.softmax(s, axis=-1)
         p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "ap_l1", coord_check_l1(p))
 
@@ -325,7 +215,7 @@ class MultiLayerPerceptron(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        ff_multiple = 3.5 if self.hps.v_gating else 4.0
+        ff_multiple = 4.0
         d_ff = int(ff_multiple * self.hps.d_model)
 
         shapes = Dimensions(
@@ -378,10 +268,10 @@ class TransformerBlock(nn.Module):
     def __call__(self, x, _):
         kws = dict(hps=self.hps, global_mesh=self.global_mesh)
 
-        x += MultiHeadAttention(**kws)(XLayerNorm(**kws, suffix="a")(x))
+        x += MultiHeadAttention(**kws)(RMSNorm(**kws, suffix="a")(x))
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
-        x += MultiLayerPerceptron(**kws)(XLayerNorm(**kws, suffix="f")(x))
+        x += MultiLayerPerceptron(**kws)(RMSNorm(**kws, suffix="f")(x))
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
         return x, None
@@ -416,7 +306,7 @@ class Unembedding(nn.Module):
     @nn.compact
     def __call__(self, x):
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-        x = XLayerNorm(self.hps, self.global_mesh, "u")(x)
+        x = RMSNorm(self.hps, self.global_mesh, "u")(x)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
         wu = self.param(

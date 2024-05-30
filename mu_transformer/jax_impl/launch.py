@@ -213,7 +213,7 @@ def automatic_modelname_factory():
     lr = str(FLAGS.config.lr_base).split(".")
     assert len(lr) == 2
     parts = [
-        "qkvexperiments",
+        "normexperiments",
         dataset_name,
         FLAGS.experiment_group,
         FLAGS.config.model_size,

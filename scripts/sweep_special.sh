@@ -1,6 +1,6 @@
 #!/bin/bash
 
-GROUP_NAME="vgating";
+GROUP_NAME="special";
 Help() {
   echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
@@ -36,5 +36,5 @@ do
         --config.n_ds_shard=16 \
         --config.lr_base="$LR" \
         --config.dtype=bfloat16 \
-        --config.v_gating=True;
+        --config.norm_special=True;
 done

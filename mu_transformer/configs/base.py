@@ -37,15 +37,11 @@ def get_base_config():
     config.n_layer = 24  # depth, should stay const for mu-transfer
     config.d_base = 128
     config.d_head = 128
-    config.qkv_sepconv = False  # depthwise separable convolutions on qkv, same as primer?
-    config.qk_norm = False  # normalize queries and keys using rmsnorm?
-    config.qk_kernel = "softmax"  # softmax or sqrelu
-    config.v_gating = False  # gate values
     config.rotary_base = 10_000
     config.act_name = "relu"  # any activation defined in jax.nn
     config.act_square = True  # activation squaring
     config.norm_eps = 1e-6  # layernorm epsilon
-    config.norm_trainable = True  # layernorm trainable
+    config.norm_special = False
 
     # optimization
     config.tokens_per_global_batch = 2**18  # batch size * sequence len
