@@ -26,7 +26,7 @@ for b2 in 0.95 0.96 0.97 0.98 0.99;
 do
     for eps in 0.00001 0.000001 0.0000001 0.00000001 0.000000001;
     do
-        GROUP_NAME="adam_$b2_$eps";
+        GROUP_NAME="adam_$b2\_$eps";
         ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
             --experiment_group="$GROUP_NAME" \
             --config="mu_transformer/configs/small.py" \
