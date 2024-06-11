@@ -22,7 +22,7 @@ while getopts "l:h" option; do
 done
 
 LR=$(bc -l <<< "2 ^(-$LR_IDX)");
-for b1 in 0.95 0.96 0.97 0.98 0.99;
+for b1 in 0.91 0.92 0.93 0.94 0.95;
 do
     for b2 in 0.95 0.96 0.97 0.98 0.99;
     do
