@@ -254,7 +254,9 @@ def automatic_modelname_factory():
         f"a{lr[0]}point{lr[1]}",
         f"b{global_batch_size_factory()}",
         f"t{FLAGS.config.sequence_len}",
-        f"s{FLAGS.config.n_pretrain_step}",
+        f"w{FLAGS.config.n_warmup_step}",
+        f"s{FLAGS.config.n_stable_step}",
+        f"d{FLAGS.config.n_decay_step}",
         f"r{FLAGS.seed}",
     ]
     return "_".join(parts)
