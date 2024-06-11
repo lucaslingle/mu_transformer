@@ -40,29 +40,23 @@ def get_base_config():
     config.d_base = 128  # base model width for relative scaling rules
     config.d_head = 128
     config.ff_multiple = 4  # mlp width multiple
-    config.e_norm = False  # normalize the embeddings using rmsnorm?
     config.q_init = "vs"  # query projection init: vs, zero
     config.r_init = "vs"  # residual projection init: vs, zero
-    config.u_init = "mup"  # unembedding projection init: mup, sp, zero
+    config.u_init = "zero"  # unembedding projection init: vs, zero
     config.qk_scale = 1 / 128
-    config.qk_norm = False  # normalize queries and keys using rmsnorm?
     config.kv_mqa = False
-    config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
-    config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
-    config.act_square = False  # activation squaring
-    config.norm_eps = 1e-6  # rmsnorm epsilon
-    config.norm_gains = False  # rmsnorm gains
-    config.norm_gains_type = "vector"  # vector or scalar
-    config.proj_biases = False  # projections with bias
+    config.rotary_base = 10_000  # rope theta
+    config.act_name = "relu"  # any activation defined in jax.nn
+    config.act_square = True  # activation squaring (e.g., for squared relu)
+    config.norm_eps = 1e-5  # rmsnorm epsilon
 
     # optimization
-    config.tokens_per_global_batch = 2**18  # batch size * sequence len
+    config.tokens_per_global_batch = 2**18  # (micro-)batch size * sequence len
     config.grad_acc_steps = 1  # steps per parameter update (for micro-batching)
     config.grad_clip = 1.0  # grad clip max l2 norm
     config.lr_base = 1.0  # base learning rate
-    config.lr_schedule_name = "linear"
+    config.lr_decay_name = "linear"
     config.optim_name = "adamw"
-    config.optim_rule = "mup"  # mup or sp
     config.optim_beta1 = 0.9
     config.optim_beta2 = 0.98
     config.optim_eps = 10**-9
@@ -72,9 +66,9 @@ def get_base_config():
     config.n_print_step = 100  # print every
     config.n_save_step = 5000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
-    config.n_warmup_step = 10_000  # warmup steps during pretraining
-    config.n_pretrain_step = 125_000  # pretraining steps
-    config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
+    config.n_warmup_step = 5_000  # lr warmup steps
+    config.n_stable_step = 115_000  # lr stable steps
+    config.n_decay_step = 5_000  # lr decay steps
     config.no_checkpoint = False  # skip saving the model
 
     return config

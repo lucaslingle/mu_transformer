@@ -109,125 +109,50 @@ def param_label_fn(params):
     return traverse_util.unflatten_dict(flat_labels)
 
 
+def total_steps_factory():
+    return (
+        FLAGS.config.n_warmup_step +
+        FLAGS.config.n_stable_step +
+        FLAGS.config.n_decay_step
+    )
+
+
 def schedule_factory():
-    warmup_steps = FLAGS.config.n_warmup_step
-    decay_steps = FLAGS.config.n_pretrain_step - FLAGS.config.n_warmup_step  # const aft
+    n_warmup = FLAGS.config.n_warmup_step
+    n_stable = FLAGS.config.n_stable_step
+    n_decay = FLAGS.config.n_decay_step
     minval = 1e-4
-    warmup = optax.linear_schedule(minval, 1.0, transition_steps=warmup_steps)
-    if FLAGS.config.lr_schedule_name == "linear":
-        decay = optax.linear_schedule(1.0, minval, transition_steps=decay_steps)
-    elif FLAGS.config.lr_schedule_name == "cosine":
-        decay = optax.cosine_decay_schedule(1.0, alpha=minval, decay_steps=decay_steps)
+    sched = [optax.linear_schedule(minval, 1.0, transition_steps=n_warmup)]
+    bounds = [n_warmup]
+    if n_stable > 0:
+        sched.append(optax.constant_schedule(1.0))
+        bounds.append(n_warmup+n_stable)
+    if FLAGS.config.lr_decay_name == "linear":
+        sched.append(optax.linear_schedule(1.0, minval, transition_steps=n_decay))
+    elif FLAGS.config.lr_decay_name == "cosine":
+        sched.append(optax.cosine_decay_schedule(1.0, alpha=minval, decay_steps=n_decay))
     else:
-        raise NotImplementedError(f"Unsupported sched: {FLAGS.config.lr_schedule_name}")
-    return optax.join_schedules([warmup, decay], boundaries=[warmup_steps])
+        raise NotImplementedError(f"Unsupported sched: {FLAGS.config.lr_decay_name}")
+    return optax.join_schedules(sched, boundaries=bounds)
 
 
-def get_standard_lrs():
-    lr = FLAGS.config.lr_base
-    return {
-        # embeddings
-        "g_e": lr,
-        "w_e": lr,
-        # attention
-        "g_a": lr,
-        "g_aq": lr,
-        "g_ak": lr,
-        "w_aq": lr,
-        "w_ak": lr,
-        "w_av": lr,
-        "w_ao": lr,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
-        # feed-forward
-        "g_f": lr,
-        "w_fi": lr,
-        "w_fo": lr,
-        "b_fi": lr,
-        "b_fo": lr,
-        # unembedding
-        "g_u": lr,
-        "w_u": lr,
-        "b_u": lr,
-    }
-
-
-def get_mup_lrs():
+def get_lrs():
     lr = FLAGS.config.lr_base
     wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
     return {
         # embeddings
-        "g_e": lr,
         "w_e": lr,
         # attention
-        "g_a": lr,
-        "g_aq": lr,
-        "g_ak": lr,
         "w_aq": lr / wm,
         "w_ak": lr / wm,
         "w_av": lr / wm,
         "w_ao": lr / wm,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
         # feed-forward
-        "g_f": lr,
         "w_fi": lr / wm,
         "w_fo": lr / wm,
-        "b_fi": lr,
-        "b_fo": lr,
         # unembedding
-        "g_u": lr,
         "w_u": lr / wm,
-        "b_u": lr,
     }
-
-
-def get_abs_mup_lrs():
-    lr = FLAGS.config.lr_base
-    dm = FLAGS.config.d_model
-    dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
-    return {
-        # embeddings
-        "g_e": lr,
-        "w_e": lr,
-        # attention
-        "g_a": lr,
-        "g_aq": lr,
-        "g_ak": lr,
-        "w_aq": lr / dm,
-        "w_ak": lr / dm,
-        "w_av": lr / dm,
-        "w_ao": lr / dm,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
-        # feed-forward
-        "g_f": lr,
-        "w_fi": lr / dm,
-        "w_fo": lr / dff,
-        "b_fi": lr,
-        "b_fo": lr,
-        # unembedding
-        "g_u": lr,
-        "w_u": lr / dm,
-        "b_u": lr,
-    }
-
-
-def get_lrs():
-    p = FLAGS.config.optim_rule
-    if p == "sp":
-        return get_standard_lrs()
-    if p == "mup":
-        return get_mup_lrs()
-    if p == "abs_mup":
-        return get_abs_mup_lrs()
-    raise NotImplementedError(f"Unrecognized optim_rule: {p}")
 
 
 def grad_transform_factory():
@@ -541,7 +466,7 @@ def train_loop():
             state = do_restore(load_checkpoint_mgr, state)
         start_step = load_checkpoint_mgr.latest_step() or 0
         del load_checkpoint_mgr
-        if start_step == FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step:
+        if start_step == total_steps_factory():
             return
     else:
         start_step = 0
@@ -592,8 +517,7 @@ def train_loop():
     save_checkpoint_mgr = checkpoint_manager_factory(option="save")
     log_level_is_debug = logging.get_verbosity() == 1
     start_time = time.perf_counter()
-    # the user should set n_finetune_step > 0 if and only if currently fine-tuning.
-    n_total_step = FLAGS.config.n_pretrain_step + FLAGS.config.n_finetune_step
+    n_total_step = total_steps_factory()
     for step in range(start_step, n_total_step + 1):
         # occasionally perform an evaluation and save a checkpoint on improvement
         if (step % FLAGS.config.n_save_step == 0) or step == n_total_step:
