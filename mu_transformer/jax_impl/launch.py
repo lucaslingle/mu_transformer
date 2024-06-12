@@ -252,9 +252,6 @@ def global_batch_size_factory():
 def automatic_modelname_factory():
     dataset_name = FLAGS.config.hfds_identifier.split("/")[-1].lower()
     assert re.search(r"^[a-zA-Z0-9-_]+$", dataset_name) is not None  # ^=start, $=end.
-    lr = str(FLAGS.config.lr_base).split(".")
-    assert len(lr) == 2
-
     parts = [
         "mutransformer",
         dataset_name,
@@ -736,13 +733,21 @@ def save_eval_loss():
     logging.info(f"Eval loss: {eval_loss}")
     if jax.process_index() == 0:
         table = wandb.Table(
-            columns=["Group", "Rule", "Width", "LR", "Loss"],
+            columns=["Group", "Size", "Steps", "Optimizer", "Alpha", "Beta1", "Beta2", "Epsilon", "Lambda", "Warmup", "Cooldown", "RNG", "Loss"],
             data=[
                 [
                     FLAGS.experiment_group,
-                    FLAGS.config.optim_rule,
-                    FLAGS.config.d_model,
+                    FLAGS.config.model_size,
+                    FLAGS.config.n_total_step,
+                    FLAGS.config.optim_name,
                     FLAGS.config.lr_base,
+                    FLAGS.config.optim_beta1,
+                    FLAGS.config.optim_beta2,
+                    FLAGS.config.optim_eps,
+                    FLAGS.config.wd,
+                    FLAGS.config.n_warmup_frac,
+                    FLAGS.config.n_decay_frac,
+                    FLAGS.seed,
                     eval_loss,
                 ],
             ],
