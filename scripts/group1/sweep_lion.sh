@@ -58,7 +58,6 @@ do
             --config.n_warmup_frac="$WARMUP_FRAC" \
             --config.n_total_step="$TOTAL_STEPS" \
             --config.n_decay_frac="$DECAY_FRAC";
-          done;
         done;
       done;
     done;
