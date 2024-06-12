@@ -109,30 +109,38 @@ def param_label_fn(params):
     return traverse_util.unflatten_dict(flat_labels)
 
 
-def total_steps_factory():
+def warmup_steps_factory():
+    return int(FLAGS.config.n_warmup_frac * FLAGS.config.n_total_step)
+
+
+def decay_steps_factory():
+    non_warmup_steps = FLAGS.config.n_total_step - warmup_steps_factory()
+    return int(FLAGS.config.n_decay_frac * non_warmup_steps)
+
+
+def stable_steps_factory():
     return (
-        FLAGS.config.n_warmup_step +
-        FLAGS.config.n_stable_step +
-        FLAGS.config.n_decay_step
+        FLAGS.config.n_total_step
+        - warmup_steps_factory()
+        - decay_steps_factory()
     )
 
 
 def schedule_factory():
-    n_warmup = FLAGS.config.n_warmup_step
-    n_stable = FLAGS.config.n_stable_step
-    n_decay = FLAGS.config.n_decay_step
+    n_warmup = warmup_steps_factory()
+    n_stable = stable_steps_factory()
+    n_decay = decay_steps_factory()
     minval = 1e-4
-    sched = [optax.linear_schedule(minval, 1.0, transition_steps=n_warmup)]
-    bounds = [n_warmup]
+    sched = []
+    bounds = []
+    if n_warmup > 0:
+        sched.append(optax.linear_schedule(minval, 1.0, transition_steps=n_warmup))
+        bounds.append(n_warmup)
     if n_stable > 0:
         sched.append(optax.constant_schedule(1.0))
         bounds.append(n_warmup+n_stable)
-    if FLAGS.config.lr_decay_name == "linear":
+    if n_decay > 0:
         sched.append(optax.linear_schedule(1.0, minval, transition_steps=n_decay))
-    elif FLAGS.config.lr_decay_name == "cosine":
-        sched.append(optax.cosine_decay_schedule(1.0, alpha=minval, decay_steps=n_decay))
-    else:
-        raise NotImplementedError(f"Unsupported sched: {FLAGS.config.lr_decay_name}")
     return optax.join_schedules(sched, boundaries=bounds)
 
 
@@ -246,18 +254,24 @@ def automatic_modelname_factory():
     assert re.search(r"^[a-zA-Z0-9-_]+$", dataset_name) is not None  # ^=start, $=end.
     lr = str(FLAGS.config.lr_base).split(".")
     assert len(lr) == 2
+
     parts = [
         "mutransformer",
         dataset_name,
         FLAGS.experiment_group,
-        FLAGS.config.model_size,
-        f"a{lr[0]}point{lr[1]}",
-        f"b{global_batch_size_factory()}",
-        f"t{FLAGS.config.sequence_len}",
-        f"w{FLAGS.config.n_warmup_step}",
-        f"s{FLAGS.config.n_stable_step}",
-        f"d{FLAGS.config.n_decay_step}",
-        f"r{FLAGS.seed}",
+        f"size-{FLAGS.config.model_size}",
+        f"steps-{FLAGS.config.n_total_step}",
+        f"optim-{FLAGS.config.optim_name}",
+        f"alpha-{FLAGS.config.lr_base}",
+        f"beta1-{FLAGS.config.optim_beta1}",
+        f"beta2-{FLAGS.config.optim_beta2}",
+        f"eps-{FLAGS.config.optim_eps}",
+        f"lam-{FLAGS.config.wd}",
+        f"wu-{FLAGS.config.n_warmup_frac}",
+        f"cd-{FLAGS.config.n_decay_frac}",
+        f"bsz-{global_batch_size_factory()}",
+        f"seq-{FLAGS.config.sequence_len}",
+        f"rand-{FLAGS.seed}",
     ]
     return "_".join(parts)
 
@@ -468,7 +482,7 @@ def train_loop():
             state = do_restore(load_checkpoint_mgr, state)
         start_step = load_checkpoint_mgr.latest_step() or 0
         del load_checkpoint_mgr
-        if start_step == total_steps_factory():
+        if start_step == FLAGS.config.n_total_step:
             return
     else:
         start_step = 0
@@ -519,7 +533,7 @@ def train_loop():
     save_checkpoint_mgr = checkpoint_manager_factory(option="save")
     log_level_is_debug = logging.get_verbosity() == 1
     start_time = time.perf_counter()
-    n_total_step = total_steps_factory()
+    n_total_step = FLAGS.config.n_total_step
     for step in range(start_step, n_total_step + 1):
         # occasionally perform an evaluation and save a checkpoint on improvement
         if (step % FLAGS.config.n_save_step == 0) or step == n_total_step:
@@ -799,7 +813,7 @@ def main(argv):
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_clean",
+            project="mu_transformer_optim-v2",
             group=FLAGS.experiment_group,
             config=vars(FLAGS.config)["_fields"],
             resume="never" if FLAGS.wb_run is None else "must",

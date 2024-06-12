@@ -66,9 +66,9 @@ def get_base_config():
     config.n_print_step = 100  # print every
     config.n_save_step = 5000  # checkpoint every
     config.n_eval_step = 100  # eval steps per checkpoint
-    config.n_warmup_step = 5_000  # lr warmup steps
-    config.n_stable_step = 115_000  # lr stable steps
-    config.n_decay_step = 5_000  # lr decay steps
+    config.n_total_step = 125_000  # total training steps
+    config.n_warmup_frac = 0.1  # lr warmup frac: fraction of total steps
+    config.n_decay_frac = 1.0  # lr decay frac: fraction of non-warmup steps
     config.no_checkpoint = False  # skip saving the model
 
     return config
