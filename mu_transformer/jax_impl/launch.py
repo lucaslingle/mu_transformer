@@ -848,6 +848,9 @@ def main(argv):
     else:
         raise NotImplementedError
 
+    if jax.process_index() == 0:
+        wandb.finish()
+
 
 if __name__ == "__main__":
     jax.config.config_with_absl()
