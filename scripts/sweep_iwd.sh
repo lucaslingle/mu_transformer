@@ -1,25 +1,18 @@
 #!/bin/bash
 
+GROUP_NAME="iwd";
 Help() {
-  echo "Syntax: sweep_wd_flex.sh [l|w|t|h]"
+  echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
   echo "l     -log2(LR): a positive integer."
-  echo "w     WD: a non-negative float."
-  echo "t     T: a positive integer."
   echo "h     Print this Help."
   echo
 }
 
-while getopts "l:w:t:h" option; do
+while getopts "l:h" option; do
   case $option in
     l)
-      LR_IDX=$OPTARG;
-      LR=$(python3 -c "print(2 ** -$LR_IDX)");;
-    w)
-      WD=$OPTARG;;
-    t)
-      T=$OPTARG;
-      WU=$(python3 -c "print(int(0.08 * $T))");;
+      LR_IDX=$OPTARG;;
     h)
       Help
       exit;;
@@ -28,8 +21,8 @@ while getopts "l:w:t:h" option; do
       exit;;
   esac
 done
-GROUP_NAME="wd_flex_${WD}_${T}";
 
+LR=$(bc -l <<< "2 ^(-$LR_IDX)");
 for size in "small" "medium" "large";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
@@ -42,11 +35,6 @@ do
         --config.force_download=False \
         --config.n_ds_shard=16 \
         --config.lr_base="$LR" \
-        --config.dtype=bfloat16 \
-        --config.wd="$WD" \
-        --config.n_warmup_step="$WU" \
-        --config.n_pretrain_step="$T" \
-        --config.act_name="relu" \
-        --config.act_square=True \
-        --config.q_init="zero";
+        --config.wd=0.0001 \
+        --config.use_iwd=True;
 done

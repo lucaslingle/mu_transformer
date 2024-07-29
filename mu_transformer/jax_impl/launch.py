@@ -123,8 +123,7 @@ def schedule_factory():
     return optax.join_schedules([warmup, decay], boundaries=[warmup_steps])
 
 
-def get_standard_lrs():
-    lr = FLAGS.config.lr_base
+def get_standard_scaling(lr):
     return {
         # embeddings
         "g_e": lr,
@@ -154,8 +153,7 @@ def get_standard_lrs():
     }
 
 
-def get_mup_lrs():
-    lr = FLAGS.config.lr_base
+def get_rel_mup_scaling(lr):
     wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
     return {
         # embeddings
@@ -186,8 +184,7 @@ def get_mup_lrs():
     }
 
 
-def get_abs_mup_lrs():
-    lr = FLAGS.config.lr_base
+def get_abs_mup_scaling(lr):
     dm = FLAGS.config.d_model
     dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
     return {
@@ -222,42 +219,58 @@ def get_abs_mup_lrs():
 def get_lrs():
     p = FLAGS.config.optim_rule
     if p == "sp":
-        return get_standard_lrs()
+        return get_standard_scaling(FLAGS.config.lr_base)
     if p == "mup":
-        return get_mup_lrs()
+        return get_rel_mup_scaling(FLAGS.config.lr_base)
     if p == "abs_mup":
-        return get_abs_mup_lrs()
+        return get_abs_mup_scaling(FLAGS.config.lr_base)
     raise NotImplementedError(f"Unrecognized optim_rule: {p}")
+
+
+def get_epss():
+    p = FLAGS.config.optim_rule
+    es = FLAGS.config.use_eps_scaling
+    if es is False:
+        return get_standard_scaling(FLAGS.config.optim_eps)
+    if p == "sp":
+        raise NotImplementedError("Eps scaling not supported for optim_rule sp.")
+    if p == "mup":
+        return get_rel_mup_scaling(FLAGS.config.optim_eps)
+    if p == "abs_mup":
+        return get_abs_mup_scaling(FLAGS.config.optim_eps)
+    raise NotImplementedError(f"Unrecognized optim_rule: {p}")
+
+
+def optimizer_factory():
+    kws = dict(
+        b1=FLAGS.config.optim_beta1,
+        b2=FLAGS.config.optim_beta2,
+        mu_dtype=FLAGS.config.dtype,
+        weight_decay=0.0 if FLAGS.config.use_iwd else FLAGS.config.wd,
+    )
+    if FLAGS.config.optim_name == "adamw":
+        lrs = get_lrs()
+        epss = get_epss()
+        return optax.multi_transform(
+            {name: optax.adamw(lr, eps=epss[name], **kws) for name, lr in lrs.items()},
+            param_labels=param_label_fn,
+        )
+    if FLAGS.config.optim_name == "lion":
+        lrs = get_lrs()
+        return optax.multi_transform(
+            {name: optax.lion(lr, **kws) for name, lr in lrs.items()},
+            param_labels=param_label_fn,
+        )
+    raise NotImplementedError(f"Unsupported optimizer: {FLAGS.config.optim_name}")
 
 
 def grad_transform_factory():
     chain = []
     if FLAGS.config.grad_clip > 0.0:
         chain.append(optax.clip_by_global_norm(FLAGS.config.grad_clip))
-    if FLAGS.config.optim_name == "adamw":
-        optimizer_cls = optax.adamw
-        optimizer_kws = dict(
-            b1=FLAGS.config.optim_beta1,
-            b2=FLAGS.config.optim_beta2,
-            eps=FLAGS.config.optim_eps,
-            mu_dtype=FLAGS.config.dtype,
-            weight_decay=FLAGS.config.wd,
-        )
-    elif FLAGS.config.optim_name == "lion":
-        optimizer_cls = optax.lion
-        optimizer_kws = dict(
-            b1=FLAGS.config.optim_beta1,
-            b2=FLAGS.config.optim_beta2,
-            mu_dtype=FLAGS.config.dtype,
-            weight_decay=FLAGS.config.wd,
-        )
-    else:
-        raise NotImplementedError(f"Unsupported optimizer: {FLAGS.config.optim_name}")
-    optimizer = optax.multi_transform(
-        jtu.tree_map(lambda lr: optimizer_cls(lr, **optimizer_kws), get_lrs()),
-        param_labels=param_label_fn,
-    )
-    chain.append(optimizer)
+    chain.append(optimizer_factory())
+    if FLAGS.config.use_iwd:
+        chain.append(optax.add_decayed_weights(-FLAGS.config.wd))
     chain.append(optax.scale_by_schedule(schedule_factory()))
     tx = optax.chain(*chain)
     if FLAGS.config.grad_acc_steps > 1:
@@ -488,21 +501,19 @@ def train_step(state, batch):
         p_new = state.params
         p_old = clean_and_flatten(p_old, split_filter={"w_a", "w_f", "g_a", "g_f"})
         p_new = clean_and_flatten(p_new, split_filter={"w_a", "w_f", "g_a", "g_f"})
-        p_update = jtu.tree_map(lambda a, b: jnp.mean(jnp.abs(a - b)), p_new, p_old)
-        p_update = {f"uu_{k}": v / get_current_lr(k, step) for k, v in p_update.items()}
+        info = jtu.tree_map(lambda a, b: jnp.mean(jnp.abs(a - b)), p_new, p_old)
+        info = {f"uu_{k}": v / get_current_lr(k, step) for k, v in info.items()}
     else:
         state = state.apply_gradients(grads=grads)  # do update
-        p_update = dict()
-    return state, dict(**metrics, **p_update)
+        info = dict()
+    return state, dict(**metrics, **info)
 
 
 def get_tpuv3_mfu(param_count, sec_per_step):
     """Estimate model flops utilization (MFU)"""
     # see PaLM paper Appendix B as ref: https://arxiv.org/abs/2204.02311
-
     # get throughput estimate in tokens per second
     tokens_per_sec = FLAGS.config.tokens_per_global_batch / sec_per_step
-
     # get flop count estimate per token using analytical accounting
     n = param_count
     l = FLAGS.config.n_layer
@@ -510,14 +521,11 @@ def get_tpuv3_mfu(param_count, sec_per_step):
     q = FLAGS.config.d_head
     t = FLAGS.config.sequence_len
     flop_per_token = (6 * n) + (12 * l * h * q * t)
-
     # get estimated flop count per second (flop/s)
     flop_per_second_analytic = flop_per_token * tokens_per_sec
-
     # get peak theoretical flop count per second for the tpu v3 pod slice.
     #   formula: TPU v3 flop/s per chip * 4 chips per host * num hosts:
     flop_per_second_peak = 123e12 * 4 * jax.process_count()
-
     mfu = flop_per_second_analytic / flop_per_second_peak
     return mfu * 100  # a percentage
 
@@ -532,6 +540,7 @@ def train_loop():
     logging.info("Creating RNGs...")
     rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
     rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())
+    del rng_stoch  # not used currently since no dropout, etc.
 
     logging.info("Creating train state...")
     state = train_state_factory(rng_init)
