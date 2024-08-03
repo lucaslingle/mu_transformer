@@ -885,7 +885,7 @@ def main(argv):
         wandb.init(
             project="mu_transformer_clean",
             group=FLAGS.experiment_group,
-            config=vars(FLAGS.config)["_fields"],
+            config={**vars(FLAGS.config)["_fields"], "seed": FLAGS.seed},
             resume="never" if FLAGS.wb_run is None else "must",
             mode="online" if FLAGS.wb_enabled else "disabled",
             id=FLAGS.wb_run,

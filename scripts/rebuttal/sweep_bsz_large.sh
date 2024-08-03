@@ -25,7 +25,7 @@ done;
 
 LR=$(bc -l <<< "2 ^(-$LR_IDX+1)");
 SIZE="small";
-for RNG_SEED in 0 1 2 3 4;
+for RNG_SEED in 0 1 2;
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
         --experiment_group="$GROUP_NAME" \
