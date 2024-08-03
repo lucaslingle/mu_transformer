@@ -883,7 +883,7 @@ def main(argv):
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_clean",
+            project="mu_transformer_rebuttal",
             group=FLAGS.experiment_group,
             config={**vars(FLAGS.config)["_fields"], "seed": FLAGS.seed},
             resume="never" if FLAGS.wb_run is None else "must",
