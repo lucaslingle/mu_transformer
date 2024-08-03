@@ -805,10 +805,11 @@ def save_eval_loss():
     logging.info(f"Eval loss: {eval_loss}")
     if jax.process_index() == 0:
         table = wandb.Table(
-            columns=["Group", "Rule", "Width", "LR", "Loss"],
+            columns=["Group", "Seed", "Rule", "Width", "LR", "Loss"],
             data=[
                 [
                     FLAGS.experiment_group,
+                    FLAGS.seed,
                     FLAGS.config.optim_rule,
                     FLAGS.config.d_model,
                     FLAGS.config.lr_base,
