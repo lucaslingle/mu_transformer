@@ -18,8 +18,8 @@ def get_base_config():
     config = config_dict.ConfigDict()
 
     # logging/plotting
-    config.sow_intermediates = True
-    config.sow_param_info = True
+    config.sow_intermediates = False
+    config.sow_param_info = False
     config.is_sweep = False
 
     # huggingface tokenizer and dataset settings
