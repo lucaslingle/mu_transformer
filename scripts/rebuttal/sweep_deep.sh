@@ -1,6 +1,6 @@
 #!/bin/bash
 
-GROUP_NAME="rebuttal_qkscale_d64";
+GROUP_NAME="rebuttal_deep";
 Help() {
   echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
@@ -24,8 +24,8 @@ do
 done;
 
 LR=$(bc -l <<< "2 ^(-$LR_IDX)");
-SIZE="small";
-for RNG_SEED in 0 1 2;
+RNG_SEED=0;
+for SIZE in "small" "medium";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
         --experiment_group="$GROUP_NAME" \
@@ -38,7 +38,6 @@ do
         --config.force_download=False \
         --config.n_ds_shard=16 \
         --config.lr_base="$LR" \
-        --config.dtype="bfloat16" \
-        --config.d_head=64 \
-        --config.qk_scale=0.125;
+        --config.n_layer=96 \
+        --config.dtype="bfloat16";
 done;
