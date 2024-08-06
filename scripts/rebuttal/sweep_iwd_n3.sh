@@ -24,21 +24,19 @@ do
 done;
 
 LR=$(bc -l <<< "2 ^(-$LR_IDX)");
-RNG_SEED=0;
 for SIZE in "small" "medium" "large";
 do
-    ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
-        --experiment_group="$GROUP_NAME" \
-        --seed="$RNG_SEED" \
-        --config="mu_transformer/configs/$SIZE.py" \
-        --workdir="gs://tpu_persist_bucket/mu_transformer_scaling/" \
-        --mode="train" \
-        --wb_enabled=True \
-        --config.is_sweep=True \
-        --config.force_download=False \
-        --config.n_ds_shard=16 \
-        --config.lr_base="$LR" \
-        --config.dtype="bfloat16" \
-        --config.wd=0.001 \
-        --config.use_iwd=True;
+  ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
+    --experiment_group="$GROUP_NAME" \
+    --config="mu_transformer/configs/$SIZE.py" \
+    --workdir="gs://tpu_persist_bucket/mu_transformer_scaling/" \
+    --mode="train" \
+    --wb_enabled=True \
+    --config.is_sweep=True \
+    --config.force_download=False \
+    --config.n_ds_shard=16 \
+    --config.lr_base="$LR" \
+    --config.dtype="bfloat16" \
+    --config.wd=0.001 \
+    --config.use_iwd=True;
 done;
