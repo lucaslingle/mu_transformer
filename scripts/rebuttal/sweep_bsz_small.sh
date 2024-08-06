@@ -26,7 +26,7 @@ do
   esac;
 done;
 
-LR=$(bc -l <<< "2 ^(-$LR_IDX)");
+LR=$(bc -l <<< "2 ^(-$LR_IDX-1)");
 SIZE="small";
 for RNG_SEED in $(seq 1 "$NUM_SEEDS");
 do
