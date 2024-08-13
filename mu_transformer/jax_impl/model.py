@@ -58,6 +58,7 @@ class TransformerConfig:
     eos_token_id: int
     pad_token_id: int
     is_train: bool
+    causal: bool = True
 
     @classmethod
     def create(cls, **kwargs):
@@ -129,6 +130,68 @@ class RotaryEncoding(nn.Module):
         sin = sharding_constraint(sin, MESH_AXES["NNNN"], self.global_mesh)
         chex.assert_shape(cos, [1, 1, length, width // 2])
         chex.assert_shape(sin, [1, 1, length, width // 2])
+
+        broadcast = self.hps.kv_mqa and self.is_keys
+        mesh_axes = MESH_AXES["XNNN"] if broadcast else MESH_AXES["XYNN"]
+
+        even, odd = jnp.split(x, 2, axis=-1)
+        even = sharding_constraint(even, mesh_axes, self.global_mesh)
+        odd = sharding_constraint(odd, mesh_axes, self.global_mesh)
+
+        r_even = even * cos - odd * sin
+        r_odd = even * sin + odd * cos
+        r_even = sharding_constraint(r_even, mesh_axes, self.global_mesh)
+        r_odd = sharding_constraint(r_odd, mesh_axes, self.global_mesh)
+
+        r = jnp.concatenate([r_even, r_odd], axis=-1)
+        r = sharding_constraint(r, mesh_axes, self.global_mesh)
+        chex.assert_shape(r, x.shape)
+        return r
+
+
+class RotaryEncodingV2(nn.Module):
+    hps: TransformerConfig
+    global_mesh: jax.sharding.Mesh
+    is_keys: bool
+
+    @nn.compact
+    def __call__(self, x, position_offsets):
+        bsz, _, length, width = x.shape
+
+        positions = jnp.arange(length)
+        positions = sharding_constraint(positions, MESH_AXES["N"], self.global_mesh)
+        positions = positions[..., None]  # expand along width axis
+        positions = sharding_constraint(positions, MESH_AXES["NN"], self.global_mesh)
+
+        dimensions = jnp.arange(width // 2)  # half each for sin and cos
+        dimensions = sharding_constraint(dimensions, MESH_AXES["N"], self.global_mesh)
+        ang_freqs = jnp.power(self.hps.rotary_base, -dimensions / (width // 2))
+        ang_freqs = ang_freqs[None, ...]  # expand along length axis
+        ang_freqs = sharding_constraint(ang_freqs, MESH_AXES["NN"], self.global_mesh)
+
+        # expand along leading axes, such as batch and head.
+        positions = positions[None, None, ...]
+        ang_freqs = ang_freqs[None, None, ...]
+        positions = sharding_constraint(positions, MESH_AXES["NNNN"], self.global_mesh)
+        ang_freqs = sharding_constraint(ang_freqs, MESH_AXES["NNNN"], self.global_mesh)
+        chex.assert_shape(positions, [1, 1, length, 1])
+        chex.assert_shape(ang_freqs, [1, 1, 1, width // 2])
+
+        # to supporting decoding with batch of variable-length prefills:
+        positions = positions + position_offsets[..., None, None, None]
+        positions = sharding_constraint(positions, MESH_AXES["XNNN"], self.global_mesh)
+
+        # rest is same as before
+        radians = positions * ang_freqs
+        radians = sharding_constraint(radians, MESH_AXES["NNNN"], self.global_mesh)
+        chex.assert_shape(radians, [bsz, 1, length, width // 2])
+
+        cos = jnp.cos(radians).astype(x.dtype)
+        sin = jnp.sin(radians).astype(x.dtype)
+        cos = sharding_constraint(cos, MESH_AXES["NNNN"], self.global_mesh)
+        sin = sharding_constraint(sin, MESH_AXES["NNNN"], self.global_mesh)
+        chex.assert_shape(cos, [bsz, 1, length, width // 2])
+        chex.assert_shape(sin, [bsz, 1, length, width // 2])
 
         broadcast = self.hps.kv_mqa and self.is_keys
         mesh_axes = MESH_AXES["XNNN"] if broadcast else MESH_AXES["XYNN"]
@@ -280,8 +343,9 @@ class MultiHeadAttention(nn.Module):
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
 
-        s = CausalMask(self.hps.sequence_len, self.global_mesh)(s)
-        s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
+        if self.hps.causal:
+            s = CausalMask(self.hps.sequence_len, self.global_mesh)(s)
+            s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
 
         p = jax.nn.softmax(s, axis=-1)
         p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
@@ -490,4 +554,4 @@ class Transformer(nn.Module):
         )(hps=self.hps, global_mesh=self.global_mesh)(x, None)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         x = nnp.remat(Unembedding)(self.hps, self.global_mesh)(x)
-        return x
+        return dict(logits=x)

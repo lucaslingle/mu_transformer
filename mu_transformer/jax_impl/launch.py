@@ -457,11 +457,12 @@ def loss_fn(params, batch, config, global_mesh):
     init_args = [config, global_mesh]
     apply_args = [{"params": params}, inp]
     if FLAGS.config.sow_intermediates:
-        logits, mv = Transformer(*init_args).apply(*apply_args, mutable="intermediates")
+        outp, mv = Transformer(*init_args).apply(*apply_args, mutable="intermediates")
         sown = clean_and_flatten(mv["intermediates"], split_filter={""})  # split all
     else:
-        logits = Transformer(*init_args).apply(*apply_args)
+        outp = Transformer(*init_args).apply(*apply_args)
         sown = dict()
+    logits = outp.get("logits")
     terms = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=tgt)
     terms = sharding_constraint(terms, MESH_AXES["XN"], global_mesh)
     mask = get_loss_mask(batch, pad_token_id=pad, eos_token_id=eos)
