@@ -479,7 +479,6 @@ class Transformer(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        x = jnp.pad(x[:, 0:-1], ((0, 0), (1, 0)), constant_values=self.hps.bos_token_id)
         x = nnp.remat(Embedding)(self.hps, self.global_mesh)(x)
         x, _ = nn.scan(
             nnp.remat(TransformerBlock),

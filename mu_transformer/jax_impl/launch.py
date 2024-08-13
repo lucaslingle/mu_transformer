@@ -450,20 +450,21 @@ def clean_and_flatten(pytree, split_filter: Set[str]):
 
 
 def loss_fn(params, batch, config, global_mesh):
-    batch = sharding_constraint(batch, MESH_AXES["XN"], global_mesh)
+    bos, eos, pad = config.bos_token_id, config.eos_token_id, config.pad_token_id
+    inp = jnp.pad(batch[:, 0:-1], ((0, 0), (1, 0)), constant_values=bos)
+    inp = sharding_constraint(inp, MESH_AXES["XN"], global_mesh)
+    tgt = sharding_constraint(batch, MESH_AXES["XN"], global_mesh)
     init_args = [config, global_mesh]
-    apply_args = [{"params": params}, batch]  # tokens shifted internally by model
+    apply_args = [{"params": params}, inp]
     if FLAGS.config.sow_intermediates:
         logits, mv = Transformer(*init_args).apply(*apply_args, mutable="intermediates")
         sown = clean_and_flatten(mv["intermediates"], split_filter={""})  # split all
     else:
         logits = Transformer(*init_args).apply(*apply_args)
         sown = dict()
-    terms = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=batch)
+    terms = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=tgt)
     terms = sharding_constraint(terms, MESH_AXES["XN"], global_mesh)
-    mask = get_loss_mask(
-        batch, pad_token_id=config.pad_token_id, eos_token_id=config.eos_token_id
-    )
+    mask = get_loss_mask(batch, pad_token_id=pad, eos_token_id=eos)
     mask = sharding_constraint(mask, MESH_AXES["XN"], global_mesh)
     metrics = dict(
         loss_term_avg=jnp.mean(mask * terms),
