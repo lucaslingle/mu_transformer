@@ -296,7 +296,7 @@ def train_state_factory(rng_init):
     # based on https://flax.readthedocs.io/en/latest/guides/parallel_training/flax_on_pjit.html#the-output-s-sharding  # noqa
     model_cls = Transformer
     optimizer_cls = grad_transform_factory()
-    config = transformer_config_factory(is_train=True)
+    config = transformer_config_factory(is_train=True, is_decoding=False)
     global_mesh = global_mesh_factory()
 
     prng_sharding = get_namedsharding(axis_names=(None,), device_mesh=global_mesh)
