@@ -237,7 +237,7 @@ class MultiHeadAttention(nn.Module):
     global_mesh: jax.sharding.Mesh
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(self, x, state):
         shapes = Dimensions(
             B=x.shape[0],
             T=self.cfg.sequence_len,
@@ -362,7 +362,9 @@ class MultiHeadAttention(nn.Module):
             r += bo.astype(self.cfg.dtype)[None, None, ...]  # noqa
             r = sharding_constraint(r, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "ar_l1", coord_check_l1(r))
-        return r
+
+        new_state = None
+        return r, new_state
 
 
 class MultiLayerPerceptron(nn.Module):
