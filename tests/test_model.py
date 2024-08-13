@@ -39,7 +39,7 @@ def test_rope_equivalence():
         eos_token_id=1,
         pad_token_id=2,
         is_train=True,
-        causal=True,
+        is_decoding=False,
     )
     n_mesh_rows, n_mesh_cols = 1, 1
     mesh = jax.sharding.Mesh(

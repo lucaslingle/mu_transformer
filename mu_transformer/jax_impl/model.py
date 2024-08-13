@@ -58,7 +58,7 @@ class TransformerConfig:
     eos_token_id: int
     pad_token_id: int
     is_train: bool
-    causal: bool = True
+    is_decoding: bool
 
     @classmethod
     def create(cls, **kwargs):
@@ -343,9 +343,8 @@ class MultiHeadAttention(nn.Module):
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
 
-        if self.hps.causal:
-            s = CausalMask(self.hps.sequence_len, self.global_mesh)(s)
-            s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
+        s = CausalMask(self.hps.sequence_len, self.global_mesh)(s)
+        s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
 
         p = jax.nn.softmax(s, axis=-1)
         p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
