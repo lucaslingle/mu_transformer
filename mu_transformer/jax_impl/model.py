@@ -157,7 +157,7 @@ class RotaryEncodingV2(nn.Module):
     is_keys: bool
 
     @nn.compact
-    def __call__(self, x, pos_inds):
+    def __call__(self, x, pos_ids):
         bsz, _, length, width = x.shape
 
         positions = jnp.arange(length)
@@ -180,7 +180,7 @@ class RotaryEncodingV2(nn.Module):
         chex.assert_shape(ang_freqs, [1, 1, 1, width // 2])
 
         # to supporting decoding with batch of variable-length prefills:
-        positions = positions + pos_inds[..., None, None, None]
+        positions = positions + pos_ids[..., None, None, None]
         positions = sharding_constraint(positions, MESH_AXES["XNNN"], self.global_mesh)
 
         # rest is same as before
@@ -237,12 +237,13 @@ class CacheMask(nn.Module):
     global_mesh: jax.sharding.Mesh
 
     @nn.compact
-    def __call__(self, x, pos_inds):
-        # kv cache on timestep t contains the last c keys/values from 0 thru t-1.
-        # the most recent entry on step t-1 is written to (t-1) % c.
-        # pos_inds should start at 0 when inputting the bos token.
+    def __call__(self, x, pos_ids):
+        # - kv cache on timestep t contains the last c keys/values from 0 thru t-1.
+        # - the most recent entry on step t-1 is written to (t-1) % c.
+        # - pos_ids should start at 0 when inputting the bos token in prefill.
+        #     so the smallest pos_ids seen by CacheMask will be 1.
         q_len, kv_len = x.shape[-2], self.cache_size
-        i = jnp.arange(q_len)[None, None, ..., None] + pos_inds[..., None, None, None]
+        i = jnp.arange(q_len)[None, None, ..., None] + pos_ids[..., None, None, None]
         j = jnp.arange(kv_len)[None, None, None, ...]
         i = sharding_constraint(i, MESH_AXES["XNNN"], self.global_mesh)
         j = sharding_constraint(j, MESH_AXES["NNNN"], self.global_mesh)
@@ -354,8 +355,9 @@ class MultiHeadAttention(nn.Module):
             k = RMSNorm(self.cfg, self.global_mesh, "ak")(k)
 
         if self.cfg.rotary_base > 0:
-            q = RotaryEncoding(self.cfg, self.global_mesh, is_keys=False)(q)
-            k = RotaryEncoding(self.cfg, self.global_mesh, is_keys=True)(k)
+            rope_kws = dict(cfg=self.cfg, global_mesh=self.global_mesh)
+            q = RotaryEncodingV2(**rope_kws, is_keys=False)(q, state["pos_ids"])
+            k = RotaryEncodingV2(**rope_kws, is_keys=True)(k, state["pos_ids"])
             q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
             k = sharding_constraint(k, kv_mesh_axes, self.global_mesh)
             self.sow("intermediates", "aqr_l1", coord_check_l1(q))
@@ -380,33 +382,34 @@ class MultiHeadAttention(nn.Module):
                 # parallel training/likelihood evaluation; no cache.
                 new_state = None
             else:
-                # prefill. pos_inds will be written at the end of Transformer.__call__.
-                new_state = dict(k=k, v=v, pos_inds=None)
+                # prefill. pos_ids will be written at the end of Transformer.__call__.
+                new_state = dict(k=k, v=v, pos_ids=None)
         else:
             # incremental decoding.
+            mesh, slen = self.global_mesh, self.cfg.sequence_len
             s_cache = jnp.einsum("bhid,bhjd->bhij", q * mult, state["k"] * mult)
-            s_cache = sharding_constraint(s_cache, MESH_AXES["XYNN"], self.global_mesh)
-            s_cache = CacheMask(self.cfg.sequence_len, self.global_mesh)(s_cache)
-            s_cache = sharding_constraint(s_cache, MESH_AXES["XYNN"], self.global_mesh)
+            s_cache = sharding_constraint(s_cache, MESH_AXES["XYNN"], mesh)
+            s_cache = CacheMask(slen, mesh)(s_cache, pos_ids=state["pos_ids"])
+            s_cache = sharding_constraint(s_cache, MESH_AXES["XYNN"], mesh)
             s = jnp.concatenate([s_cache, s], axis=-1)
             p = jax.nn.softmax(s, axis=-1)
-            p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
+            p = sharding_constraint(p, MESH_AXES["XYNN"], mesh)
             v = jnp.concatenate([state["v"], v], axis=-2)
             o = jnp.einsum("bhij,bhjd->bhid", p, v)
-            o = sharding_constraint(o, MESH_AXES["XYNN"], self.global_mesh)
+            o = sharding_constraint(o, MESH_AXES["XYNN"], mesh)
             write_weights = jax.nn.one_hot(
                 jnp.mod(
-                    state["pos_inds"],
-                    jnp.full_like(state["pos_inds"], fill_value=self.cfg.sequence_len),
+                    state["pos_ids"],
+                    jnp.full_like(state["pos_ids"], fill_value=slen),
                 ),
-                num_classes=self.cfg.sequence_len,
+                num_classes=slen,
                 axis=-1,
             )
             write_weights = jnp.expand_dims(jnp.expand_dims(write_weights, 1), -1)
             new_state = dict(
                 k=(1 - write_weights) * state["k"] + write_weights * k,
                 v=(1 - write_weights) * state["v"] + write_weights * v,
-                pos_inds=state["pos_inds"] + jnp.ones_like(state["pos_inds"]),
+                pos_ids=state["pos_ids"] + jnp.ones_like(state["pos_ids"]),
             )
 
         r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.cfg.dtype))
@@ -599,9 +602,9 @@ class Transformer(nn.Module):
         x: jax.Array,
         kv_cache: Optional[Dict[str, jax.Array]] = None,
     ) -> Dict[str, Any]:
-        # kv_cache is an optional dict with fields "keys" and "values".
-        #     each field value has shape [n_layer, bsz, n_head, sequence_len, d_head].
-        #     each field value is a circular buffer supporting sliding window attn.
+        # kv_cache is an optional dict with fields "k", "v", and "pos_ids".
+        #     the k/v arrays have shape [n_layer, bsz, n_head, sequence_len, d_head].
+        #     each of them is a circular buffer supporting sliding window attn.
         # if is_decoding=False, then kv_cache is ignored during attention computation.
         #
         # there are three main modes of operation:
