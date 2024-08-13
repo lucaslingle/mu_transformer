@@ -78,14 +78,10 @@ def test_rope_equivalence():
         jax.random.PRNGKey(2), shape=(bsz,), minval=0, maxval=conf.sequence_len * 100
     )
     qr2 = RotaryEncodingV2(conf, mesh, is_keys=False).apply(
-        {"params": {}},
-        q,
-        position_offsets=shifts,
+        {"params": {}}, q, pos_inds=shifts
     )
     kr2 = RotaryEncodingV2(conf, mesh, is_keys=True).apply(
-        {"params": {}},
-        k,
-        position_offsets=shifts,
+        {"params": {}}, k, pos_inds=shifts
     )
     sr2 = jnp.einsum("bhid,bhjd->bhij", qr2, kr2) * conf.qk_scale
     np.testing.assert_allclose(sr1, sr2, atol=1e-4, rtol=1e-4)

@@ -157,7 +157,7 @@ class RotaryEncodingV2(nn.Module):
     is_keys: bool
 
     @nn.compact
-    def __call__(self, x, position_offsets):
+    def __call__(self, x, pos_inds):
         bsz, _, length, width = x.shape
 
         positions = jnp.arange(length)
@@ -180,7 +180,7 @@ class RotaryEncodingV2(nn.Module):
         chex.assert_shape(ang_freqs, [1, 1, 1, width // 2])
 
         # to supporting decoding with batch of variable-length prefills:
-        positions = positions + position_offsets[..., None, None, None]
+        positions = positions + pos_inds[..., None, None, None]
         positions = sharding_constraint(positions, MESH_AXES["XNNN"], self.global_mesh)
 
         # rest is same as before
@@ -214,19 +214,40 @@ class RotaryEncodingV2(nn.Module):
 
 
 class CausalMask(nn.Module):
-    length: int
+    present_length: int
     global_mesh: jax.sharding.Mesh
 
     @nn.compact
     def __call__(self, x):
-        i = jnp.arange(self.length)[..., None]
-        j = jnp.arange(self.length)[None, ...]
+        i = jnp.arange(self.present_length)[..., None]
+        j = jnp.arange(self.present_length)[None, ...]
         i = sharding_constraint(i, MESH_AXES["NN"], self.global_mesh)
         j = sharding_constraint(j, MESH_AXES["NN"], self.global_mesh)
         mask = jnp.less(i, j)  # i.e., j > i, indicator masks out non-causal connections
         mask = sharding_constraint(mask, MESH_AXES["NN"], self.global_mesh)
         mask = mask[None, None, ...]
         mask = sharding_constraint(mask, MESH_AXES["NNNN"], self.global_mesh)
+        x = x - jnp.array([INFTY_APPROX], dtype=x.dtype) * mask
+        x = sharding_constraint(x, MESH_AXES["XYNN"], self.global_mesh)
+        return x
+
+
+class CacheMask(nn.Module):
+    cache_size: int
+    global_mesh: jax.sharding.Mesh
+
+    @nn.compact
+    def __call__(self, x, pos_inds):
+        # kv cache on timestep t contains the last c keys/values from 0 thru t-1.
+        # the most recent entry on step t-1 is written to (t-1) % c.
+        # pos_inds should start at 0 when inputting the bos token.
+        q_len, kv_len = x.shape[-2], self.cache_size
+        i = jnp.arange(q_len)[None, None, ..., None] + pos_inds[..., None, None, None]
+        j = jnp.arange(kv_len)[None, None, None, ...]
+        i = sharding_constraint(i, MESH_AXES["XNNN"], self.global_mesh)
+        j = sharding_constraint(j, MESH_AXES["NNNN"], self.global_mesh)
+        mask = jnp.less_equal(i, j)  # masks out non-populated buffer elements
+        mask = sharding_constraint(mask, MESH_AXES["XNNN"], self.global_mesh)
         x = x - jnp.array([INFTY_APPROX], dtype=x.dtype) * mask
         x = sharding_constraint(x, MESH_AXES["XYNN"], self.global_mesh)
         return x
@@ -348,13 +369,45 @@ class MultiHeadAttention(nn.Module):
         s = CausalMask(self.cfg.sequence_len, self.global_mesh)(s)
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
 
-        p = jax.nn.softmax(s, axis=-1)
-        p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
-        self.sow("intermediates", "ap_l1", coord_check_l1(p))
-
-        o = jnp.einsum("bhij,bhjd->bhid", p, v)
-        o = sharding_constraint(o, MESH_AXES["XYNN"], self.global_mesh)
-        self.sow("intermediates", "ao_l1", coord_check_l1(o))
+        if not self.is_decoding:
+            p = jax.nn.softmax(s, axis=-1)
+            p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
+            self.sow("intermediates", "ap_l1", coord_check_l1(p))
+            o = jnp.einsum("bhij,bhjd->bhid", p, v)
+            o = sharding_constraint(o, MESH_AXES["XYNN"], self.global_mesh)
+            self.sow("intermediates", "ao_l1", coord_check_l1(o))
+            if state is None:
+                # parallel training/likelihood evaluation; no cache.
+                new_state = None
+            else:
+                # prefill. pos_inds will be written at the end of Transformer.__call__.
+                new_state = dict(k=k, v=v, pos_inds=None)
+        else:
+            # incremental decoding.
+            s_cache = jnp.einsum("bhid,bhjd->bhij", q * mult, state["k"] * mult)
+            s_cache = sharding_constraint(s_cache, MESH_AXES["XYNN"], self.global_mesh)
+            s_cache = CacheMask(self.cfg.sequence_len, self.global_mesh)(s_cache)
+            s_cache = sharding_constraint(s_cache, MESH_AXES["XYNN"], self.global_mesh)
+            s = jnp.concatenate([s_cache, s], axis=-1)
+            p = jax.nn.softmax(s, axis=-1)
+            p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
+            v = jnp.concatenate([state["v"], v], axis=-2)
+            o = jnp.einsum("bhij,bhjd->bhid", p, v)
+            o = sharding_constraint(o, MESH_AXES["XYNN"], self.global_mesh)
+            write_weights = jax.nn.one_hot(
+                jnp.mod(
+                    state["pos_inds"],
+                    jnp.full_like(state["pos_inds"], fill_value=self.cfg.sequence_len),
+                ),
+                num_classes=self.cfg.sequence_len,
+                axis=-1,
+            )
+            write_weights = jnp.expand_dims(jnp.expand_dims(write_weights, 1), -1)
+            new_state = dict(
+                k=(1 - write_weights) * state["k"] + write_weights * k,
+                v=(1 - write_weights) * state["v"] + write_weights * v,
+                pos_inds=state["pos_inds"] + jnp.ones_like(state["pos_inds"]),
+            )
 
         r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.cfg.dtype))
         r = sharding_constraint(r, MESH_AXES["XNY"], self.global_mesh)
@@ -362,8 +415,6 @@ class MultiHeadAttention(nn.Module):
             r += bo.astype(self.cfg.dtype)[None, None, ...]  # noqa
             r = sharding_constraint(r, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "ar_l1", coord_check_l1(r))
-
-        new_state = None
         return r, new_state
 
 
