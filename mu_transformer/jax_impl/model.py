@@ -13,6 +13,8 @@
 # limitations under the License.
 from dataclasses import fields
 from typing import Any
+from typing import Dict
+from typing import Optional
 
 import chex
 import flax.linen as nn
@@ -541,16 +543,31 @@ class Transformer(nn.Module):
     global_mesh: jax.sharding.Mesh
 
     @nn.compact
-    def __call__(self, x):
+    def __call__(
+        self,
+        x: jax.Array,
+        kv_cache: Optional[Dict[str, jax.Array]] = None,
+    ) -> Dict[str, Any]:
+        # kv_cache is an optional dict with fields "keys" and "values".
+        #     each field value has shape [n_layer, bsz, n_head, sequence_len, d_head].
+        #     each field value is a circular buffer supporting sliding window attn.
+        # if is_decoding=False, then kv_cache is ignored during attention computation.
+        #
+        # there are three main modes of operation:
+        #     train/evaluate (input kv_cache is None): only logits are returned
+        #     prefill (kv_cache provided, is_decoding=False): logits, kv_cache returned
+        #     decoding (kv_cache provided, is_decoding=True): logits, kv_cache returned
         x = nnp.remat(Embedding)(self.hps, self.global_mesh)(x)
-        x, _ = nn.scan(
+        x, kv_cache_new = nn.scan(
             nnp.remat(TransformerBlock),
             length=self.hps.n_layer,
-            variable_axes=dict(params=0, intermediates=0),
-            variable_broadcast=False,
-            split_rngs=dict(params=True),
-            metadata_params={nn.PARTITION_NAME: None},
-        )(hps=self.hps, global_mesh=self.global_mesh)(x, None)
+            variable_axes=dict(params=0, intermediates=0),  # use axis 0 for params,sown
+            variable_broadcast=False,  # no variable sharing across layers
+            split_rngs=dict(params=True),  # each layer's init shall use a distinct rng
+            in_axes=0,  # use n_layer first for inputted kv cache
+            out_axes=0,  # use n_layer first for outputted kv cache
+            metadata_params={nn.PARTITION_NAME: None},  # no pipeline parallel
+        )(hps=self.hps, global_mesh=self.global_mesh)(x, kv_cache)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         x = nnp.remat(Unembedding)(self.hps, self.global_mesh)(x)
-        return dict(logits=x)
+        return dict(logits=x, kv_cache=kv_cache_new)

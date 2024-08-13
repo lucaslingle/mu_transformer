@@ -71,8 +71,8 @@ def tokenizer_factory():
     )
 
 
-@functools.lru_cache(maxsize=2)
-def transformer_config_factory(is_train):
+@functools.lru_cache(maxsize=3)
+def transformer_config_factory(is_train, is_decoding):
     return TransformerConfig.create(
         **vars(FLAGS.config)["_fields"],
         n_vocab=tokenizer_factory().vocab_size,
@@ -80,6 +80,7 @@ def transformer_config_factory(is_train):
         eos_token_id=tokenizer_factory().eos_token_id,
         pad_token_id=tokenizer_factory().pad_token_id,
         is_train=is_train,
+        is_decoding=is_decoding,
     )
 
 
@@ -486,7 +487,7 @@ def train_step(state, batch):
     (_, metrics), grads = jax.value_and_grad(loss_fn, has_aux=True)(
         state.params,
         batch,
-        transformer_config_factory(is_train=True),
+        transformer_config_factory(is_train=True, is_decoding=False),
         global_mesh_factory(),
     )
     # No extra mean anywhere, already have the sharded all-device mean gradient & loss.
@@ -692,7 +693,7 @@ def eval_step(params, batch):
     _, metrics = loss_fn(
         params,
         batch,
-        transformer_config_factory(is_train=False),
+        transformer_config_factory(is_train=False, is_decoding=False),
         global_mesh_factory(),
     )
     return metrics
