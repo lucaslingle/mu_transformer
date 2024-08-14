@@ -891,6 +891,7 @@ def sample_loop():
         sequence_len=FLAGS.config.sequence_len,
         step=0,
     )
+    batch = to_global_array(batch, global_mesh_factory())
     prompts = jnp.pad(
         batch[:, 0:1],
         ((0, 0), (0, FLAGS.config.sequence_len - 1)),
