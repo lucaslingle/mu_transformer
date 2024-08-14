@@ -826,25 +826,28 @@ def sample_step(carry, _):
 
 @jax.jit
 def sample_sequence(rng_sample, params, prompts):
-    config = transformer_config_factory(is_train=False, is_decoding=True)
+    prefill_cfg = transformer_config_factory(is_train=False, is_decoding=False)
+    decode_cfg = transformer_config_factory(is_train=False, is_decoding=True)
     global_mesh = global_mesh_factory()
 
-    prompts = jnp.pad(prompts, ((0, 0), (1, 0)), constant_values=config.bos_token_id)
-    prefill_out = Transformer(config, global_mesh).apply({"params": params}, prompts)
+    prompts = jnp.pad(
+        prompts, ((0, 0), (1, 0)), constant_values=prefill_cfg.bos_token_id
+    )
+    prefill = Transformer(prefill_cfg, global_mesh).apply({"params": params}, prompts)
 
     init = dict(
-        config=config,
+        config=decode_cfg,
         global_mesh=global_mesh,
         params=params,
         prev_token=prompts[:, -1:],
-        cache=prefill_out["kv_cache"],
+        cache=prefill["kv_cache"],
         rng=rng_sample,
     )
     _, tokens_all = jax.lax.scan(
         f=sample_step,
         init=init,
-        xs=jnp.arange(config.sequence_len),
-        length=config.sequence_len,
+        xs=jnp.arange(decode_cfg.sequence_len),
+        length=decode_cfg.sequence_len,
         unroll=1,
     )
     tokens_all = jnp.squeeze(tokens_all, -1)
