@@ -903,7 +903,9 @@ def sample_loop():
     sampled = sample_sequence(rng_stoch, state.params, prompts)
     sampled = jmhu.process_allgather(sampled)
     sampled = [tokenizer.decode(sampled[i].tolist()) for i in range(global_batch_size)]
-    print(sampled)
+    for s in sampled:
+        print("-" * 80)
+        print(s)
 
 
 def save_eval_loss():
