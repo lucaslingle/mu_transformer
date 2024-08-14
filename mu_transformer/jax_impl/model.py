@@ -260,8 +260,9 @@ class MultiHeadAttention(nn.Module):
 
     @nn.compact
     def __call__(self, x, state):
+        bsz = x.shape[0]
         shapes = Dimensions(
-            B=x.shape[0],
+            B=bsz,
             T=self.cfg.sequence_len,
             M=self.cfg.d_model,
             D=self.cfg.d_head,
@@ -356,8 +357,12 @@ class MultiHeadAttention(nn.Module):
 
         if self.cfg.rotary_base > 0:
             rope_kws = dict(cfg=self.cfg, global_mesh=self.global_mesh)
-            q = RotaryEncodingV2(**rope_kws, is_keys=False)(q, state["pos_ids"])
-            k = RotaryEncodingV2(**rope_kws, is_keys=True)(k, state["pos_ids"])
+            if state is not None:
+                pos_ids = state["pos_ids"]
+            else:
+                pos_ids = jnp.zeros([bsz], dtype=jnp.int32)
+            q = RotaryEncodingV2(**rope_kws, is_keys=False)(q, pos_ids=pos_ids)
+            k = RotaryEncodingV2(**rope_kws, is_keys=True)(k, pos_ids=pos_ids)
             q = sharding_constraint(q, MESH_AXES["XYNN"], self.global_mesh)
             k = sharding_constraint(k, kv_mesh_axes, self.global_mesh)
             self.sow("intermediates", "aqr_l1", coord_check_l1(q))
@@ -368,22 +373,17 @@ class MultiHeadAttention(nn.Module):
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
 
-        s = CausalMask(self.cfg.sequence_len, self.global_mesh)(s)
-        s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
-
-        if not self.is_decoding:
+        if not self.cfg.is_decoding:
+            s = CausalMask(self.cfg.sequence_len, self.global_mesh)(s)
+            s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
             p = jax.nn.softmax(s, axis=-1)
             p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
             self.sow("intermediates", "ap_l1", coord_check_l1(p))
             o = jnp.einsum("bhij,bhjd->bhid", p, v)
             o = sharding_constraint(o, MESH_AXES["XYNN"], self.global_mesh)
             self.sow("intermediates", "ao_l1", coord_check_l1(o))
-            if state is None:
-                # parallel training/likelihood evaluation; no cache.
-                new_state = None
-            else:
-                # prefill. pos_ids will be written at the end of Transformer.__call__.
-                new_state = dict(k=k, v=v, pos_ids=None)
+            # for prefill. pos_ids will be written at the end of Transformer.__call__.
+            new_state = dict(k=k, v=v, pos_ids=None)
         else:
             # incremental decoding.
             mesh, slen = self.global_mesh, self.cfg.sequence_len
@@ -599,19 +599,20 @@ class Transformer(nn.Module):
     @nn.compact
     def __call__(
         self,
-        x: jax.Array,
+        inputs: jax.Array,
         kv_cache: Optional[Dict[str, jax.Array]] = None,
     ) -> Dict[str, Any]:
         # kv_cache is an optional dict with fields "k", "v", and "pos_ids".
         #     the k/v arrays have shape [n_layer, bsz, n_head, sequence_len, d_head].
         #     each of them is a circular buffer supporting sliding window attn.
-        # if is_decoding=False, then kv_cache is ignored during attention computation.
         #
-        # there are three main modes of operation:
-        #     train/evaluate (input kv_cache is None): only logits are returned
-        #     prefill (kv_cache provided, is_decoding=False): logits, kv_cache returned
-        #     decoding (kv_cache provided, is_decoding=True): logits, kv_cache returned
-        x = nnp.remat(Embedding)(self.cfg, self.global_mesh)(x)
+        # there are two modes of operation:
+        #     parallel (kv_cache is None, is_decoding=False):
+        #         input kv cache ignored, kv cache still outputted to facilitate prefill
+        #     sequential (kv_cache given, is_decoding=True):
+        #         input kv cache used in attn, new kv cache outputted for next decode
+        #
+        x = nnp.remat(Embedding)(self.cfg, self.global_mesh)(inputs)
         x, kv_cache_new = nn.scan(
             nnp.remat(TransformerBlock),
             length=self.cfg.n_layer,
@@ -624,4 +625,14 @@ class Transformer(nn.Module):
         )(cfg=self.cfg, global_mesh=self.global_mesh)(x, kv_cache)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         x = nnp.remat(Unembedding)(self.cfg, self.global_mesh)(x)
+        if not self.cfg.is_decoding:
+            # prefill: in this case, compute number of non-pad in the batch of prompts.
+            #  the padding should always be on the right, and first token may be bos_id,
+            #  which for some tokenizers may equal pad_id, so exclude it from pad count.
+            chex.assert_shape(inputs, (None, self.cfg.sequence_len))
+            npad = jnp.sum(jnp.equal(inputs[:, 1:], self.cfg.pad_token_id), axis=-1)
+            npad = jnp.tile(npad[None, ...], reps=[self.cfg.n_layer, 1])
+            npad = sharding_constraint(npad, MESH_AXES["NX"], self.global_mesh)
+            pos_ids = self.cfg.sequence_len - npad  # eg slen=5 npad=2 ==> next pos_id=3
+            kv_cache_new["pos_ids"] = pos_ids
         return dict(logits=x, kv_cache=kv_cache_new)
