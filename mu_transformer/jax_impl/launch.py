@@ -824,7 +824,6 @@ def sample_step(carry, _):
     return carry_new, curr_token
 
 
-@jax.jit
 def sample_sequence(rng_sample, params, prompts):
     prefill_cfg = transformer_config_factory(is_train=False, is_decoding=False)
     decode_cfg = transformer_config_factory(is_train=False, is_decoding=True)
