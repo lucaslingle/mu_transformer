@@ -24,6 +24,7 @@ import flax
 import flax.linen as nn
 import jax
 import jax.experimental.mesh_utils as jmu
+import jax.experimental.multihost_utils as jmhu
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
@@ -892,7 +893,7 @@ def sample_loop():
         constant_values=tokenizer_factory().pad_token_id,
     )
     sampled = sample_sequence(rng_stoch, state.params, prompts)
-    print(sampled)
+    print(jmhu.process_allgather(sampled))
 
 
 def save_eval_loss():
