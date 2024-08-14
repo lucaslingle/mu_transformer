@@ -405,6 +405,7 @@ class MultiHeadAttention(nn.Module):
                 ),
                 num_classes=slen,
                 axis=-1,
+                dtype=self.cfg.dtype,
             )
             write_weights = jnp.expand_dims(jnp.expand_dims(write_weights, 1), -1)
             new_state = dict(
