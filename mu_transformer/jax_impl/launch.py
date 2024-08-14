@@ -906,6 +906,7 @@ def sample_loop():
     for s in sampled:
         print("-" * 80)
         print(s)
+    # todo: we got high-quality samples, need to write to cloud still
 
 
 def save_eval_loss():
