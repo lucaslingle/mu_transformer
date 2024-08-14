@@ -394,8 +394,9 @@ class MultiHeadAttention(nn.Module):
             s = jnp.concatenate([s_cache, s], axis=-1)
             p = jax.nn.softmax(s, axis=-1)
             p = sharding_constraint(p, MESH_AXES["XYNN"], mesh)
-            v = jnp.concatenate([state["v"], v], axis=-2)
-            o = jnp.einsum("bhij,bhjd->bhid", p, v)
+            o = jnp.einsum(
+                "bhij,bhjd->bhid", p, jnp.concatenate([state["v"], v], axis=-2)
+            )
             o = sharding_constraint(o, MESH_AXES["XYNN"], mesh)
             write_weights = jax.nn.one_hot(
                 jnp.mod(
@@ -407,9 +408,9 @@ class MultiHeadAttention(nn.Module):
             )
             write_weights = jnp.expand_dims(jnp.expand_dims(write_weights, 1), -1)
             new_state = dict(
-                k=(1 - write_weights) * state["k"] + write_weights * k,
-                v=(1 - write_weights) * state["v"] + write_weights * v,
-                pos_ids=state["pos_ids"] + jnp.ones_like(state["pos_ids"]),
+                k=(1.0 - write_weights) * state["k"] + write_weights * k,
+                v=(1.0 - write_weights) * state["v"] + write_weights * v,
+                pos_ids=state["pos_ids"] + 1,
             )
 
         r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.cfg.dtype))

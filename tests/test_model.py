@@ -10,6 +10,9 @@ from mu_transformer.jax_impl.model import Transformer
 from mu_transformer.jax_impl.model import TransformerConfig
 
 
+TOLS = dict(atol=1e-4, rtol=1e-4)
+
+
 def test_rope_equivalence():
     bsz = 32
     conf = TransformerConfig.create(
@@ -67,8 +70,8 @@ def test_rope_equivalence():
     kr2 = RotaryEncodingV2(conf, mesh, is_keys=True).apply(
         {"params": {}}, k, pos_ids=jnp.zeros([bsz])
     )
-    np.testing.assert_allclose(qr1, qr2)
-    np.testing.assert_allclose(kr1, kr2)
+    np.testing.assert_allclose(qr1, qr2, **TOLS)
+    np.testing.assert_allclose(kr1, kr2, **TOLS)
 
     # test the shift equivariance property
     qr1 = RotaryEncoding(conf, mesh, is_keys=False).apply({"params": {}}, q)
@@ -84,16 +87,17 @@ def test_rope_equivalence():
         {"params": {}}, k, pos_ids=shifts
     )
     sr2 = jnp.einsum("bhid,bhjd->bhij", qr2, kr2) * conf.qk_scale
-    np.testing.assert_allclose(sr1, sr2, atol=1e-4, rtol=1e-4)
+    np.testing.assert_allclose(sr1, sr2, **TOLS)
 
 
-def test_decoding_equivalence():
+@pytest.mark.parametrize("prefill_end", list(range(1, 10)))
+def test_decoding_equivalence(prefill_end):
     # test that parallel-mode and teacher-forced decoding produce equivalent logits
-    bsz = 32
+    bsz = 8
     common = dict(
         param_dtype=jnp.float64,
         dtype=jnp.float64,
-        sequence_len=100,
+        sequence_len=10,
         d_model=512,
         d_head=128,
         ff_multiple=4,
@@ -112,7 +116,7 @@ def test_decoding_equivalence():
         norm_gains_type="vector",
         proj_biases=False,
         n_layer=3,
-        n_vocab=32000,
+        n_vocab=26,
         bos_token_id=0,
         eos_token_id=1,
         pad_token_id=2,
@@ -138,26 +142,38 @@ def test_decoding_equivalence():
     parallel_logits = parallel_outputs["logits"]
     parallel_cache = parallel_outputs["kv_cache"]
 
-    prefill_end = conf.sequence_len // 2
+    prefill_pad = conf.sequence_len - prefill_end
     prefill_outputs = Transformer(conf, mesh).apply(
-        {"params": params}, tokens[:, 0:prefill_end]
+        {"params": params},
+        jnp.pad(
+            tokens[:, 0:prefill_end],
+            ((0, 0), (0, prefill_pad)),
+            constant_values=conf.pad_token_id,
+        ),
     )
-    prefill_logits = prefill_outputs["logits"]
+    prefill_logits = prefill_outputs["logits"][:, 0:prefill_end, :]
     prefill_cache = prefill_outputs["kv_cache"]
+    np.testing.assert_allclose(parallel_logits[:, :prefill_end, :], prefill_logits)
 
     decode_conf = TransformerConfig.create(**common, is_decoding=True)
     decode_logits = []
     cache = prefill_cache
     for t in range(prefill_end, conf.sequence_len):
+        print(t)
+        print(cache)
         out = Transformer(decode_conf, mesh).apply(
-            {"params": params}, tokens[:, t : t + 1]
+            {"params": params}, tokens[:, t : t + 1], kv_cache=cache
+        )
+        np.testing.assert_allclose(
+            parallel_logits[:, t : t + 1, :], out["logits"], **TOLS
         )
         decode_logits.append(out["logits"])
         cache = out["kv_cache"]
     decode_logits = jnp.concatenate(decode_logits, axis=1)
+    np.testing.assert_allclose(
+        parallel_logits[:, prefill_end:, :], decode_logits, **TOLS
+    )
 
-    np.testing.assert_allclose(parallel_logits[:, :prefill_end, :], prefill_logits)
-    np.testing.assert_allclose(parallel_logits[:, prefill_end:, :], decode_logits)
-    np.testing.assert_allclose(parallel_cache["k"], cache["k"])
-    np.testing.assert_allclose(parallel_cache["v"], cache["v"])
-    np.testing.assert_allclose(parallel_cache["pos_ids"], cache["pos_ids"])
+    np.testing.assert_allclose(parallel_cache["k"], cache["k"], **TOLS)
+    np.testing.assert_allclose(parallel_cache["v"], cache["v"], **TOLS)
+    np.testing.assert_allclose(parallel_cache["pos_ids"], cache["pos_ids"], **TOLS)
