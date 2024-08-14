@@ -804,7 +804,7 @@ def eval_loop(params, ds_shard=None, n_eval_step=None, mode=None):
 
 
 def sample_step(carry, _):
-    config = carry["config"]
+    config = transformer_config_factory(is_train=False, is_decoding=True)
     global_mesh = carry["global_mesh"]
     params = carry["params"]
     prev_token = carry["prev_token"]
@@ -824,14 +824,13 @@ def sample_step(carry, _):
     return carry_new, curr_token
 
 
+@jax.jit
 def sample_sequence(rng_sample, params, prompts):
-    prefill_cfg = transformer_config_factory(is_train=False, is_decoding=False)
-    decode_cfg = transformer_config_factory(is_train=False, is_decoding=True)
+    cfg = transformer_config_factory(is_train=False, is_decoding=False)
     global_mesh = global_mesh_factory()
-    prefill = Transformer(prefill_cfg, global_mesh).apply({"params": params}, prompts)
+    prefill = Transformer(cfg, global_mesh).apply({"params": params}, prompts)
 
     init = dict(
-        config=decode_cfg,
         global_mesh=global_mesh,
         params=params,
         prev_token=prompts[:, -1:],
@@ -841,8 +840,8 @@ def sample_sequence(rng_sample, params, prompts):
     _, tokens_all = jax.lax.scan(
         f=sample_step,
         init=init,
-        xs=jnp.arange(decode_cfg.sequence_len),
-        length=decode_cfg.sequence_len,
+        xs=jnp.arange(cfg.sequence_len),
+        length=cfg.sequence_len,
         unroll=1,
     )
     tokens_all = jnp.squeeze(tokens_all, -1)
