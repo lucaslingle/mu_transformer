@@ -805,7 +805,7 @@ def eval_loop(params, ds_shard=None, n_eval_step=None, mode=None):
 
 def sample_step(carry, _):
     config = transformer_config_factory(is_train=False, is_decoding=True)
-    global_mesh = carry["global_mesh"]
+    global_mesh = global_mesh_factory()
     params = carry["params"]
     prev_token = carry["prev_token"]
     cache = carry["cache"]
@@ -827,11 +827,9 @@ def sample_step(carry, _):
 @jax.jit
 def sample_sequence(rng_sample, params, prompts):
     cfg = transformer_config_factory(is_train=False, is_decoding=False)
-    global_mesh = global_mesh_factory()
-    prefill = Transformer(cfg, global_mesh).apply({"params": params}, prompts)
+    prefill = Transformer(cfg, global_mesh_factory()).apply({"params": params}, prompts)
 
     init = dict(
-        global_mesh=global_mesh,
         params=params,
         prev_token=prompts[:, -1:],
         cache=prefill["kv_cache"],
