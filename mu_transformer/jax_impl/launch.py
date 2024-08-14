@@ -45,6 +45,9 @@ from mu_transformer.data import get_tokenizer
 from mu_transformer.jax_impl.model import MESH_AXES
 from mu_transformer.jax_impl.model import Transformer
 from mu_transformer.jax_impl.model import TransformerConfig
+from mu_transformer.jax_impl.samplers import apply_nucleus
+from mu_transformer.jax_impl.samplers import apply_temp
+from mu_transformer.jax_impl.samplers import apply_topk
 from mu_transformer.jax_impl.shard import get_namedsharding
 from mu_transformer.jax_impl.shard import sharding_constraint
 from mu_transformer.jax_impl.shard import to_global_array
@@ -813,7 +816,8 @@ def sample_step(carry, _):
     rng = carry["rng"]
     rng_new, rng_step = jax.random.split(rng)
     out = Transformer(config, global_mesh).apply({"params": params}, prev_token, cache)
-    curr_token = jax.random.categorical(rng_step, out["logits"], axis=-1)
+    logits = apply_nucleus(out["logits"], 0.8)
+    curr_token = jax.random.categorical(rng_step, logits, axis=-1)
     carry_new = dict(
         params=params,
         prev_token=curr_token,
@@ -826,7 +830,10 @@ def sample_step(carry, _):
 @jax.jit
 def sample_sequence(rng_sample, params, prompts):
     cfg = transformer_config_factory(is_train=False, is_decoding=False)
-    prefill = Transformer(cfg, global_mesh_factory()).apply({"params": params}, prompts)
+    prefill = Transformer(cfg, global_mesh_factory()).apply(
+        {"params": params},
+        jnp.pad(prompts[:, 1:], ((0, 0), (1, 0)), cfg.bos_token_id),
+    )
 
     init = dict(
         params=params,
