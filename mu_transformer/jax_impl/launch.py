@@ -54,7 +54,7 @@ FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
 flags.DEFINE_string("experiment_group", None, "Experiment group name")
 flags.DEFINE_string("workdir", None, "Working directory (GCS or local)")
-flags.DEFINE_enum("mode", None, ["train", "validation", "test"], "Mode")
+flags.DEFINE_enum("mode", None, ["train", "validation", "test", "sample"], "Mode")
 flags.DEFINE_integer("seed", 0, "Experiment seed")
 flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
 flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
