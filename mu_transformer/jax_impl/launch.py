@@ -803,6 +803,104 @@ def eval_loop(params, ds_shard=None, n_eval_step=None, mode=None):
     return eval_metrics
 
 
+def sample_step(carry, _):
+    config = carry["config"]
+    global_mesh = carry["global_mesh"]
+    params = carry["params"]
+    prev_token = carry["prev_token"]
+    cache = carry["cache"]
+    rng = carry["rng"]
+    rng_new, rng_step = jax.random.split(rng)
+    out = Transformer(config, global_mesh).apply({"params": params}, prev_token, cache)
+    curr_token = jax.random.categorical(rng_step, out["logits"], axis=-1)
+    carry_new = dict(
+        config=config,
+        global_mesh=global_mesh,
+        params=params,
+        prev_token=curr_token,
+        cache=out["kv_cache"],
+        rng=rng_new,
+    )
+    return carry_new, curr_token
+
+
+@jax.jit
+def sample_sequence(rng_sample, params, prompts):
+    config = transformer_config_factory(is_train=False, is_decoding=True)
+    global_mesh = global_mesh_factory()
+
+    prompts = jnp.pad(prompts, ((0, 0), (1, 0)), constant_values=config.bos_token_id)
+    prefill_out = Transformer(config, global_mesh).apply({"params": params}, prompts)
+
+    init = dict(
+        config=config,
+        global_mesh=global_mesh,
+        params=params,
+        prev_token=prompts[:, -1:],
+        cache=prefill_out["kv_cache"],
+        rng=rng_sample,
+    )
+    _, tokens_all = jax.lax.scan(
+        f=sample_step,
+        init=init,
+        xs=jnp.arange(config.sequence_len),
+        length=config.sequence_len,
+        unroll=1,
+    )
+    tokens_all = jnp.squeeze(tokens_all, -1)
+    tokens_all = jnp.transpose(tokens_all, (1, 0))
+    return tokens_all
+
+
+def sample_loop():
+    rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
+    # rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())  # todo: fold in?
+
+    logging.info("Creating train state...")
+    state = train_state_factory(rng_init)
+    load_checkpoint_mgr = checkpoint_manager_factory(option="load")
+    if load_checkpoint_mgr.latest_step() is not None:
+        state = do_restore(load_checkpoint_mgr, state)
+
+    n_host = jax.process_count()
+    host_id = jax.process_index()
+    n_shard = FLAGS.config.n_ds_shard
+    n_host_per_shard = n_host // n_shard  # n_ds_shard = n_host on smallest runs
+    global_batch_size = global_batch_size_factory()
+    batch_size_per_host = global_batch_size // n_host
+    shard_id = host_id // n_host_per_shard
+    subshard_id = host_id % n_host_per_shard
+    ds_shard = get_dataset(
+        hfds_identifier=FLAGS.config.hfds_identifier,
+        hfds_config=FLAGS.config.hfds_config,
+        hfds_datacol=FLAGS.config.hfds_datacol,
+        hfds_buffer_size=FLAGS.config.hfds_buffer_size,
+        hftr_tokenizer=tokenizer_factory(),
+        split_name="validation",
+        batch_size=batch_size_per_host,
+        sequence_len=FLAGS.config.sequence_len,
+        n_shard=n_shard,
+        shard_id=shard_id,
+        workdir=FLAGS.workdir,
+        force_download=FLAGS.config.force_download,
+    )
+    batch = get_batch(
+        shard=ds_shard,
+        n_subshard=n_host_per_shard,
+        subshard_id=subshard_id,
+        batch_size=batch_size_per_host,
+        sequence_len=FLAGS.config.sequence_len,
+        step=0,
+    )
+    prompts = jnp.pad(
+        batch[:, 0:1],
+        ((0, 0), (0, FLAGS.config.sequence_len - 1)),
+        constant_values=tokenizer_factory().pad_token_id,
+    )
+    sampled = sample_sequence(rng_stoch, state.params, prompts)
+    print(sampled)
+
+
 def save_eval_loss():
     eval_loss = eval_loop(params=None, mode="validation")["loss_avg"]
     logging.info(f"Eval loss: {eval_loss}")
@@ -894,7 +992,9 @@ def main(argv):
             id=FLAGS.wb_run,
         )
 
-    if FLAGS.mode == "train":
+    if FLAGS.mode == "sample":
+        sample_loop()
+    elif FLAGS.mode == "train":
         if FLAGS.config.is_sweep:
             done_fn = "done.txt"
             done_fp = posixpath.join(modeldir_factory("load", "checkpoints"), done_fn)
