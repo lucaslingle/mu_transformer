@@ -855,6 +855,7 @@ def sample_loop():
     load_checkpoint_mgr = checkpoint_manager_factory(option="load")
     if load_checkpoint_mgr.latest_step() is not None:
         state = do_restore(load_checkpoint_mgr, state)
+    tokenizer = tokenizer_factory()
 
     n_host = jax.process_count()
     host_id = jax.process_index()
@@ -869,7 +870,7 @@ def sample_loop():
         hfds_config=FLAGS.config.hfds_config,
         hfds_datacol=FLAGS.config.hfds_datacol,
         hfds_buffer_size=FLAGS.config.hfds_buffer_size,
-        hftr_tokenizer=tokenizer_factory(),
+        hftr_tokenizer=tokenizer,
         split_name="validation",
         batch_size=batch_size_per_host,
         sequence_len=FLAGS.config.sequence_len,
@@ -890,10 +891,12 @@ def sample_loop():
     prompts = jnp.pad(
         batch[:, 0:1],
         ((0, 0), (0, FLAGS.config.sequence_len - 1)),
-        constant_values=tokenizer_factory().pad_token_id,
+        constant_values=tokenizer.pad_token_id,
     )
     sampled = sample_sequence(rng_stoch, state.params, prompts)
-    print(jmhu.process_allgather(sampled))
+    sampled = jmhu.process_allgather(sampled)
+    sampled = [tokenizer.decode(sampled[i].tolist()) for i in range(global_batch_size)]
+    print(sampled)
 
 
 def save_eval_loss():
