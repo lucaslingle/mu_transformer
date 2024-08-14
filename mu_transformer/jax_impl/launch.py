@@ -814,8 +814,6 @@ def sample_step(carry, _):
     out = Transformer(config, global_mesh).apply({"params": params}, prev_token, cache)
     curr_token = jax.random.categorical(rng_step, out["logits"], axis=-1)
     carry_new = dict(
-        config=config,
-        global_mesh=global_mesh,
         params=params,
         prev_token=curr_token,
         cache=out["kv_cache"],
