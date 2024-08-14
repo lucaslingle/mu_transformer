@@ -832,7 +832,7 @@ def sample_sequence(rng_sample, params, prompts):
     cfg = transformer_config_factory(is_train=False, is_decoding=False)
     prefill = Transformer(cfg, global_mesh_factory()).apply(
         {"params": params},
-        jnp.pad(prompts[:, 1:], ((0, 0), (1, 0)), cfg.bos_token_id),
+        jnp.pad(prompts[:, 0:-1], ((0, 0), (1, 0)), constant_values=cfg.bos_token_id),
     )
 
     init = dict(
