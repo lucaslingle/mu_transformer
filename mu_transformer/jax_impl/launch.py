@@ -829,10 +829,6 @@ def sample_sequence(rng_sample, params, prompts):
     prefill_cfg = transformer_config_factory(is_train=False, is_decoding=False)
     decode_cfg = transformer_config_factory(is_train=False, is_decoding=True)
     global_mesh = global_mesh_factory()
-
-    prompts = jnp.pad(
-        prompts, ((0, 0), (1, 0)), constant_values=prefill_cfg.bos_token_id
-    )
     prefill = Transformer(prefill_cfg, global_mesh).apply({"params": params}, prompts)
 
     init = dict(
