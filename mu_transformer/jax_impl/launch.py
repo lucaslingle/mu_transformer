@@ -944,9 +944,8 @@ def prompted_sampling_loop():
     )
     batch = to_global_array(batch, global_mesh_factory())
 
-    out, done_mask = sample_sequence(rng_stoch, state.params, batch)
+    out, _ = sample_sequence(rng_stoch, state.params, batch)
     out = jmhu.process_allgather(out)
-    done_mask = jmhu.process_allgather(done_mask)
     out_text = [tokenizer.decode(out[i].tolist()) for i in range(global_batch_size)]
 
     batch = jmhu.process_allgather(batch)
@@ -988,7 +987,7 @@ def unprompted_sampling_loop():
         fill_value=tokenizer_factory().pad_token_id,
     )
     prompts = to_global_array(batch, global_mesh_factory())
-    samples = sample_sequence(rng_stoch, state.params, prompts)
+    samples, _ = sample_sequence(rng_stoch, state.params, prompts)
     samples = jmhu.process_allgather(samples)
     samples = [tokenizer.decode(samples[i].tolist()) for i in range(global_batch_size)]
     for s in samples:
