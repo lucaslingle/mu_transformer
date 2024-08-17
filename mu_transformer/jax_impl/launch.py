@@ -885,8 +885,7 @@ def sample_sequence(rng, params, prompts):
     tokens_all = jnp.concatenate([first_samples, tokens_all], axis=-1)
     # lastly, we replace with <pad> every token that equals or follows an <eos> token.
     any_eos = jnp.cumprod(jnp.equal(tokens_all, cfg.eos_token_id), axis=-1)
-    tokens_all = (1 - any_eos) * tokens_all + any_eos * cfg.pad_token_id
-    return tokens_all
+    return tokens_all, any_eos
 
 
 def prompted_sampling_loop():
@@ -932,19 +931,28 @@ def prompted_sampling_loop():
     )
     batch = to_global_array(batch, global_mesh_factory())
 
-    samples = sample_sequence(rng_stoch, state.params, batch)
-    samples = jmhu.process_allgather(samples)
-    samples = [tokenizer.decode(samples[i].tolist()) for i in range(global_batch_size)]
+    out, done_mask = sample_sequence(rng_stoch, state.params, batch)
+    out = jmhu.process_allgather(out)
+    done_mask = jmhu.process_allgather(done_mask)
+    out_text = [tokenizer.decode(out[i].tolist()) for i in range(global_batch_size)]
 
     batch = jmhu.process_allgather(batch)
-    batch = [tokenizer.decode(batch[i].tolist()) for i in range(global_batch_size)]
+    batch_text = [tokenizer.decode(batch[i].tolist()) for i in range(global_batch_size)]
 
-    for i in range(len(samples)):
+    for i in range(len(out_text)):
         print("-" * 80)
         print("PROMPT:")
-        print(batch[i])
+        print(batch_text[i])
         print("CONTINUATION:")
-        print(samples[i])
+        print(out_text[i])
+        print()
+        print("PROMPT TOKEN IDS:")
+        print(batch[i])
+        print("CONTINUATION TOKEN IDS:")
+        print(out[i])
+        print("DONE MASK IDS:")
+        print(done_mask[i])
+        print()
     # todo: we got high-quality samples, need to write to cloud still
 
 
