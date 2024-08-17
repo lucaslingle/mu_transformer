@@ -840,6 +840,7 @@ def sample_step(carry, _):
 @jax.jit
 def sample_sequence(rng, params, prompts):
     cfg = transformer_config_factory(is_train=False, is_decoding=False)
+    # worked example:
     # seqlen = 5, npad = 2.
     # the prompt "a b c <pad> <pad>".
     # becomes "<bos> a b c <pad>".
@@ -847,9 +848,10 @@ def sample_sequence(rng, params, prompts):
         {"params": params},
         jnp.pad(prompts[:, :-1], ((0, 0), (1, 0)), constant_values=cfg.bos_token_id),
     )
+    # worked example, continued:
     # the prefill step returns pos_id = slen - npad = 4 (since 1 non-pad tokens at end).
-    # we need to sample one token, the output for "c", to init the main sampling loop,
-    # which requires extracting the logits from index pos_id - 1 = 3, and sampling those
+    # we need to sample one token, the output for "c", to init the main sampling loop.
+    # this requires extracting the logits from index pos_id - 1 = 3, and sampling those.
     rng, rng_sample = jax.random.split(rng)
     first_logits = jnp.take_along_axis(
         arr=prefill["logits"],  # [B, C, V]
@@ -868,7 +870,7 @@ def sample_sequence(rng, params, prompts):
         cache=prefill["kv_cache"],
         rng=rng,
     )
-    # main loop is just this
+    # and now for the main loop
     _, tokens_all = jax.lax.scan(
         f=sample_step,
         init=init,
@@ -876,8 +878,8 @@ def sample_sequence(rng, params, prompts):
         length=cfg.sequence_len - 1,
         unroll=1,
     )
-    # and now we concatenate the samples together and reshape to correct shape, since
-    # scan applies only along the last axis.
+    # lastly we concatenate the samples together and reshape to correct shape,
+    # since jax.lax.scan (unlike flax.linen.scan) can only be applied along leading axis
     tokens_all = jnp.squeeze(tokens_all, -1)
     tokens_all = jnp.transpose(tokens_all, (1, 0))
     tokens_all = jnp.concatenate([first_samples, tokens_all], axis=-1)
@@ -925,13 +927,21 @@ def prompted_sampling_loop():
         sequence_len=FLAGS.config.sequence_len,
         step=0,
     )
-    batch = to_global_array(batch, global_mesh_factory())
-    sampled = sample_sequence(rng_stoch, state.params, batch)
-    sampled = jmhu.process_allgather(sampled)
-    sampled = [tokenizer.decode(sampled[i].tolist()) for i in range(global_batch_size)]
-    for s in sampled:
+    prompts = to_global_array(batch, global_mesh_factory())
+
+    samples = sample_sequence(rng_stoch, state.params, prompts)
+    samples = jmhu.process_allgather(samples)
+    samples = [tokenizer.decode(samples[i].tolist()) for i in range(global_batch_size)]
+
+    prompts = jmhu.process_allgather(prompts)
+    prompts = [tokenizer.decode(prompts[i].tolist()) for i in range(global_batch_size)]
+
+    for i in range(len(samples)):
         print("-" * 80)
-        print(s)
+        print("PROMPT:")
+        print(prompts[i])
+        print("CONTINUATION:")
+        print(samples[i])
     # todo: we got high-quality samples, need to write to cloud still
 
 
@@ -954,10 +964,10 @@ def unprompted_sampling_loop():
         fill_value=tokenizer_factory().pad_token_id,
     )
     prompts = to_global_array(batch, global_mesh_factory())
-    sampled = sample_sequence(rng_stoch, state.params, prompts)
-    sampled = jmhu.process_allgather(sampled)
-    sampled = [tokenizer.decode(sampled[i].tolist()) for i in range(global_batch_size)]
-    for s in sampled:
+    samples = sample_sequence(rng_stoch, state.params, prompts)
+    samples = jmhu.process_allgather(samples)
+    samples = [tokenizer.decode(samples[i].tolist()) for i in range(global_batch_size)]
+    for s in samples:
         print("-" * 80)
         print(s)
     # todo: we got high-quality samples, need to write to cloud still
