@@ -79,4 +79,10 @@ def get_base_config():
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
     config.no_checkpoint = False  # skip saving the model
 
+    # sampling settings
+    config.sampling_method = "nucleus"
+    config.sampling_nucleus = 0.8
+    config.sampling_topk = 20  # unused w sample_method=nucleus, and value is untuned
+    config.sampling_temp = 0.1  # unused w sample_method=nucleus, and value is untuned
+
     return config

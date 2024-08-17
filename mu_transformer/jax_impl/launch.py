@@ -807,6 +807,16 @@ def eval_loop(params, ds_shard=None, n_eval_step=None, mode=None):
     return eval_metrics
 
 
+def apply_sampler(logits):
+    if FLAGS.config.sampling_method == "nucleus":
+        return apply_nucleus(logits, FLAGS.config.sampling_nucleus)
+    if FLAGS.config.sampling_method == "topk":
+        return apply_topk(logits, FLAGS.config.sampling_topk)
+    if FLAGS.config.sampling_method == "temp":
+        return apply_temp(logits, FLAGS.config.sampling_temp)
+    raise NotImplementedError
+
+
 def sample_step(carry, _):
     config = transformer_config_factory(is_train=False, is_decoding=True)
     global_mesh = global_mesh_factory()
@@ -816,7 +826,7 @@ def sample_step(carry, _):
     rng = carry["rng"]
     rng_new, rng_step = jax.random.split(rng)
     out = Transformer(config, global_mesh).apply({"params": params}, prev_token, cache)
-    logits = apply_nucleus(out["logits"], 0.8)
+    logits = apply_sampler(out["logits"])
     curr_token = jax.random.categorical(rng_step, logits, axis=-1)
     carry_new = dict(
         params=params,
@@ -841,13 +851,15 @@ def sample_sequence(rng, params, prompts):
     # we need to sample one token, the output for "c", to init the main sampling loop,
     # which requires extracting the logits from index pos_id - 1 = 3, and sampling those
     rng, rng_sample = jax.random.split(rng)
+    first_logits = jnp.take_along_axis(
+        arr=prefill["logits"],
+        indices=prefill["kv_cache"]["pos_ids"][0][..., None] - 1,
+        axis=1,
+    )
+    first_logits = apply_sampler(first_logits)
     first_samples = jax.random.categorical(
         key=rng_sample,
-        logits=jnp.take_along_axis(
-            arr=prefill["logits"],
-            indices=prefill["kv_cache"]["pos_ids"][0][..., None] - 1,
-            axis=1,
-        ),
+        logits=first_logits,
         axis=-1,
     )
     init = dict(
@@ -1008,28 +1020,17 @@ def main(argv):
     assert n_row * n_col == n_device
 
     # weight shape constraints
-    assert d_model >= n_row
     assert d_model % n_row == 0
-    assert n_head >= n_col
     assert n_head % n_col == 0
-
-    assert d_model >= n_row
     assert d_model % n_row == 0
-    assert d_ff >= n_col
     assert d_ff % n_col == 0
 
     # activation shape constraints
     assert n_example >= n_device  # dataloader quirk
     assert n_example % n_row == 0  # parallelize batch across rows
-
-    assert d_model >= n_col  # parallelize residuals across columns
-    assert d_model % n_col == 0
-
-    assert n_head >= n_col  # parallelize heads across columns
-    assert n_head % n_col == 0
-
-    assert d_ff >= n_col  # parallelize mlp hiddens across columns
-    assert d_ff % n_col == 0
+    assert d_model % n_col == 0  # parallelize residuals across columns
+    assert n_head % n_col == 0  # parallelize heads across columns
+    assert d_ff % n_col == 0  # parallelize mlp hiddens across columns
 
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
