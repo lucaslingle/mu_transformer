@@ -828,32 +828,51 @@ def sample_step(carry, _):
 
 
 @jax.jit
-def sample_sequence(rng_sample, params, prompts):
+def sample_sequence(rng, params, prompts):
     cfg = transformer_config_factory(is_train=False, is_decoding=False)
+    # seqlen = 5, npad = 2.
+    # the prompt "a b c <pad> <pad>".
+    # becomes "<bos> a b c <pad>".
     prefill = Transformer(cfg, global_mesh_factory()).apply(
         {"params": params},
-        jnp.pad(prompts[:, 0:-1], ((0, 0), (1, 0)), constant_values=cfg.bos_token_id),
+        jnp.pad(prompts[:, :-1], ((0, 0), (1, 0)), constant_values=cfg.bos_token_id),
     )
-
+    # the prefill step returns pos_id = slen - npad = 4 (since 1 non-pad tokens at end).
+    # we need to sample one token, the output for "c", to init the main sampling loop,
+    # which requires extracting the logits from index pos_id - 1 = 3, and sampling those
+    rng, rng_sample = jax.random.split(rng)
+    first_samples = jax.random.categorical(
+        key=rng_sample,
+        logits=jnp.take_along_axis(
+            arr=prefill["logits"],
+            indices=prefill["kv_cache"]["pos_ids"][0][..., None] - 1,
+            axis=1,
+        ),
+        axis=-1,
+    )
     init = dict(
         params=params,
-        prev_token=prompts[:, -1:],
+        prev_token=first_samples,
         cache=prefill["kv_cache"],
-        rng=rng_sample,
+        rng=rng,
     )
+    # main loop is just this
     _, tokens_all = jax.lax.scan(
         f=sample_step,
         init=init,
-        xs=jnp.arange(cfg.sequence_len),
-        length=cfg.sequence_len,
+        xs=jnp.arange(cfg.sequence_len - 1),
+        length=cfg.sequence_len - 1,
         unroll=1,
     )
+    # and now we concatenate the samples together and reshape to correct shape, since
+    # scan applies only along the last axis.
     tokens_all = jnp.squeeze(tokens_all, -1)
     tokens_all = jnp.transpose(tokens_all, (1, 0))
+    tokens_all = jnp.concatenate([first_samples, tokens_all], axis=-1)
     return tokens_all
 
 
-def sample_loop():
+def prompted_sampling_loop():
     rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
     # rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())  # todo: fold in?
 
@@ -895,11 +914,34 @@ def sample_loop():
         step=0,
     )
     batch = to_global_array(batch, global_mesh_factory())
-    prompts = jnp.pad(
-        batch[:, 0:1],
-        ((0, 0), (0, FLAGS.config.sequence_len - 1)),
-        constant_values=tokenizer.pad_token_id,
+    sampled = sample_sequence(rng_stoch, state.params, batch)
+    sampled = jmhu.process_allgather(sampled)
+    sampled = [tokenizer.decode(sampled[i].tolist()) for i in range(global_batch_size)]
+    for s in sampled:
+        print("-" * 80)
+        print(s)
+    # todo: we got high-quality samples, need to write to cloud still
+
+
+def unprompted_sampling_loop():
+    rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
+    # rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())  # todo: fold in?
+
+    logging.info("Creating train state...")
+    state = train_state_factory(rng_init)
+    load_checkpoint_mgr = checkpoint_manager_factory(option="load")
+    if load_checkpoint_mgr.latest_step() is not None:
+        state = do_restore(load_checkpoint_mgr, state)
+    tokenizer = tokenizer_factory()
+
+    n_host = jax.process_count()
+    global_batch_size = global_batch_size_factory()
+    batch_size_per_host = global_batch_size // n_host
+    batch = jnp.full(
+        [batch_size_per_host, FLAGS.config.sequence_len],
+        fill_value=tokenizer_factory().pad_token_id,
     )
+    prompts = to_global_array(batch, global_mesh_factory())
     sampled = sample_sequence(rng_stoch, state.params, prompts)
     sampled = jmhu.process_allgather(sampled)
     sampled = [tokenizer.decode(sampled[i].tolist()) for i in range(global_batch_size)]
@@ -1001,7 +1043,7 @@ def main(argv):
         )
 
     if FLAGS.mode == "sample":
-        sample_loop()
+        unprompted_sampling_loop()
     elif FLAGS.mode == "train":
         if FLAGS.config.is_sweep:
             done_fn = "done.txt"
