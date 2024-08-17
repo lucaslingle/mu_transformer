@@ -84,5 +84,6 @@ def get_base_config():
     config.sampling_nucleus = 0.8
     config.sampling_topk = 20  # unused w sample_method=nucleus, and value is untuned
     config.sampling_temp = 0.1  # unused w sample_method=nucleus, and value is untuned
+    config.sampling_prompt_len = 128
 
     return config

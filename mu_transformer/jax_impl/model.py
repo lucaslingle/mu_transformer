@@ -628,11 +628,17 @@ class Transformer(nn.Module):
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         x = nnp.remat(Unembedding)(self.cfg, self.global_mesh)(x)
         if not self.cfg.is_decoding:
-            # prefill: in this case, compute number of non-pad in the batch of prompts.
-            #  the padding should always be on the right, and first token may be bos_id,
-            #  which for some tokenizers may equal pad_id, so exclude it from pad count.
+            # prefill: in this case, count the eos/pad tokens in batch of prompts.
+            #  the padding should always be on the right; the first token may be bos,
+            #  which for some tokenizers may equal eos/pad, so we exclude it from count
             chex.assert_shape(inputs, (None, self.cfg.sequence_len))
-            npad = jnp.sum(jnp.equal(inputs[:, 1:], self.cfg.pad_token_id), axis=-1)
+            npad = jnp.sum(
+                jnp.logical_or(
+                    jnp.equal(inputs[:, 1:], self.cfg.pad_token_id),
+                    jnp.equal(inputs[:, 1:], self.cfg.eos_token_id),
+                ),
+                axis=-1,
+            )
             npad = jnp.tile(npad[None, ...], reps=[self.cfg.n_layer, 1])
             npad = sharding_constraint(npad, MESH_AXES["NX"], self.global_mesh)
             pos_ids = self.cfg.sequence_len - npad  # eg slen=5 npad=2 ==> next pos_id=3

@@ -883,8 +883,14 @@ def sample_sequence(rng, params, prompts):
     tokens = jnp.squeeze(tokens, -1)
     tokens = jnp.transpose(tokens, (1, 0))
     tokens = jnp.concatenate([first_output_token, tokens], axis=-1)
-    # lastly, we overwrite with <pad> every token slot at or following an <eos> token.
-    keep = jnp.cumprod(jnp.not_equal(tokens, cfg.eos_token_id), axis=-1)
+    # lastly, we overwrite with '<pad>' every token slot at/following generated pad/eos
+    keep = jnp.cumprod(
+        jnp.logical_and(
+            jnp.not_equal(tokens, cfg.eos_token_id),
+            jnp.not_equal(tokens, cfg.pad_token_id),
+        ),
+        axis=-1,
+    )
     tokens = keep * tokens + (1 - keep) * cfg.pad_token_id
     return tokens, keep
 
@@ -929,6 +935,12 @@ def prompted_sampling_loop():
         batch_size=batch_size_per_host,
         sequence_len=FLAGS.config.sequence_len,
         step=0,
+    )
+    slen, plen = FLAGS.config.sequence_len, FLAGS.config.sampling_prompt_len
+    batch = jnp.pad(
+        array=batch[:, 0:plen],
+        pad_width=((0, 0), (0, slen - plen)),
+        constant_values=tokenizer_factory().pad_token_id,
     )
     batch = to_global_array(batch, global_mesh_factory())
 
