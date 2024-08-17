@@ -53,12 +53,12 @@ from mu_transformer.jax_impl.shard import sharding_constraint
 from mu_transformer.jax_impl.shard import to_global_array
 from mu_transformer.jax_impl.sow import split_and_name
 
-
+MODES = ["train", "validation", "test", "usample", "psample"]
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
 flags.DEFINE_string("experiment_group", None, "Experiment group name")
 flags.DEFINE_string("workdir", None, "Working directory (GCS or local)")
-flags.DEFINE_enum("mode", None, ["train", "validation", "test", "sample"], "Mode")
+flags.DEFINE_enum("mode", None, MODES, "Mode")
 flags.DEFINE_integer("seed", 0, "Experiment seed")
 flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
 flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
@@ -1053,8 +1053,10 @@ def main(argv):
             id=FLAGS.wb_run,
         )
 
-    if FLAGS.mode == "sample":
+    if FLAGS.mode == "usample":
         unprompted_sampling_loop()
+    if FLAGS.mode == "psample":
+        prompted_sampling_loop()
     elif FLAGS.mode == "train":
         if FLAGS.config.is_sweep:
             done_fn = "done.txt"
