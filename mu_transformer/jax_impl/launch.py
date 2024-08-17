@@ -852,8 +852,8 @@ def sample_sequence(rng, params, prompts):
     # which requires extracting the logits from index pos_id - 1 = 3, and sampling those
     rng, rng_sample = jax.random.split(rng)
     first_logits = jnp.take_along_axis(
-        arr=prefill["logits"],
-        indices=prefill["kv_cache"]["pos_ids"][0][..., None] - 1,
+        arr=prefill["logits"],  # [B, C, V]
+        indices=prefill["kv_cache"]["pos_ids"][0][..., None, None] - 1,  # [B, 1, 1]
         axis=1,
     )
     first_logits = apply_sampler(first_logits)
