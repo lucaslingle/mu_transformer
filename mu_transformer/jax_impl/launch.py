@@ -946,14 +946,14 @@ def prompted_sampling_loop():
         print(batch_text[i])
         print("CONTINUATION:")
         print(out_text[i])
-        print()
+        print("")
         print("PROMPT TOKEN IDS:")
         print(batch[i])
         print("CONTINUATION TOKEN IDS:")
         print(out[i])
         print("DONE MASK IDS:")
         print(done_mask[i])
-        print()
+        print("")
     # todo: we got high-quality samples, need to write to cloud still
 
 
