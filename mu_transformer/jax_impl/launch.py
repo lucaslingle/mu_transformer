@@ -859,19 +859,19 @@ def sample_sequence(rng, params, prompts):
         axis=1,
     )
     first_logits = apply_sampler(first_logits)
-    first_samples = jax.random.categorical(
+    first_output_token = jax.random.categorical(
         key=rng_sample,
         logits=first_logits,
         axis=-1,
     )
     init = dict(
         params=params,
-        prev_token=first_samples,
+        prev_token=first_output_token,
         cache=prefill["kv_cache"],
         rng=rng,
     )
     # and now for the main loop
-    _, tokens_all = jax.lax.scan(
+    _, tokens = jax.lax.scan(
         f=sample_step,
         init=init,
         xs=jnp.arange(cfg.sequence_len - 1),
@@ -880,12 +880,13 @@ def sample_sequence(rng, params, prompts):
     )
     # then we concatenate the samples together and reshape to correct shape,
     # since jax.lax.scan (unlike flax.linen.scan) can only be applied along leading axis
-    tokens_all = jnp.squeeze(tokens_all, -1)
-    tokens_all = jnp.transpose(tokens_all, (1, 0))
-    tokens_all = jnp.concatenate([first_samples, tokens_all], axis=-1)
+    tokens = jnp.squeeze(tokens, -1)
+    tokens = jnp.transpose(tokens, (1, 0))
+    tokens = jnp.concatenate([first_output_token, tokens], axis=-1)
     # lastly, we replace with <pad> every token that equals or follows an <eos> token.
-    any_eos = jnp.cumprod(jnp.equal(tokens_all, cfg.eos_token_id), axis=-1)
-    return tokens_all, any_eos
+    ignore = jnp.cumprod(jnp.equal(tokens[:, ::-1], cfg.eos_token_id), axis=-1)[:, ::-1]
+    tokens = (1 - ignore) * tokens + ignore * cfg.pad_token_id
+    return tokens, ignore
 
 
 def prompted_sampling_loop():
