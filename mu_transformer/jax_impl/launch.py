@@ -878,11 +878,14 @@ def sample_sequence(rng, params, prompts):
         length=cfg.sequence_len - 1,
         unroll=1,
     )
-    # lastly we concatenate the samples together and reshape to correct shape,
+    # then we concatenate the samples together and reshape to correct shape,
     # since jax.lax.scan (unlike flax.linen.scan) can only be applied along leading axis
     tokens_all = jnp.squeeze(tokens_all, -1)
     tokens_all = jnp.transpose(tokens_all, (1, 0))
     tokens_all = jnp.concatenate([first_samples, tokens_all], axis=-1)
+    # lastly, we replace with <pad> every token that equals or follows an <eos> token.
+    any_eos = jnp.cumprod(jnp.equal(tokens_all, cfg.eos_token_id), axis=-1)
+    tokens_all = (1 - any_eos) * tokens_all + any_eos * cfg.pad_token_id
     return tokens_all
 
 
