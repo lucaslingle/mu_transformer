@@ -927,19 +927,19 @@ def prompted_sampling_loop():
         sequence_len=FLAGS.config.sequence_len,
         step=0,
     )
-    prompts = to_global_array(batch, global_mesh_factory())
+    batch = to_global_array(batch, global_mesh_factory())
 
-    samples = sample_sequence(rng_stoch, state.params, prompts)
+    samples = sample_sequence(rng_stoch, state.params, batch)
     samples = jmhu.process_allgather(samples)
     samples = [tokenizer.decode(samples[i].tolist()) for i in range(global_batch_size)]
 
-    prompts = jmhu.process_allgather(prompts)
-    prompts = [tokenizer.decode(prompts[i].tolist()) for i in range(global_batch_size)]
+    batch = jmhu.process_allgather(batch)
+    batch = [tokenizer.decode(batch[i].tolist()) for i in range(global_batch_size)]
 
     for i in range(len(samples)):
         print("-" * 80)
         print("PROMPT:")
-        print(prompts[i])
+        print(batch[i])
         print("CONTINUATION:")
         print(samples[i])
     # todo: we got high-quality samples, need to write to cloud still
