@@ -883,10 +883,10 @@ def sample_sequence(rng, params, prompts):
     tokens = jnp.squeeze(tokens, -1)
     tokens = jnp.transpose(tokens, (1, 0))
     tokens = jnp.concatenate([first_output_token, tokens], axis=-1)
-    # lastly, we replace with <pad> every token that equals or follows an <eos> token.
-    ignore = jnp.cumprod(jnp.equal(tokens[:, ::-1], cfg.eos_token_id), axis=-1)[:, ::-1]
-    tokens = (1 - ignore) * tokens + ignore * cfg.pad_token_id
-    return tokens, ignore
+    # lastly, we overwrite with <pad> every token slot at or following an <eos> token.
+    keep = jnp.cumprod(jnp.not_equal(tokens, cfg.eos_token_id), axis=-1)
+    tokens = keep * tokens + (1 - keep) * cfg.pad_token_id
+    return tokens, keep
 
 
 def prompted_sampling_loop():
