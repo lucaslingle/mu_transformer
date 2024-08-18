@@ -23,11 +23,11 @@ while getopts "l:h" option; do
 done
 
 LR=$(bc -l <<< "2 ^(-$LR_IDX)");
-for size in "small" "medium" "large";
+for SIZE in "small" "medium" "large";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
         --experiment_group="$GROUP_NAME" \
-        --config="mu_transformer/configs/$size.py" \
+        --config="mu_transformer/configs/$SIZE.py" \
         --workdir="gs://tpu_persist_bucket/mu_transformer_scaling/" \
         --mode="train" \
         --wb_enabled=True \
