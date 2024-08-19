@@ -1,7 +1,7 @@
 #!/bin/bash
 
 Help() {
-  echo "Syntax: sweep_combined_huge.sh [l|h]"
+  echo "Syntax: sweep_combined_huge_spuinit.sh [l|h]"
   echo "options:"
   echo "l     -log2(LR): a positive integer."
   echo "h     Print this Help."
@@ -21,7 +21,7 @@ while getopts "l:h" option; do
   esac
 done
 
-GROUP_NAME="combined";
+GROUP_NAME="combined_huge_spuinit";
 SIZE="huge";
 LR=$(bc -l <<< "2 ^(-$LR_IDX)");
 
@@ -38,6 +38,7 @@ LR=$(bc -l <<< "2 ^(-$LR_IDX)");
     --config.n_layer=12 \
     --config.q_init="zero" \
     --config.u_init="sp" \
+    --config.act_name="relu" \
     --config.act_square=True \
     --config.n_save_step=500 \
     --config.n_pretrain_step=90000 \

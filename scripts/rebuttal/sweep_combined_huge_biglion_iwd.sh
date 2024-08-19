@@ -21,7 +21,7 @@ while getopts "l:h" option; do
   esac
 done
 
-GROUP_NAME="combined_huge_iwd";
+GROUP_NAME="combined_huge_biglion_iwd";
 SIZE="huge";
 LR=$(bc -l <<< "2 ^(-$LR_IDX)");
 
