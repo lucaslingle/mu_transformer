@@ -1,17 +1,20 @@
 #!/bin/bash
 
 Help() {
-  echo "Syntax: sweep_combined_huge_sampling.sh [l|h]"
+  echo "Syntax: sweep_combined_huge_sampling.sh [l|p|h]"
   echo "options:"
   echo "l     -log2(LR): a positive integer."
+  echo "p     prompt_len: a non-negative integer."
   echo "h     Print this Help."
   echo
 }
 
-while getopts "l:h" option; do
+while getopts "l:p:h" option; do
   case $option in
     l)
       LR_IDX=$OPTARG;;
+    p)
+      PROMPT_LEN=$OPTARG;;
     h)
       Help
       exit;;
@@ -45,4 +48,5 @@ LR=$(bc -l <<< "2 ^(-$LR_IDX)");
     --config.optim_beta1=0.9 \
     --config.optim_beta2=0.95 \
     --config.optim_eps=0.00000001 \
-    --config.wd=0.1;
+    --config.wd=0.1 \
+    --config.sampling_prompt_len="$PROMPT_LEN";
