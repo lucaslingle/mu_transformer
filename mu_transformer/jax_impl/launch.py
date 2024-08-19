@@ -53,7 +53,7 @@ from mu_transformer.jax_impl.shard import sharding_constraint
 from mu_transformer.jax_impl.shard import to_global_array
 from mu_transformer.jax_impl.sow import split_and_name
 
-MODES = ["train", "validation", "test", "usample", "psample"]
+MODES = ["train", "validation", "test", "sample"]
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
 flags.DEFINE_string("experiment_group", None, "Experiment group name")
@@ -895,7 +895,7 @@ def sample_sequence(rng, params, prompts):
     return tokens, keep
 
 
-def prompted_sampling_loop():
+def sampling_loop():
     rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
     # rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())  # todo: fold in?
 
@@ -965,34 +965,6 @@ def prompted_sampling_loop():
         # print("DONE MASK IDS:")
         # print(done_mask[i])
         # print("")
-    # todo: we got high-quality samples, need to write to cloud still
-
-
-def unprompted_sampling_loop():
-    rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
-    # rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())  # todo: fold in?
-
-    logging.info("Creating train state...")
-    state = train_state_factory(rng_init)
-    load_checkpoint_mgr = checkpoint_manager_factory(option="load")
-    if load_checkpoint_mgr.latest_step() is not None:
-        state = do_restore(load_checkpoint_mgr, state)
-    tokenizer = tokenizer_factory()
-
-    n_host = jax.process_count()
-    global_batch_size = global_batch_size_factory()
-    batch_size_per_host = global_batch_size // n_host
-    batch = jnp.full(
-        [batch_size_per_host, FLAGS.config.sequence_len],
-        fill_value=tokenizer_factory().pad_token_id,
-    )
-    prompts = to_global_array(batch, global_mesh_factory())
-    samples, _ = sample_sequence(rng_stoch, state.params, prompts)
-    samples = jmhu.process_allgather(samples)
-    samples = [tokenizer.decode(samples[i].tolist()) for i in range(global_batch_size)]
-    for s in samples:
-        print("-" * 80)
-        print(s)
     # todo: we got high-quality samples, need to write to cloud still
 
 
@@ -1076,11 +1048,7 @@ def main(argv):
             id=FLAGS.wb_run,
         )
 
-    if FLAGS.mode == "usample":
-        unprompted_sampling_loop()
-    if FLAGS.mode == "psample":
-        prompted_sampling_loop()
-    elif FLAGS.mode == "train":
+    if FLAGS.mode == "train":
         if FLAGS.config.is_sweep:
             done_fn = "done.txt"
             done_fp = posixpath.join(modeldir_factory("load", "checkpoints"), done_fn)
@@ -1099,6 +1067,8 @@ def main(argv):
         eval_metrics = eval_loop(params=None, n_eval_step=None, mode=FLAGS.mode)
         eval_loss = eval_metrics["loss_avg"]
         logging.info(f"Eval loss: {eval_loss}")
+    elif FLAGS.mode == "sample":
+        sampling_loop()
     else:
         raise NotImplementedError
 
