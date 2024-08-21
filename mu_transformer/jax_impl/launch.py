@@ -838,7 +838,7 @@ def sample_step(carry, _):
 
 
 @jax.jit
-def sample_sequence(rng, params, prompts, max_gen_tokens):
+def sample_sequence(rng, params, prompts):
     cfg = transformer_config_factory(is_train=False, is_decoding=False)
     # worked example:
     # seqlen = 5, npad = 2.
@@ -874,8 +874,8 @@ def sample_sequence(rng, params, prompts, max_gen_tokens):
     _, tokens = jax.lax.scan(
         f=sample_step,
         init=init,
-        xs=jnp.arange(max_gen_tokens - 1),
-        length=max_gen_tokens - 1,
+        xs=jnp.arange(FLAGS.config.sampling_max_len - 1),
+        length=FLAGS.config.sampling_max_len - 1,
         unroll=1,
     )
     # then we concatenate the samples together and reshape to correct shape,
@@ -944,7 +944,7 @@ def sampling_loop():
     )
     batch = to_global_array(batch, global_mesh_factory())
 
-    out, _ = sample_sequence(rng_stoch, state.params, batch, max_gen_tokens=1024)
+    out, _ = sample_sequence(rng_stoch, state.params, batch)
     out = jmhu.process_allgather(out)
     out_text = [tokenizer.decode(out[i].tolist()) for i in range(global_batch_size)]
 
