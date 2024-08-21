@@ -944,7 +944,7 @@ def sampling_loop():
     )
     batch = to_global_array(batch, global_mesh_factory())
 
-    out, _ = sample_sequence(rng_stoch, state.params, batch)
+    out, _ = sample_sequence(rng_stoch, state.params, batch, max_gen_tokens=1024)
     out = jmhu.process_allgather(out)
     out_text = [tokenizer.decode(out[i].tolist()) for i in range(global_batch_size)]
 
