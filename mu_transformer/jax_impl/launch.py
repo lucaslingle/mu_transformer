@@ -838,7 +838,7 @@ def sample_step(carry, _):
 
 
 @jax.jit
-def sample_sequence(rng, params, prompts):
+def sample_sequence(rng, params, prompts, max_gen_tokens):
     cfg = transformer_config_factory(is_train=False, is_decoding=False)
     # worked example:
     # seqlen = 5, npad = 2.
@@ -874,8 +874,8 @@ def sample_sequence(rng, params, prompts):
     _, tokens = jax.lax.scan(
         f=sample_step,
         init=init,
-        xs=jnp.arange(cfg.sequence_len - 1),
-        length=cfg.sequence_len - 1,
+        xs=jnp.arange(max_gen_tokens - 1),
+        length=max_gen_tokens - 1,
         unroll=1,
     )
     # then we concatenate the samples together and reshape to correct shape,
