@@ -21,7 +21,7 @@ def get_config():
     config.v_type = "linear"
     config.g_type = "depsepconv"
     config.ff_multiple = compute_ff(
-        ff_act_glu=config.act_name.endswith("glu"),
+        ff_act_glu=config.ff_act_name.endswith("glu"),
         kv_group_sz=config.kv_group_size,
         v_type=config.v_type,
         g_type=config.g_type,
