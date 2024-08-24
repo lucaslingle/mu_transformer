@@ -357,7 +357,7 @@ class MultiLayerPerceptron(nn.Module):
     @nn.compact
     def __call__(self, x):
         d_ff = int(self.cfg.ff_multiple * self.cfg.dm)
-        if self.cfg.act_name == "swiglu":
+        if self.cfg.ff_act_name == "swiglu":
             d_ff_pre = d_ff * 2
             d_ff_post = d_ff
         else:
@@ -394,16 +394,16 @@ class MultiLayerPerceptron(nn.Module):
         x = sharding_constraint(x, MESH_AXES["XNY"], self.mesh)
         self.sow("intermediates", "fh_l1", coord_check_l1(x))
 
-        if self.cfg.act_name == "swiglu":
+        if self.cfg.ff_act_name == "swiglu":
             # a more communication-efficient implementation of swiglu would define
             # two separate projections for xg, xf with the same sharding.
             xg, xf = jnp.split(x, 2, axis=-1)
             x = jax.nn.silu(xg) * xf
         else:
-            x = getattr(jax.nn, self.cfg.act_name)(x)
+            x = getattr(jax.nn, self.cfg.ff_act_name)(x)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.mesh)
 
-        if self.cfg.act_square:
+        if self.cfg.ff_act_square:
             x = jnp.square(x)
             x = sharding_constraint(x, MESH_AXES["XNY"], self.mesh)
         self.sow("intermediates", "fa_l1", coord_check_l1(x))
