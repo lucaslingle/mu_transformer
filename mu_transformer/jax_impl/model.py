@@ -299,11 +299,19 @@ class MultiHeadAttention(nn.Module):
 
         q = QueryProjection(self.cfg, self.mesh)(x)
         k = KeyProjection(self.cfg, self.mesh)(x)
-        v = ValueProjection(self.cfg, self.mesh, suffix="v", move_type=self.v_type)(x)
+        v = ValueProjection(
+            cfg=self.cfg,
+            mesh=self.mesh,
+            suffix="v",
+            move_type=self.cfg.v_type,
+        )(x)
         if self.g_type != "none":
-            g = ValueProjection(self.cfg, self.mesh, suffix="g", move_type=self.g_type)(
-                x
-            )
+            g = ValueProjection(
+                cfg=self.cfg,
+                mesh=self.mesh,
+                suffix="g",
+                move_type=self.cfg.g_type,
+            )(x)
             g = jax.nn.silu(g)
             v = g * v
         q = sharding_constraint(q, MESH_AXES["XYNNN"], self.mesh)
