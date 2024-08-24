@@ -146,32 +146,9 @@ def get_standard_scaling(lr):
     }
 
 
-def get_rel_mup_scaling(lr):
-    wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
-    return {
-        # embeddings
-        "w_e": lr,
-        # attention
-        "w_aq": lr / wm,
-        "w_ak": lr / wm,
-        "w_av": lr / wm,
-        "w_ag": lr / wm,
-        "w_ao": lr / wm,
-        "s_av": lr,
-        "s_ag": lr,
-        "c_av": lr / wm,
-        "c_ag": lr / wm,
-        # feed-forward
-        "w_fi": lr / wm,
-        "w_fo": lr / wm,
-        # unembedding
-        "w_u": lr / wm,
-    }
-
-
 def get_abs_mup_scaling(lr):
-    dm = FLAGS.config.d_model
-    dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
+    dm = FLAGS.config.dm
+    dff = FLAGS.config.dm * FLAGS.config.ff_multiple
     return {
         # embeddings
         "w_e": lr,
@@ -495,9 +472,9 @@ def get_tpuv3_mfu(param_count, sec_per_step):
     tokens_per_sec = FLAGS.config.tokens_per_global_batch / sec_per_step
     # get flop count estimate per token using analytical accounting
     n = param_count
-    l = FLAGS.config.n_layer
-    h = FLAGS.config.d_model // FLAGS.config.d_head
-    q = FLAGS.config.d_head
+    l = FLAGS.config.nl
+    h = FLAGS.config.dm // FLAGS.config.dh
+    q = FLAGS.config.dh
     t = FLAGS.config.sequence_len
     flop_per_token = (6 * n) + (12 * l * h * q * t)
     # get estimated flop count per second (flop/s)
@@ -790,7 +767,7 @@ def save_eval_loss():
                     FLAGS.experiment_group,
                     FLAGS.seed,
                     FLAGS.config.optim_rule,
-                    FLAGS.config.d_model,
+                    FLAGS.config.dm,
                     FLAGS.config.lr_base,
                     eval_loss,
                 ],
@@ -818,8 +795,8 @@ def main(argv):
     logging.info("=== Config: ===")
     for k, v in vars(FLAGS.config)["_fields"].items():
         logging.info(f"{k}: {v}")
-    assert FLAGS.config.d_model >= FLAGS.config.d_head
-    assert FLAGS.config.d_model % FLAGS.config.d_head == 0
+    assert FLAGS.config.dm >= FLAGS.config.dh
+    assert FLAGS.config.dm % FLAGS.config.dh == 0
 
     n_host = jax.process_count()
     n_ds_shard = FLAGS.config.n_ds_shard
@@ -828,30 +805,30 @@ def main(argv):
 
     n_device = jax.device_count()
     n_example = global_batch_size_factory()
-    d_model = FLAGS.config.d_model
-    d_ff = FLAGS.config.d_model * FLAGS.config.ff_multiple
-    n_head = FLAGS.config.d_model // FLAGS.config.d_head
+    dm = FLAGS.config.dm
+    dff = FLAGS.config.dm * FLAGS.config.ff_multiple
+    nh = FLAGS.config.dm // FLAGS.config.dh
     n_row = FLAGS.config.n_mesh_rows
     n_col = FLAGS.config.n_mesh_cols
     assert n_row * n_col == n_device
 
     # weight shape constraints
-    assert d_model % n_row == 0
-    assert n_head % n_col == 0
-    assert d_model % n_row == 0
-    assert d_ff % n_col == 0
+    assert dm % n_row == 0
+    assert nh % n_col == 0
+    assert dm % n_row == 0
+    assert dff % n_col == 0
 
     # activation shape constraints
     assert n_example >= n_device  # dataloader quirk
     assert n_example % n_row == 0  # parallelize batch across rows
-    assert d_model % n_col == 0  # parallelize residuals across columns
-    assert n_head % n_col == 0  # parallelize heads across columns
-    assert d_ff % n_col == 0  # parallelize mlp hiddens across columns
+    assert dm % n_col == 0  # parallelize residuals across columns
+    assert nh % n_col == 0  # parallelize heads across columns
+    assert dff % n_col == 0  # parallelize mlp hiddens across columns
 
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_rebuttal",
+            project="mu_transformer_conv",
             group=FLAGS.experiment_group,
             config={**vars(FLAGS.config)["_fields"], "seed": FLAGS.seed},
             resume="never" if FLAGS.wb_run is None else "must",
