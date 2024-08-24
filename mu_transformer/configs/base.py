@@ -45,7 +45,6 @@ def get_base_config():
     config.kv_group_size = 8
     config.v_type = "linear"
     config.g_type = "none"
-    config.ff_multiple = 5  # mlp width multiple
     config.ff_act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
     config.ff_act_square = True  # activation squaring
     config.norm_eps = 1e-6  # rmsnorm epsilon
