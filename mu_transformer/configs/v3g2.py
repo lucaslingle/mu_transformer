@@ -11,18 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from mu_transformer.configs.base import compute_ff
 from mu_transformer.configs.base import get_base_config
 
 
 def get_config():
     config = get_base_config()
-    config.model_size = "small"
 
-    # mesh
-    config.n_mesh_rows = 128
-    config.n_mesh_cols = 1
-
-    # width
-    config.d_model = 128
+    config.v_type = "conv"
+    config.g_type = "depsepconv"
+    config.ff_multiple = compute_ff(
+        ff_act_glu=config.act_name.endswith("glu"),
+        kv_group_sz=config.kv_group_size,
+        v_type=config.v_type,
+        g_type=config.g_type,
+    )
 
     return config

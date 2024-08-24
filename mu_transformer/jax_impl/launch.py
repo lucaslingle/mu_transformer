@@ -24,7 +24,6 @@ import flax
 import flax.linen as nn
 import jax
 import jax.experimental.mesh_utils as jmu
-import jax.experimental.multihost_utils as jmhu
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import optax
@@ -45,15 +44,12 @@ from mu_transformer.data import get_tokenizer
 from mu_transformer.jax_impl.model import MESH_AXES
 from mu_transformer.jax_impl.model import Transformer
 from mu_transformer.jax_impl.model import TransformerConfig
-from mu_transformer.jax_impl.samplers import apply_nucleus
-from mu_transformer.jax_impl.samplers import apply_temp
-from mu_transformer.jax_impl.samplers import apply_topk
 from mu_transformer.jax_impl.shard import get_namedsharding
 from mu_transformer.jax_impl.shard import sharding_constraint
 from mu_transformer.jax_impl.shard import to_global_array
 from mu_transformer.jax_impl.sow import split_and_name
 
-MODES = ["train", "validation", "test", "sample"]
+MODES = ["train", "validation", "test"]
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
 flags.DEFINE_string("experiment_group", None, "Experiment group name")
@@ -131,30 +127,22 @@ def schedule_factory():
 def get_standard_scaling(lr):
     return {
         # embeddings
-        "g_e": lr,
         "w_e": lr,
         # attention
-        "g_a": lr,
-        "g_aq": lr,
-        "g_ak": lr,
         "w_aq": lr,
         "w_ak": lr,
         "w_av": lr,
+        "w_ag": lr,
         "w_ao": lr,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
+        "s_av": lr,
+        "s_ag": lr,
+        "c_av": lr,
+        "c_ag": lr,
         # feed-forward
-        "g_f": lr,
         "w_fi": lr,
         "w_fo": lr,
-        "b_fi": lr,
-        "b_fo": lr,
         # unembedding
-        "g_u": lr,
         "w_u": lr,
-        "b_u": lr,
     }
 
 
@@ -162,30 +150,22 @@ def get_rel_mup_scaling(lr):
     wm = FLAGS.config.d_model // FLAGS.config.d_base  # width multiple
     return {
         # embeddings
-        "g_e": lr,
         "w_e": lr,
         # attention
-        "g_a": lr,
-        "g_aq": lr,
-        "g_ak": lr,
         "w_aq": lr / wm,
         "w_ak": lr / wm,
         "w_av": lr / wm,
+        "w_ag": lr / wm,
         "w_ao": lr / wm,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
+        "s_av": lr,
+        "s_ag": lr,
+        "c_av": lr / wm,
+        "c_ag": lr / wm,
         # feed-forward
-        "g_f": lr,
         "w_fi": lr / wm,
         "w_fo": lr / wm,
-        "b_fi": lr,
-        "b_fo": lr,
         # unembedding
-        "g_u": lr,
         "w_u": lr / wm,
-        "b_u": lr,
     }
 
 
@@ -194,30 +174,22 @@ def get_abs_mup_scaling(lr):
     dff = FLAGS.config.d_model * FLAGS.config.ff_multiple
     return {
         # embeddings
-        "g_e": lr,
         "w_e": lr,
         # attention
-        "g_a": lr,
-        "g_aq": lr,
-        "g_ak": lr,
         "w_aq": lr / dm,
         "w_ak": lr / dm,
         "w_av": lr / dm,
+        "w_ag": lr / dm,
         "w_ao": lr / dm,
-        "b_aq": lr,
-        "b_ak": lr,
-        "b_av": lr,
-        "b_ao": lr,
+        "s_av": lr / 3,
+        "s_ag": lr / 3,
+        "c_av": lr / (dm * 3),
+        "c_ag": lr / (dm * 3),
         # feed-forward
-        "g_f": lr,
         "w_fi": lr / dm,
         "w_fo": lr / dff,
-        "b_fi": lr,
-        "b_fo": lr,
         # unembedding
-        "g_u": lr,
         "w_u": lr / dm,
-        "b_u": lr,
     }
 
 
@@ -807,167 +779,6 @@ def eval_loop(params, ds_shard=None, n_eval_step=None, mode=None):
     return eval_metrics
 
 
-def apply_sampler(logits):
-    if FLAGS.config.sampling_method == "nucleus":
-        return apply_nucleus(logits, FLAGS.config.sampling_nucleus)
-    if FLAGS.config.sampling_method == "topk":
-        return apply_topk(logits, FLAGS.config.sampling_topk)
-    if FLAGS.config.sampling_method == "temp":
-        return apply_temp(logits, FLAGS.config.sampling_temp)
-    raise NotImplementedError
-
-
-def sample_step(carry, _):
-    config = transformer_config_factory(is_train=False, is_decoding=True)
-    global_mesh = global_mesh_factory()
-    params = carry["params"]
-    prev_token = carry["prev_token"]
-    cache = carry["cache"]
-    rng = carry["rng"]
-    rng_new, rng_step = jax.random.split(rng)
-    out = Transformer(config, global_mesh).apply({"params": params}, prev_token, cache)
-    logits = apply_sampler(out["logits"])
-    curr_token = jax.random.categorical(rng_step, logits, axis=-1)
-    carry_new = dict(
-        params=params,
-        prev_token=curr_token,
-        cache=out["kv_cache"],
-        rng=rng_new,
-    )
-    return carry_new, curr_token
-
-
-@jax.jit
-def sample_sequence(rng, params, prompts):
-    cfg = transformer_config_factory(is_train=False, is_decoding=False)
-    # worked example:
-    # seqlen = 5, npad = 2.
-    # the prompt "a b c <pad> <pad>".
-    # becomes "<bos> a b c <pad>".
-    prefill = Transformer(cfg, global_mesh_factory()).apply(
-        {"params": params},
-        jnp.pad(prompts[:, :-1], ((0, 0), (1, 0)), constant_values=cfg.bos_token_id),
-    )
-    # worked example, continued:
-    # the prefill step returns pos_id = slen - npad = 4 (since 1 non-pad tokens at end).
-    # we need to sample one token, the output for "c", to init the main sampling loop.
-    # this requires extracting the logits from index pos_id - 1 = 3, and sampling those.
-    rng, rng_sample = jax.random.split(rng)
-    first_logits = jnp.take_along_axis(
-        arr=prefill["logits"],  # [B, C, V]
-        indices=prefill["kv_cache"]["pos_ids"][0][..., None, None] - 1,  # [B, 1, 1]
-        axis=1,
-    )
-    first_logits = apply_sampler(first_logits)
-    first_output_token = jax.random.categorical(
-        key=rng_sample,
-        logits=first_logits,
-        axis=-1,
-    )
-    init = dict(
-        params=params,
-        prev_token=first_output_token,
-        cache=prefill["kv_cache"],
-        rng=rng,
-    )
-    # and now for the main loop
-    _, tokens = jax.lax.scan(
-        f=sample_step,
-        init=init,
-        xs=jnp.arange(FLAGS.config.sampling_max_len - 1),
-        length=FLAGS.config.sampling_max_len - 1,
-        unroll=1,
-    )
-    # then we concatenate the samples together and reshape to correct shape,
-    # since jax.lax.scan (unlike flax.linen.scan) can only be applied along leading axis
-    tokens = jnp.squeeze(tokens, -1)
-    tokens = jnp.transpose(tokens, (1, 0))
-    tokens = jnp.concatenate([first_output_token, tokens], axis=-1)
-    # lastly, we overwrite with '<pad>' every token slot at/following generated pad/eos
-    keep = jnp.cumprod(
-        jnp.logical_and(
-            jnp.not_equal(tokens, cfg.eos_token_id),
-            jnp.not_equal(tokens, cfg.pad_token_id),
-        ),
-        axis=-1,
-    )
-    tokens = keep * tokens + (1 - keep) * cfg.pad_token_id
-    return tokens, keep
-
-
-def sampling_loop():
-    rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
-    # rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())  # todo: fold in?
-
-    logging.info("Creating train state...")
-    state = train_state_factory(rng_init)
-    load_checkpoint_mgr = checkpoint_manager_factory(option="load")
-    if load_checkpoint_mgr.latest_step() is not None:
-        state = do_restore(load_checkpoint_mgr, state)
-    tokenizer = tokenizer_factory()
-
-    n_host = jax.process_count()
-    host_id = jax.process_index()
-    n_shard = FLAGS.config.n_ds_shard
-    n_host_per_shard = n_host // n_shard  # n_ds_shard = n_host on smallest runs
-    global_batch_size = global_batch_size_factory()
-    batch_size_per_host = global_batch_size // n_host
-    shard_id = host_id // n_host_per_shard
-    subshard_id = host_id % n_host_per_shard
-    ds_shard = get_dataset(
-        hfds_identifier=FLAGS.config.hfds_identifier,
-        hfds_config=FLAGS.config.hfds_config,
-        hfds_datacol=FLAGS.config.hfds_datacol,
-        hfds_buffer_size=FLAGS.config.hfds_buffer_size,
-        hftr_tokenizer=tokenizer,
-        split_name="validation",
-        batch_size=batch_size_per_host,
-        sequence_len=FLAGS.config.sequence_len,
-        n_shard=n_shard,
-        shard_id=shard_id,
-        workdir=FLAGS.workdir,
-        force_download=FLAGS.config.force_download,
-    )
-    batch = get_batch(
-        shard=ds_shard,
-        n_subshard=n_host_per_shard,
-        subshard_id=subshard_id,
-        batch_size=batch_size_per_host,
-        sequence_len=FLAGS.config.sequence_len,
-        step=0,
-    )
-    slen, plen = FLAGS.config.sequence_len, FLAGS.config.sampling_prompt_len
-    batch = jnp.pad(
-        array=batch[:, 0:plen],
-        pad_width=((0, 0), (0, slen - plen)),
-        constant_values=tokenizer_factory().pad_token_id,
-    )
-    batch = to_global_array(batch, global_mesh_factory())
-
-    out, _ = sample_sequence(rng_stoch, state.params, batch)
-    out = jmhu.process_allgather(out)
-    out_text = [tokenizer.decode(out[i].tolist()) for i in range(global_batch_size)]
-
-    batch = jmhu.process_allgather(batch)
-    batch_text = [tokenizer.decode(batch[i].tolist()) for i in range(global_batch_size)]
-
-    for i in range(len(out_text)):
-        print("-" * 80)
-        print("PROMPT:")
-        print(batch_text[i])
-        print("CONTINUATION:")
-        print(out_text[i])
-        # print("")
-        # print("PROMPT TOKEN IDS:")
-        # print(batch[i])
-        # print("CONTINUATION TOKEN IDS:")
-        # print(out[i])
-        # print("DONE MASK IDS:")
-        # print(done_mask[i])
-        # print("")
-    # todo: we got high-quality samples, need to write to cloud still
-
-
 def save_eval_loss():
     eval_loss = eval_loop(params=None, mode="validation")["loss_avg"]
     logging.info(f"Eval loss: {eval_loss}")
@@ -1067,8 +878,6 @@ def main(argv):
         eval_metrics = eval_loop(params=None, n_eval_step=None, mode=FLAGS.mode)
         eval_loss = eval_metrics["loss_avg"]
         logging.info(f"Eval loss: {eval_loss}")
-    elif FLAGS.mode == "sample":
-        sampling_loop()
     else:
         raise NotImplementedError
 

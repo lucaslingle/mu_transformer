@@ -34,40 +34,36 @@ def get_base_config():
     config.n_ds_shard = 0  # 0 = shard by host; less < n_host = subshard existing shards
 
     # architecture
+    config.model_size = "normal"
+    config.n_mesh_rows = 128
+    config.n_mesh_cols = 1
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
-    config.n_layer = 24  # depth, should stay const for mu-transfer
-    config.d_base = 128  # base model width for relative scaling rules
+    config.n_layer = 8  # depth, should stay const for mu-transfer
+    config.d_model = 1024
     config.d_head = 128
-    config.ff_multiple = 4  # mlp width multiple
-    config.e_norm = False  # normalize the embeddings using rmsnorm?
-    config.q_init = "vs"  # query projection init: vs, zero
-    config.r_init = "vs"  # residual projection init: vs, zero
-    config.u_init = "mup"  # unembedding projection init: mup, sp, zero
-    config.qk_scale = 1 / 128
-    config.qk_norm = False  # normalize queries and keys using rmsnorm?
-    config.kv_mqa = False
-    config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
-    config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
-    config.act_square = False  # activation squaring
+    config.kv_group_size = 8
+    config.v_type = "linear"
+    config.g_type = "none"
+    config.ff_multiple = 5  # mlp width multiple
+    config.ff_act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
+    config.ff_act_square = True  # activation squaring
     config.norm_eps = 1e-6  # rmsnorm epsilon
-    config.norm_gains = False  # rmsnorm gains
-    config.norm_gains_type = "vector"  # vector or scalar
-    config.proj_biases = False  # projections with bias
+    config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
 
     # optimization
     config.tokens_per_global_batch = 2**18  # batch size * sequence len
     config.grad_acc_steps = 1  # steps per parameter update (for micro-batching)
     config.grad_clip = 1.0  # grad clip max l2 norm
-    config.lr_base = 1.0  # base learning rate
+    config.lr_base = 0.25  # base learning rate
     config.lr_schedule_name = "linear"
-    config.optim_name = "adamw"
-    config.optim_rule = "mup"  # mup or sp
-    config.optim_beta1 = 0.9
+    config.optim_name = "lion"
+    config.optim_rule = "abs_mup"  # mup or sp
+    config.optim_beta1 = 0.95
     config.optim_beta2 = 0.98
-    config.optim_eps = 10**-9
-    config.wd = 0.0  # weight decay lambda
-    config.use_iwd = False  # use independent weight decay?
+    config.optim_eps = 0.0
+    config.wd = 0.00001  # weight decay lambda
+    config.use_iwd = True  # use independent weight decay?
     config.use_eps_scaling = False  # multiply adam eps by some factor Theta(1/fan_in)?
 
     # periodic action settings
@@ -79,12 +75,17 @@ def get_base_config():
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
     config.no_checkpoint = False  # skip saving the model
 
-    # sampling settings
-    config.sampling_method = "nucleus"
-    config.sampling_nucleus = 0.8
-    config.sampling_topk = 20  # unused w sample_method=nucleus, and value is untuned
-    config.sampling_temp = 0.1  # unused w sample_method=nucleus, and value is untuned
-    config.sampling_prompt_len = 128
-    config.sampling_max_len = 1024
-
     return config
+
+
+def compute_ff(ff_act_glu, kv_group_sz, v_type, g_type):
+    # todo: verify that this gives same param count approximately for all model variants
+    q_contrib = 1
+    k_contrib = 1 / kv_group_sz
+    v_contrib = (1 / kv_group_sz) * dict(linear=1, depsepconv=1, conv=3)[v_type]
+    g_contrib = (1 / kv_group_sz) * dict(none=0, linear=1, depsepconv=1, conv=3)[g_type]
+    o_contrib = 1
+    a_contrib = q_contrib + k_contrib + v_contrib + g_contrib + o_contrib
+    ff_contrib = 12 - a_contrib
+    ff_multiple = (0.333 if ff_act_glu else 0.5) * ff_contrib
+    return ff_multiple
