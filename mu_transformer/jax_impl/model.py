@@ -108,7 +108,7 @@ class RotaryEncoding(nn.Module):
         radians = sharding_constraint(radians, MESH_AXES["NNNN"], self.mesh)
         chex.assert_shape(radians, [1, 1, length, width // 2])
 
-        if self.is_keys:
+        if not self.is_keys:
             radians = radians[None, ...]
             radians = sharding_constraint(radians, MESH_AXES["NNNNN"], self.mesh)
 
@@ -278,7 +278,7 @@ class OutputProjection(nn.Module):
     def __call__(self, x):
         w = self.param(
             "w_ao",
-            nn.with_partitioning(zero, MESH_AXES["XYNN"], self.mesh),
+            nn.with_partitioning(zero, MESH_AXES["YNNX"], self.mesh),
             get_dim_names(None, self.cfg)["GHDM"],
             self.cfg.param_dtype,
         )
