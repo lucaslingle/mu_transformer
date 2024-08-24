@@ -305,7 +305,7 @@ class MultiHeadAttention(nn.Module):
             suffix="v",
             move_type=self.cfg.v_type,
         )(x)
-        if self.g_type != "none":
+        if self.cfg.g_type != "none":
             g = ValueProjection(
                 cfg=self.cfg,
                 mesh=self.mesh,
