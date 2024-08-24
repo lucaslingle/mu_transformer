@@ -236,10 +236,13 @@ class ValueProjection(nn.Module):
                 get_dim_names(None, self.cfg)["PGD"],
                 self.cfg.param_dtype,
             )
+            s3 = jnp.expand_dims(jnp.expand_dims(s[-3], -2), 0)
+            s2 = jnp.expand_dims(jnp.expand_dims(s[-2], -2), 0)
+            s1 = jnp.expand_dims(jnp.expand_dims(s[-1], -2), 0)
             x = (
-                jnp.pad(x[:, :, 0:-2, :], ((0, 0), (0, 0), (2, 0), (0, 0))) * s[-3]
-                + jnp.pad(x[:, :, 0:-1, :], ((0, 0), (0, 0), (1, 0), (0, 0))) * s[-2]
-                + x * s[-1]
+                jnp.pad(x[:, :, 0:-2, :], ((0, 0), (0, 0), (2, 0), (0, 0))) * s3
+                + jnp.pad(x[:, :, 0:-1, :], ((0, 0), (0, 0), (1, 0), (0, 0))) * s2
+                + x * s1
             )
             x = sharding_constraint(x, MESH_AXES["XYNN"], self.mesh)
             return x
