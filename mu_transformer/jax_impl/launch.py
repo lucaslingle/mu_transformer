@@ -75,7 +75,7 @@ def tokenizer_factory():
 def transformer_config_factory(is_train, is_decoding):
     return TransformerConfig.create(
         **vars(FLAGS.config)["_fields"],
-        n_vocab=tokenizer_factory().vocab_size,
+        nv=tokenizer_factory().vocab_size,
         bos_token_id=tokenizer_factory().bos_token_id,
         eos_token_id=tokenizer_factory().eos_token_id,
         pad_token_id=tokenizer_factory().pad_token_id,

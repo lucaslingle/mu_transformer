@@ -39,9 +39,9 @@ def get_base_config():
     config.n_mesh_cols = 1
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
-    config.n_layer = 8  # depth, should stay const for mu-transfer
-    config.d_model = 1024
-    config.d_head = 128
+    config.nl = 8  # depth, should stay const for mu-transfer
+    config.dm = 1024  # width
+    config.dh = 128  # head dim
     config.kv_group_size = 8
     config.v_type = "linear"
     config.g_type = "none"
