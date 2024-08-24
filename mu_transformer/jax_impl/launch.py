@@ -174,8 +174,6 @@ def get_lrs():
     p = FLAGS.config.optim_rule
     if p == "sp":
         return get_standard_scaling(FLAGS.config.lr_base)
-    if p == "mup":
-        return get_rel_mup_scaling(FLAGS.config.lr_base)
     if p == "abs_mup":
         return get_abs_mup_scaling(FLAGS.config.lr_base)
     raise NotImplementedError(f"Unrecognized optim_rule: {p}")
@@ -188,8 +186,6 @@ def get_epss():
         return get_standard_scaling(FLAGS.config.optim_eps)
     if p == "sp":
         raise NotImplementedError("Eps scaling not supported for optim_rule sp.")
-    if p == "mup":
-        return get_rel_mup_scaling(FLAGS.config.optim_eps)
     if p == "abs_mup":
         return get_abs_mup_scaling(FLAGS.config.optim_eps)
     raise NotImplementedError(f"Unrecognized optim_rule: {p}")
