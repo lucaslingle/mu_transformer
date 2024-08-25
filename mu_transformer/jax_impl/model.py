@@ -236,9 +236,9 @@ class ValueProjection(nn.Module):
                 get_dim_names(None, self.cfg)["PGD"],
                 self.cfg.param_dtype,
             )
-            s3 = jnp.expand_dims(jnp.expand_dims(s[-3], -2), 0)
-            s2 = jnp.expand_dims(jnp.expand_dims(s[-2], -2), 0)
-            s1 = jnp.expand_dims(jnp.expand_dims(s[-1], -2), 0)
+            s3 = jnp.expand_dims(jnp.expand_dims(s[-3], -2), 0).astype(self.cfg.dtype)
+            s2 = jnp.expand_dims(jnp.expand_dims(s[-2], -2), 0).astype(self.cfg.dtype)
+            s1 = jnp.expand_dims(jnp.expand_dims(s[-1], -2), 0).astype(self.cfg.dtype)
             x = (
                 jnp.pad(x[:, :, 0:-2, :], ((0, 0), (0, 0), (2, 0), (0, 0))) * s3
                 + jnp.pad(x[:, :, 0:-1, :], ((0, 0), (0, 0), (1, 0), (0, 0))) * s2
