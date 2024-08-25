@@ -49,6 +49,7 @@ from mu_transformer.jax_impl.shard import sharding_constraint
 from mu_transformer.jax_impl.shard import to_global_array
 from mu_transformer.jax_impl.sow import split_and_name
 
+PROJ_NAME = "mu_transformer_conv"
 MODES = ["train", "validation", "test"]
 FLAGS = flags.FLAGS
 config_flags.DEFINE_config_file("config", None, "Configuration file", lock_config=False)
@@ -287,7 +288,8 @@ def automatic_modelname_factory():
     parts = [
         "mutransformer",
         dataset_name,
-        FLAGS.experiment_group,
+        f"v{FLAGS.config.v_type}",
+        f"g{FLAGS.config.g_type}",
         FLAGS.config.model_size,
         f"a{lr[0]}point{lr[1]}",
         f"b{global_batch_size_factory()}",
@@ -824,7 +826,7 @@ def main(argv):
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_conv",
+            project=PROJ_NAME,
             group=FLAGS.experiment_group,
             config={**vars(FLAGS.config)["_fields"], "seed": FLAGS.seed},
             resume="never" if FLAGS.wb_run is None else "must",
