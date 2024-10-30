@@ -145,7 +145,7 @@ def schedule_factory():
             boundaries=[
                 warm_steps,
                 warm_steps + s1_steps,
-                warm_steps + s1_steps + s1_steps,
+                warm_steps + s1_steps + s2_steps,
             ],
         )
     else:
