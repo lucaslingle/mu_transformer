@@ -17,6 +17,9 @@ from ml_collections import config_dict
 def get_base_config():
     config = config_dict.ConfigDict()
 
+    config.n_mesh_rows = 128
+    config.n_mesh_cols = 1
+
     # logging/plotting
     config.sow_intermediates = False
     config.sow_param_info = False
@@ -37,6 +40,7 @@ def get_base_config():
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
     config.n_layer = 24  # depth, should stay const for mu-transfer
+    config.d_model = 1024  # current model width
     config.d_base = 128  # base model width for relative scaling rules
     config.d_head = 128
     config.ff_multiple = 4  # mlp width multiple
@@ -87,3 +91,7 @@ def get_base_config():
     config.sampling_max_len = 1024
 
     return config
+
+
+def get_config():
+    return get_base_config()
