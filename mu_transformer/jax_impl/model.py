@@ -49,7 +49,6 @@ class TransformerConfig:
     kv_mqa: bool
     rotary_base: int
     act_name: str
-    act_square: bool
     norm_eps: float
     norm_gains: bool
     norm_gains_type: str
