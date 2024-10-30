@@ -491,13 +491,11 @@ class MultiLayerPerceptron(nn.Module):
             # two separate projections for xg, xf with the same sharding.
             xg, xf = jnp.split(x, 2, axis=-1)
             x = jax.nn.silu(xg) * xf
+        elif self.cfg.act_name == "sqrelu":
+            x = jnp.square(jax.nn.relu(x))
         else:
             x = getattr(jax.nn, self.cfg.act_name)(x)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-
-        if self.cfg.act_square:
-            x = jnp.square(x)
-            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fa_l1", coord_check_l1(x))
 
         x = jnp.einsum("btf,fm->btm", x, wo.astype(self.cfg.dtype))

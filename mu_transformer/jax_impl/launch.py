@@ -115,17 +115,41 @@ def param_label_fn(params):
 
 
 def schedule_factory():
-    warmup_steps = FLAGS.config.n_warmup_step
-    decay_steps = FLAGS.config.n_pretrain_step - FLAGS.config.n_warmup_step  # const aft
-    minval = 1e-4
-    warmup = optax.linear_schedule(minval, 1.0, transition_steps=warmup_steps)
+    warm_steps = FLAGS.config.n_warmup_step
+    cool_steps = FLAGS.config.n_pretrain_step - FLAGS.config.n_warmup_step
+    zero_ = 1e-4
+    warmup = optax.linear_schedule(zero_, 1.0, transition_steps=warm_steps)
     if FLAGS.config.lr_schedule_name == "linear":
-        decay = optax.linear_schedule(1.0, minval, transition_steps=decay_steps)
+        cooldown = optax.linear_schedule(1.0, zero_, transition_steps=cool_steps)
+        return optax.join_schedules([warmup, cooldown], boundaries=[warm_steps])
     elif FLAGS.config.lr_schedule_name == "cosine":
-        decay = optax.cosine_decay_schedule(1.0, alpha=minval, decay_steps=decay_steps)
+        cooldown = optax.cosine_decay_schedule(1.0, alpha=zero_, decay_steps=cool_steps)
+        return optax.join_schedules([warmup, cooldown], boundaries=[warm_steps])
+    elif FLAGS.config.lr_schedule_name == "wsd":
+        stable_steps = int(0.8 * cool_steps)
+        dec_steps = cool_steps - stable_steps
+        stable = optax.linear_schedule(1.0, 1.0, transition_steps=stable_steps)
+        decay = optax.linear_schedule(1.0, zero_, transition_steps=dec_steps)
+        return optax.join_schedules(
+            [warmup, stable, decay], boundaries=[warm_steps, warm_steps + stable_steps]
+        )
+    elif FLAGS.config.lr_schedule_name == "piecewise":
+        s1_steps = int(0.8 * cool_steps)
+        s2_steps = int(0.1 * cool_steps)
+        s3_steps = cool_steps - s1_steps - s2_steps
+        s1 = optax.linear_schedule(1.0, 1.0, transition_steps=s1_steps)
+        s2 = optax.linear_schedule(0.1, 0.1, transition_steps=s2_steps)
+        s3 = optax.linear_schedule(0.01, 0.01, transition_steps=s3_steps)
+        return optax.join_schedules(
+            [warmup, s1, s2, s3],
+            boundaries=[
+                warm_steps,
+                warm_steps + s1_steps,
+                warm_steps + s1_steps + s1_steps,
+            ],
+        )
     else:
         raise NotImplementedError(f"Unsupported sched: {FLAGS.config.lr_schedule_name}")
-    return optax.join_schedules([warmup, decay], boundaries=[warmup_steps])
 
 
 def get_standard_scaling(lr):
@@ -343,12 +367,18 @@ def automatic_modelname_factory():
         "mutransformer",
         dataset_name,
         FLAGS.experiment_group,
-        FLAGS.config.model_size,
-        f"a{lr[0]}point{lr[1]}",
-        f"b{global_batch_size_factory()}",
-        f"t{FLAGS.config.sequence_len}",
-        f"s{FLAGS.config.n_pretrain_step}",
-        f"r{FLAGS.seed}",
+        f"t{FLAGS.seed}",
+        f"d{FLAGS.config.dtype}",
+        f"b{FLAGS.config.tokens_per_global_batch}",
+        f"a{FLAGS.config.lr_base}",
+        f"w{FLAGS.config.wd}",
+        f"m{FLAGS.config.d_model}",
+        f"l{FLAGS.config.n_layer}",
+        f"n{FLAGS.config.act_name}",
+        f"o{FLAGS.config.optim_name}",
+        f"r{FLAGS.config.optim_rule}",
+        f"s{FLAGS.config.lr_schedule_name}",
+        f"p{FLAGS.config.n_pretrain_step}",
     ]
     return "_".join(parts)
 
@@ -545,9 +575,12 @@ def get_scalar_on_host(tensor):
 def train_loop():
     logging.info("Entering train loop function...")
     logging.info("Creating RNGs...")
-    rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
-    rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())
-    del rng_stoch  # not used currently since no dropout, etc.
+    rng_init = jax.random.PRNGKey(FLAGS.seed)
+    # fold in B, S, M, L
+    rng_init = jax.random.fold_in(rng_init, FLAGS.config.tokens_per_global_batch)
+    rng_init = jax.random.fold_in(rng_init, FLAGS.config.n_pretrain_step)
+    rng_init = jax.random.fold_in(rng_init, FLAGS.config.d_model)
+    rng_init = jax.random.fold_in(rng_init, FLAGS.config.n_layer)
 
     logging.info("Creating train state...")
     state = train_state_factory(rng_init)
@@ -973,14 +1006,37 @@ def save_eval_loss():
     logging.info(f"Eval loss: {eval_loss}")
     if jax.process_index() == 0:
         table = wandb.Table(
-            columns=["Group", "Seed", "Rule", "Width", "LR", "Loss"],
+            columns=[
+                "Group",
+                "Seed",
+                "Dtype",
+                "Bsz",
+                "LR",
+                "WD",
+                "Width",
+                "Depth",
+                "Nonlin",
+                "Optim",
+                "Rule",
+                "Sched",
+                "Steps",
+                "Loss",
+            ],
             data=[
                 [
                     FLAGS.experiment_group,
                     FLAGS.seed,
-                    FLAGS.config.optim_rule,
-                    FLAGS.config.d_model,
+                    FLAGS.config.dtype,
+                    FLAGS.config.tokens_per_global_batch,
                     FLAGS.config.lr_base,
+                    FLAGS.config.wd,
+                    FLAGS.config.d_model,
+                    FLAGS.config.n_layer,
+                    FLAGS.config.act_name,
+                    FLAGS.config.optim_name,
+                    FLAGS.config.optim_rule,
+                    FLAGS.config.lr_schedule_name,
+                    FLAGS.config.n_pretrain_step,
                     eval_loss,
                 ],
             ],

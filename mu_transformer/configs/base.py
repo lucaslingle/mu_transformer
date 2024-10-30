@@ -48,9 +48,8 @@ def get_base_config():
     config.qk_norm = False  # normalize queries and keys using rmsnorm?
     config.kv_mqa = False
     config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
-    config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
-    config.act_square = False  # activation squaring
-    config.norm_eps = 1e-6  # rmsnorm epsilon
+    config.act_name = "relu"  # any activation in jax.nn, or "swiglu", or "sqrelu".
+    config.norm_eps = 1e-5  # rmsnorm epsilon
     config.norm_gains = False  # rmsnorm gains
     config.norm_gains_type = "vector"  # vector or scalar
     config.proj_biases = False  # projections with bias
@@ -62,7 +61,7 @@ def get_base_config():
     config.lr_base = 1.0  # base learning rate
     config.lr_schedule_name = "linear"
     config.optim_name = "adamw"
-    config.optim_rule = "mup"  # mup or sp
+    config.optim_rule = "mup"  # abs_mup, mup, or sp
     config.optim_beta1 = 0.9
     config.optim_beta2 = 0.98
     config.optim_eps = 10**-9
