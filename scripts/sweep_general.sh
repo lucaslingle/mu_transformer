@@ -60,7 +60,7 @@ N_COLS=$(python3 -c "print(1 if $D_MODEL < 1024 else 4)");
 OPT_ALPHA=$(bc -l <<< "2 ^(-$LR_IDX)");
 OPT_LAMBDA=$(bc -l <<< "2 ^(-$WD_IDX)");
 OPT_BETA1=$(python3 -c "print(0.9 if '$OPT_NAME' == 'adamw' else 0.95)");
-OPT_BETA2=$(python3 -c "print(0.95 if '$OPT_NAME' == 'adamw' else 0.98)");
+OPT_BETA2=$(python3 -c "print(0.98 if '$OPT_NAME' == 'adamw' else 0.98)");
 WARMUP_STEPS=$(python3 -c "print(int(0.01 * $PRETRAIN_STEPS))");
 
 ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
