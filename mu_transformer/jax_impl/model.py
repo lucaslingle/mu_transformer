@@ -428,11 +428,11 @@ class MultiLayerPerceptron(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        d_ff_in = int(self.cfg.ff_multiple * self.cfg.d_model)
         if self.cfg.act_name == "swiglu":
-            d_ff_in = (d_ff_in // 2) * 2
+            d_ff_in = int(self.cfg.ff_multiple * self.cfg.d_model) * 2
             d_ff_out = d_ff_in // 2
         else:
+            d_ff_in = int(self.cfg.ff_multiple * self.cfg.d_model)
             d_ff_out = d_ff_in
 
         shapes = Dimensions(

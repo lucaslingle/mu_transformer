@@ -59,7 +59,8 @@ config_flags.DEFINE_config_file("config", None, "Configuration file", lock_confi
 flags.DEFINE_string("experiment_group", None, "Experiment group name")
 flags.DEFINE_string("workdir", None, "Working directory (GCS or local)")
 flags.DEFINE_enum("mode", None, MODES, "Mode")
-flags.DEFINE_integer("seed", 0, "Experiment seed")
+flags.DEFINE_integer("rng_seed", 0, "Experiment rng seed")
+flags.DEFINE_boolean("rng_fold", False, "Fold bsz, train steps, width, depth into rng")
 flags.DEFINE_boolean("wb_enabled", False, "Log to W&B")
 flags.DEFINE_string("wb_run", None, "W&B run id, for resuming with continuity")
 flags.DEFINE_string("load_suffix", None, "Suffix of model to load; prefix=autogen")
@@ -125,29 +126,6 @@ def schedule_factory():
     elif FLAGS.config.lr_schedule_name == "cosine":
         cooldown = optax.cosine_decay_schedule(1.0, alpha=zero_, decay_steps=cool_steps)
         return optax.join_schedules([warmup, cooldown], boundaries=[warm_steps])
-    elif FLAGS.config.lr_schedule_name == "wsd":
-        stable_steps = int(0.8 * cool_steps)
-        dec_steps = cool_steps - stable_steps
-        stable = optax.linear_schedule(1.0, 1.0, transition_steps=stable_steps)
-        decay = optax.linear_schedule(1.0, zero_, transition_steps=dec_steps)
-        return optax.join_schedules(
-            [warmup, stable, decay], boundaries=[warm_steps, warm_steps + stable_steps]
-        )
-    elif FLAGS.config.lr_schedule_name == "piecewise":
-        s1_steps = int(0.8 * cool_steps)
-        s2_steps = int(0.1 * cool_steps)
-        s3_steps = cool_steps - s1_steps - s2_steps
-        s1 = optax.linear_schedule(1.0, 1.0, transition_steps=s1_steps)
-        s2 = optax.linear_schedule(0.1, 0.1, transition_steps=s2_steps)
-        s3 = optax.linear_schedule(0.01, 0.01, transition_steps=s3_steps)
-        return optax.join_schedules(
-            [warmup, s1, s2, s3],
-            boundaries=[
-                warm_steps,
-                warm_steps + s1_steps,
-                warm_steps + s1_steps + s2_steps,
-            ],
-        )
     else:
         raise NotImplementedError(f"Unsupported sched: {FLAGS.config.lr_schedule_name}")
 
@@ -367,7 +345,7 @@ def automatic_modelname_factory():
         "mutransformer",
         dataset_name,
         FLAGS.experiment_group,
-        f"t{FLAGS.seed}",
+        f"t{FLAGS.rng_seed}",
         f"d{FLAGS.config.dtype}",
         f"b{FLAGS.config.tokens_per_global_batch}",
         f"a{FLAGS.config.lr_base}",
@@ -575,12 +553,16 @@ def get_scalar_on_host(tensor):
 def train_loop():
     logging.info("Entering train loop function...")
     logging.info("Creating RNGs...")
-    rng_init = jax.random.PRNGKey(FLAGS.seed)
-    # fold in B, S, M, L
-    rng_init = jax.random.fold_in(rng_init, FLAGS.config.tokens_per_global_batch)
-    rng_init = jax.random.fold_in(rng_init, FLAGS.config.n_pretrain_step)
-    rng_init = jax.random.fold_in(rng_init, FLAGS.config.d_model)
-    rng_init = jax.random.fold_in(rng_init, FLAGS.config.n_layer)
+    rng_init = jax.random.PRNGKey(FLAGS.rng_seed)
+    if FLAGS.rng_fold:
+        # fold in B, S, M, L
+        rng_init = jax.random.fold_in(rng_init, FLAGS.config.tokens_per_global_batch)
+        rng_init = jax.random.fold_in(rng_init, FLAGS.config.n_pretrain_step)
+        rng_init = jax.random.fold_in(rng_init, FLAGS.config.d_model)
+        rng_init = jax.random.fold_in(rng_init, FLAGS.config.n_layer)
+    else:
+        # for consistency with our original implementation
+        rng_init, _ = jax.random.split(rng_init)
 
     logging.info("Creating train state...")
     state = train_state_factory(rng_init)
