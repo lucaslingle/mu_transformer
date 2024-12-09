@@ -43,7 +43,7 @@ def get_base_config():
     config.d_model = 1024  # current model width
     config.d_base = 128  # base model width for relative scaling rules
     config.d_head = 128
-    config.ff_multiple = 4  # mlp width multiple
+    config.ff_multiple = 4.0  # mlp width multiple
     config.e_norm = False  # normalize the embeddings using rmsnorm?
     config.q_init = "vs"  # query projection init: vs, zero
     config.r_init = "vs"  # residual projection init: vs, zero
