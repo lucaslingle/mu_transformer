@@ -550,9 +550,7 @@ def get_scalar_on_host(tensor):
     return tensor.item()
 
 
-def train_loop():
-    logging.info("Entering train loop function...")
-    logging.info("Creating RNGs...")
+def get_rngs():
     rng_init = jax.random.PRNGKey(FLAGS.rng_seed)
     if FLAGS.rng_fold:
         # fold in B, S, M, L
@@ -560,9 +558,14 @@ def train_loop():
         rng_init = jax.random.fold_in(rng_init, FLAGS.config.n_pretrain_step)
         rng_init = jax.random.fold_in(rng_init, FLAGS.config.d_model)
         rng_init = jax.random.fold_in(rng_init, FLAGS.config.n_layer)
-    else:
-        # for consistency with our original implementation
-        rng_init, _ = jax.random.split(rng_init)
+    rng_init, rng_stoch = jax.random.split(rng_init)
+    return rng_init, rng_stoch
+
+
+def train_loop():
+    logging.info("Entering train loop function...")
+    logging.info("Creating RNGs...")
+    rng_init, _ = get_rngs()
 
     logging.info("Creating train state...")
     state = train_state_factory(rng_init)
@@ -721,7 +724,7 @@ def eval_step(params, batch):
 def eval_loop(params, ds_shard=None, n_eval_step=None, mode=None):
     logging.info("Entering eval loop function...")
     if params is None:
-        rng_init, _ = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
+        rng_init, _ = get_rngs()
         logging.info("Creating params...")
         state = train_state_factory(rng_init)
         if not FLAGS.config.no_checkpoint:
@@ -911,8 +914,7 @@ def sample_sequence(rng, params, prompts):
 
 
 def sampling_loop():
-    rng_init, rng_stoch = jax.random.split(jax.random.PRNGKey(FLAGS.seed))
-    # rng_stoch = jax.random.fold_in(rng_stoch, jax.process_index())  # todo: fold in?
+    rng_init, rng_stoch = get_rngs()
 
     logging.info("Creating train state...")
     state = train_state_factory(rng_init)
@@ -990,7 +992,8 @@ def save_eval_loss():
         table = wandb.Table(
             columns=[
                 "Group",
-                "Seed",
+                "RNG_Seed",
+                "RNG_Fold",
                 "Dtype",
                 "Bsz",
                 "LR",
@@ -1007,7 +1010,8 @@ def save_eval_loss():
             data=[
                 [
                     FLAGS.experiment_group,
-                    FLAGS.seed,
+                    FLAGS.rng_seed,
+                    FLAGS.rng_fold,
                     FLAGS.config.dtype,
                     FLAGS.config.tokens_per_global_batch,
                     FLAGS.config.lr_base,
@@ -1036,7 +1040,8 @@ def main(argv):
     logging.info(f"experiment_group: {FLAGS.experiment_group}")
     logging.info(f"workdir: {FLAGS.workdir}")
     logging.info(f"mode: {FLAGS.mode}")
-    logging.info(f"seed: {FLAGS.seed}")
+    logging.info(f"rng_seed: {FLAGS.rng_seed}")
+    logging.info(f"rng_fold: {FLAGS.rng_fold}")
     logging.info(f"wb_enabled: {FLAGS.wb_enabled}")
     logging.info(f"wb_run: {FLAGS.wb_run}")
     logging.info(f"load_suffix: {FLAGS.load_suffix}")
@@ -1078,9 +1083,13 @@ def main(argv):
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_rebuttal",
+            project="mu_transformer_updated",
             group=FLAGS.experiment_group,
-            config={**vars(FLAGS.config)["_fields"], "seed": FLAGS.seed},
+            config={
+                **vars(FLAGS.config)["_fields"],
+                "rng_seed": FLAGS.rng_seed,
+                "rng_fold": FLAGS.rng_fold,
+            },
             resume="never" if FLAGS.wb_run is None else "must",
             mode="online" if FLAGS.wb_enabled else "disabled",
             id=FLAGS.wb_run,
