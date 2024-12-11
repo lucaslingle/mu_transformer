@@ -268,10 +268,10 @@ class AttnNonlin(nn.Module):
             return (jax.nn.elu(x) + 1) / self.cfg.sequence_len
         if self.cfg.attn_act_name == "norm_sqrelu":
             x = jnp.square(jax.nn.relu(x))
-            return x / jnp.sum(x, axis=-1, keepdims=True)
+            return x / (self.hps.norm_eps + jnp.sum(x, axis=-1, keepdims=True))
         if self.cfg.attn_act_name == "norm_elu":
             x = jax.nn.elu(x) + 1
-            return x / jnp.sum(x, axis=-1, keepdims=True)
+            return x / (self.hps.norm_eps + jnp.sum(x, axis=-1, keepdims=True))
         raise ValueError(f"Unrecognized option {self.cfg.attn_act_name}")
 
 
