@@ -48,7 +48,8 @@ class TransformerConfig:
     qk_norm: bool
     kv_mqa: bool
     rotary_base: int
-    act_name: str
+    attn_act_name: str
+    ff_act_name: str
     norm_eps: float
     norm_gains: bool
     norm_gains_type: str
@@ -253,6 +254,27 @@ class CacheMask(nn.Module):
         return x
 
 
+class AttnNonlin(nn.Module):
+    cfg: TransformerConfig
+    global_mesh: jax.sharding.Mesh
+
+    @nn.compact
+    def __call__(self, x):
+        if self.cfg.attn_act_name == "softmax":
+            return jax.nn.softmax(x, axis=-1)
+        if self.cfg.attn_act_name == "sqrelu":
+            return jnp.square(jax.nn.relu(x)) / self.cfg.sequence_len
+        if self.cfg.attn_act_name == "elu":
+            return (jax.nn.elu(x) + 1) / self.cfg.sequence_len
+        if self.cfg.attn_act_name == "norm_sqrelu":
+            x = jnp.square(jax.nn.relu(x))
+            return x / jnp.sum(x, axis=-1, keepdims=True)
+        if self.cfg.attn_act_name == "norm_elu":
+            x = jax.nn.elu(x) + 1
+            return x / jnp.sum(x, axis=-1, keepdims=True)
+        raise ValueError(f"Unrecognized option {self.cfg.attn_act_name}")
+
+
 class MultiHeadAttention(nn.Module):
     cfg: TransformerConfig
     global_mesh: jax.sharding.Mesh
@@ -375,7 +397,7 @@ class MultiHeadAttention(nn.Module):
         if not self.cfg.is_decoding:
             s = CausalMask(self.cfg.sequence_len, self.global_mesh)(s)
             s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
-            p = jax.nn.softmax(s, axis=-1)
+            p = AttnNonlin(self.cfg, self.global_mesh)(s)
             p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
             self.sow("intermediates", "ap_l1", coord_check_l1(p))
             o = jnp.einsum("bhij,bhjd->bhid", p, v)
@@ -391,7 +413,7 @@ class MultiHeadAttention(nn.Module):
             s_cache = CacheMask(slen, mesh)(s_cache, pos_ids=state["pos_ids"])
             s_cache = sharding_constraint(s_cache, MESH_AXES["XYNN"], mesh)
             s = jnp.concatenate([s_cache, s], axis=-1)
-            p = jax.nn.softmax(s, axis=-1)
+            p = AttnNonlin(self.cfg, self.global_mesh)(s)
             p = sharding_constraint(p, MESH_AXES["XYNN"], mesh)
             o = jnp.einsum(
                 "bhij,bhjd->bhid", p, jnp.concatenate([state["v"], v], axis=-2)
@@ -428,7 +450,7 @@ class MultiLayerPerceptron(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        if self.cfg.act_name == "swiglu":
+        if self.cfg.ff_act_name == "swiglu":
             d_ff_in = int(self.cfg.ff_multiple * self.cfg.d_model) * 2
             d_ff_out = d_ff_in // 2
         else:
@@ -485,15 +507,15 @@ class MultiLayerPerceptron(nn.Module):
             x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fh_l1", coord_check_l1(x))
 
-        if self.cfg.act_name == "swiglu":
+        if self.cfg.ff_act_name == "swiglu":
             # a more communication-efficient implementation of swiglu would define
             # two separate projections for xg, xf with the same sharding.
             xg, xf = jnp.split(x, 2, axis=-1)
             x = jax.nn.silu(xg) * xf
-        elif self.cfg.act_name == "sqrelu":
+        elif self.cfg.ff_act_name == "sqrelu":
             x = jnp.square(jax.nn.relu(x))
         else:
-            x = getattr(jax.nn, self.cfg.act_name)(x)
+            x = getattr(jax.nn, self.cfg.ff_act_name)(x)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fa_l1", coord_check_l1(x))
 

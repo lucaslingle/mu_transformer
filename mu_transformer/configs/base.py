@@ -52,7 +52,8 @@ def get_base_config():
     config.qk_norm = False  # normalize queries and keys using rmsnorm?
     config.kv_mqa = False
     config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
-    config.act_name = "relu"  # any activation in jax.nn, or "swiglu", or "sqrelu".
+    config.attn_act_name = "softmax"
+    config.ff_act_name = "relu"  # any activation in jax.nn, or "swiglu", or "sqrelu".
     config.norm_eps = 1e-5  # rmsnorm epsilon
     config.norm_gains = False  # rmsnorm gains
     config.norm_gains_type = "vector"  # vector or scalar

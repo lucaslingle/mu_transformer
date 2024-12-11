@@ -37,6 +37,6 @@ do
         --config.force_download=False \
         --config.n_ds_shard=16 \
         --config.lr_base="$LR" \
-        --config.act_name="swiglu" \
+        --config.ff_act_name="swiglu" \
         --config.ff_multiple=2.5;
 done
