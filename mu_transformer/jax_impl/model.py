@@ -374,7 +374,7 @@ class MultiHeadAttention(nn.Module):
             s *= mask  # zero out noncausal logits
             s -= INFTY_APPROX * (1 - mask)  # mask out noncausal locations
             p = jnp.square(jax.nn.relu(s))  # sqrelu
-            p /= jnp.arange(1, self.cfg.sequence_len + 1, dtype=self.cfg.dtype)
+            p /= jnp.sum(mask, axis=-1, keepdims=True)  # avg
         else:
             raise NotImplementedError
         p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
