@@ -368,7 +368,7 @@ class MultiHeadAttention(nn.Module):
             sum_kws = dict(axis=-1, keepdims=True)
             s -= jnp.sum(s, **sum_kws) / jnp.sum(mask, **sum_kws)  # avg logit per q
             s -= INFTY_APPROX * (1 - mask)  # mask out noncausal locations
-            p = jnp.square(jax.nn.relu(s, axis=-1))  # sqrelu
+            p = jnp.square(jax.nn.relu(s))  # sqrelu
             p /= self.cfg.norm_eps + jnp.sum(p, **sum_kws)  # normalize
         else:
             raise NotImplementedError
