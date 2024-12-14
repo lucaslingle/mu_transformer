@@ -68,8 +68,8 @@ def get_base_config():
     config.optim_name = "adamw"
     config.optim_rule = "mup"  # abs_mup, mup, or sp
     config.optim_beta1 = 0.9
-    config.optim_beta2 = 0.98
-    config.optim_eps = 10**-9
+    config.optim_beta2 = 0.95
+    config.optim_eps = 10**-8
     config.wd = 0.0  # weight decay lambda
     config.use_iwd = False  # use independent weight decay?
     config.use_eps_scaling = False  # multiply adam eps by some factor Theta(1/fan_in)?

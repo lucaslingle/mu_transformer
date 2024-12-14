@@ -1083,7 +1083,7 @@ def main(argv):
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_updated",
+            project="mu_transformer_experimental_improvements",
             group=FLAGS.experiment_group,
             config={
                 **vars(FLAGS.config)["_fields"],
