@@ -44,13 +44,13 @@ done;
   --config.n_layer=32 \
   --config.d_model=4096 \
   --config.d_head=128 \
-  --config.ff_multiple=2.67 \
   --config.q_init="vs" \
   --config.r_init="vs" \
   --config.u_init="sp" \
   --config.qk_scale=0.08838834764831845 \
   --config.rotary_base=10000 \
   --config.ff_act_name="swiglu" \
+  --config.ff_multiple=2.67 \
   --config.norm_eps=0.00001 \
   --config.norm_gains=True \
   --config.norm_gains_type="vector" \

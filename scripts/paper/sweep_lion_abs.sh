@@ -1,6 +1,6 @@
 #!/bin/bash
 
-GROUP_NAME="combined";
+GROUP_NAME="lionabs";
 Help() {
   echo "Syntax: sweep_$GROUP_NAME.sh [l|h]"
   echo "options:"
@@ -23,7 +23,7 @@ while getopts "l:h" option; do
 done
 
 LR=$(bc -l <<< "2 ^(-$LR_IDX)");
-for size in "dm128" "dm256" "dm512" "dm1024" "dm2048" "dm4096";
+for size in "dm128" "dm256" "dm512" "dm1024" "dm2048";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
         --experiment_group="$GROUP_NAME" \
@@ -37,18 +37,8 @@ do
         --config.force_download=False \
         --config.n_ds_shard=16 \
         --config.lr_base="$LR" \
-        --config.n_layer=12 \
-        --config.q_init="zero" \
-        --config.ff_act_name="sqrelu" \
-        --config.n_save_step=500 \
-        --config.n_pretrain_step=90000 \
-        --config.n_warmup_step=7000 \
-        --config.tokens_per_global_batch=2097152 \
         --config.optim_rule="abs_mup" \
         --config.optim_name="lion" \
         --config.optim_beta1=0.95 \
-        --config.optim_beta2=0.98 \
-        --config.optim_eps=0.0 \
-        --config.wd=0.0001 \
-        --config.use_iwd=True;
+        --config.optim_beta2=0.98;
 done

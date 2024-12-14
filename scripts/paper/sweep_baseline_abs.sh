@@ -22,7 +22,7 @@ while getopts "a:h" option; do
   esac
 done
 
-for size in "dm128" "dm512" "dm2048";
+for size in "dm128" "dm256" "dm512" "dm1024" "dm2048";
 do
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
         --experiment_group="$GROUP_NAME" \
@@ -30,7 +30,7 @@ do
         --workdir="gs://tpu_persist_bucket/mu_transformer_scaling/" \
         --mode="train" \
         --rng_seed=0 \
-        --rng_fold=False \
+        --rng_fold=True \
         --wb_enabled=True \
         --config.is_sweep=True \
         --config.force_download=False \
