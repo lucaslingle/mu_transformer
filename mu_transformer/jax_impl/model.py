@@ -356,7 +356,7 @@ class MultiHeadAttention(nn.Module):
 
         i = jnp.arange(self.cfg.sequence_len)[..., None]
         j = jnp.arange(self.cfg.sequence_len)[None, ...]
-        mask = jnp.greater(i, j)  # allowed connections = True, disallowed = False.
+        mask = jnp.greater_equal(i, j)  # allowed connects = True, disallowed = False.
         mask = mask[None, None, ...]
         mask = sharding_constraint(mask, MESH_AXES["NNNN"], self.global_mesh)
         if self.cfg.attn_act_name == "softmax":
