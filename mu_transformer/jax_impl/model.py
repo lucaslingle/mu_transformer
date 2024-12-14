@@ -213,25 +213,6 @@ class RotaryEncodingV2(nn.Module):
         return r
 
 
-class CausalMask(nn.Module):
-    present_length: int
-    global_mesh: jax.sharding.Mesh
-
-    @nn.compact
-    def __call__(self, x):
-        i = jnp.arange(self.present_length)[..., None]
-        j = jnp.arange(self.present_length)[None, ...]
-        i = sharding_constraint(i, MESH_AXES["NN"], self.global_mesh)
-        j = sharding_constraint(j, MESH_AXES["NN"], self.global_mesh)
-        mask = jnp.less(i, j)  # i.e., j > i, indicator masks out non-causal connections
-        mask = sharding_constraint(mask, MESH_AXES["NN"], self.global_mesh)
-        mask = mask[None, None, ...]
-        mask = sharding_constraint(mask, MESH_AXES["NNNN"], self.global_mesh)
-        x = x - jnp.array([INFTY_APPROX], dtype=x.dtype) * mask
-        x = sharding_constraint(x, MESH_AXES["XYNN"], self.global_mesh)
-        return x
-
-
 class CacheMask(nn.Module):
     cache_size: int
     global_mesh: jax.sharding.Mesh
@@ -252,27 +233,6 @@ class CacheMask(nn.Module):
         x = x - jnp.array([INFTY_APPROX], dtype=x.dtype) * mask
         x = sharding_constraint(x, MESH_AXES["XYNN"], self.global_mesh)
         return x
-
-
-class AttnNonlin(nn.Module):
-    cfg: TransformerConfig
-    global_mesh: jax.sharding.Mesh
-
-    @nn.compact
-    def __call__(self, x):
-        if self.cfg.attn_act_name == "softmax":
-            return jax.nn.softmax(x, axis=-1)
-        if self.cfg.attn_act_name == "sqrelu":
-            return jnp.square(jax.nn.relu(x)) / self.cfg.sequence_len
-        if self.cfg.attn_act_name == "elu":
-            return (jax.nn.elu(x) + 1) / self.cfg.sequence_len
-        if self.cfg.attn_act_name == "norm_sqrelu":
-            x = jnp.square(jax.nn.relu(x))
-            return x / (self.cfg.norm_eps + jnp.sum(x, axis=-1, keepdims=True))
-        if self.cfg.attn_act_name == "norm_elu":
-            x = jax.nn.elu(x) + 1
-            return x / (self.cfg.norm_eps + jnp.sum(x, axis=-1, keepdims=True))
-        raise ValueError(f"Unrecognized option {self.cfg.attn_act_name}")
 
 
 class MultiHeadAttention(nn.Module):
@@ -394,46 +354,31 @@ class MultiHeadAttention(nn.Module):
         s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
         self.sow("intermediates", "as_l1", coord_check_l1(s))
 
-        if not self.cfg.is_decoding:
-            s = CausalMask(self.cfg.sequence_len, self.global_mesh)(s)
-            s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
-            p = AttnNonlin(self.cfg, self.global_mesh)(s)
-            p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
-            self.sow("intermediates", "ap_l1", coord_check_l1(p))
-            o = jnp.einsum("bhij,bhjd->bhid", p, v)
-            o = sharding_constraint(o, MESH_AXES["XYNN"], self.global_mesh)
-            self.sow("intermediates", "ao_l1", coord_check_l1(o))
-            # for prefill. pos_ids will be written at the end of Transformer.__call__.
-            new_state = dict(k=k, v=v, pos_ids=None)
+        i = jnp.arange(self.cfg.sequence_len)[..., None]
+        j = jnp.arange(self.cfg.sequence_len)[None, ...]
+        mask = jnp.greater(i, j)  # allowed connections = True, disallowed = False.
+        mask = mask[None, None, ...]
+        mask = sharding_constraint(mask, MESH_AXES["NNNN"], self.global_mesh)
+        if self.cfg.attn_act_name == "softmax":
+            s *= mask  # zero out noncausal logits
+            s -= INFTY_APPROX * (1 - mask)  # mask out noncausal locations
+            p = jax.nn.softmax(s, axis=-1)
+        elif self.cfg.attn_act_name == "sharp":
+            s *= mask  # zero out noncausal logits
+            sum_kws = dict(axis=-1, keepdims=True)
+            s -= jnp.sum(s, **sum_kws) / jnp.sum(mask, **sum_kws)  # avg logit per q
+            s -= INFTY_APPROX * (1 - mask)  # mask out noncausal locations
+            p = jnp.square(jax.nn.relu(s, axis=-1))  # sqrelu
+            p /= self.cfg.norm_eps + jnp.sum(p, **sum_kws)  # normalize
         else:
-            # incremental decoding.
-            mesh, slen = self.global_mesh, self.cfg.sequence_len
-            s_cache = jnp.einsum("bhid,bhjd->bhij", q * mult, state["k"] * mult)
-            s_cache = sharding_constraint(s_cache, MESH_AXES["XYNN"], mesh)
-            s_cache = CacheMask(slen, mesh)(s_cache, pos_ids=state["pos_ids"])
-            s_cache = sharding_constraint(s_cache, MESH_AXES["XYNN"], mesh)
-            s = jnp.concatenate([s_cache, s], axis=-1)
-            p = AttnNonlin(self.cfg, self.global_mesh)(s)
-            p = sharding_constraint(p, MESH_AXES["XYNN"], mesh)
-            o = jnp.einsum(
-                "bhij,bhjd->bhid", p, jnp.concatenate([state["v"], v], axis=-2)
-            )
-            o = sharding_constraint(o, MESH_AXES["XYNN"], mesh)
-            write_weights = jax.nn.one_hot(
-                jnp.mod(
-                    state["pos_ids"],
-                    jnp.full_like(state["pos_ids"], fill_value=slen),
-                ),
-                num_classes=slen,
-                axis=-1,
-                dtype=self.cfg.dtype,
-            )
-            write_weights = jnp.expand_dims(jnp.expand_dims(write_weights, 1), -1)
-            new_state = dict(
-                k=(1.0 - write_weights) * state["k"] + write_weights * k,
-                v=(1.0 - write_weights) * state["v"] + write_weights * v,
-                pos_ids=state["pos_ids"] + 1,
-            )
+            raise NotImplementedError
+        p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
+        self.sow("intermediates", "ap_l1", coord_check_l1(p))
+        o = jnp.einsum("bhij,bhjd->bhid", p, v)
+        o = sharding_constraint(o, MESH_AXES["XYNN"], self.global_mesh)
+        self.sow("intermediates", "ao_l1", coord_check_l1(o))
+        # for prefill. pos_ids will be written at the end of Transformer.__call__.
+        new_state = dict(k=k, v=v, pos_ids=None)
 
         r = jnp.einsum("bhid,hdm->bim", o, wo.astype(self.cfg.dtype))
         r = sharding_constraint(r, MESH_AXES["XNY"], self.global_mesh)
@@ -533,10 +478,10 @@ class TransformerBlock(nn.Module):
     global_mesh: jax.sharding.Mesh
 
     @nn.compact
-    def __call__(self, x, state):
+    def __call__(self, x, _):
         kws = dict(cfg=self.cfg, global_mesh=self.global_mesh)
 
-        ao, state_new = MultiHeadAttention(**kws)(RMSNorm(**kws, suffix="a")(x), state)
+        ao, _ = MultiHeadAttention(**kws)(RMSNorm(**kws, suffix="a")(x), None)
         x += ao
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
@@ -544,7 +489,7 @@ class TransformerBlock(nn.Module):
         x += fo
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
 
-        return x, state_new
+        return x, None
 
 
 class Embedding(nn.Module):
@@ -646,20 +591,20 @@ class Transformer(nn.Module):
         )(cfg=self.cfg, global_mesh=self.global_mesh)(x, kv_cache)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         x = nnp.remat(Unembedding)(self.cfg, self.global_mesh)(x)
-        if not self.cfg.is_decoding:
-            # prefill: in this case, count the eos/pad tokens in batch of prompts.
-            #  the padding should always be on the right; the first token may be bos,
-            #  which for some tokenizers may equal eos/pad, so we exclude it from count
-            chex.assert_shape(inputs, (None, self.cfg.sequence_len))
-            npad = jnp.sum(
-                jnp.logical_or(
-                    jnp.equal(inputs[:, 1:], self.cfg.pad_token_id),
-                    jnp.equal(inputs[:, 1:], self.cfg.eos_token_id),
-                ),
-                axis=-1,
-            )
-            npad = jnp.tile(npad[None, ...], reps=[self.cfg.n_layer, 1])
-            npad = sharding_constraint(npad, MESH_AXES["NX"], self.global_mesh)
-            pos_ids = self.cfg.sequence_len - npad  # eg slen=5 npad=2 ==> next pos_id=3
-            kv_cache_new["pos_ids"] = pos_ids
-        return dict(logits=x, kv_cache=kv_cache_new)
+        # if not self.cfg.is_decoding:
+        #     # prefill: in this case, count the eos/pad tokens in batch of prompts.
+        #     #  the padding should always be on the right; the first token may be bos,
+        #     #  which for some tokenizers may equal eos/pad, so we exclude it from count
+        #     chex.assert_shape(inputs, (None, self.cfg.sequence_len))
+        #     npad = jnp.sum(
+        #         jnp.logical_or(
+        #             jnp.equal(inputs[:, 1:], self.cfg.pad_token_id),
+        #             jnp.equal(inputs[:, 1:], self.cfg.eos_token_id),
+        #         ),
+        #         axis=-1,
+        #     )
+        #     npad = jnp.tile(npad[None, ...], reps=[self.cfg.n_layer, 1])
+        #     npad = sharding_constraint(npad, MESH_AXES["NX"], self.global_mesh)
+        #     pos_ids = self.cfg.sequence_len - npad  # eg slen=5 npad=2 ==> next pos_id=3
+        #     kv_cache_new["pos_ids"] = pos_ids
+        return dict(logits=x)  # , kv_cache=kv_cache_new)
