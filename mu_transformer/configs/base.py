@@ -17,9 +17,12 @@ from ml_collections import config_dict
 def get_base_config():
     config = config_dict.ConfigDict()
 
+    config.n_mesh_rows = 128
+    config.n_mesh_cols = 1
+
     # logging/plotting
-    config.sow_intermediates = True
-    config.sow_param_info = True
+    config.sow_intermediates = False
+    config.sow_param_info = False
     config.is_sweep = False
 
     # huggingface tokenizer and dataset settings
@@ -37,9 +40,10 @@ def get_base_config():
     config.param_dtype = "float32"  # master copy of weights in fp32
     config.dtype = "bfloat16"  # weights and activations are in bfloat16 on fwd/bwd
     config.n_layer = 24  # depth, should stay const for mu-transfer
+    config.d_model = 1024  # current model width
     config.d_base = 128  # base model width for relative scaling rules
     config.d_head = 128
-    config.ff_multiple = 4  # mlp width multiple
+    config.ff_multiple = 4.0  # mlp width multiple
     config.e_norm = False  # normalize the embeddings using rmsnorm?
     config.q_init = "vs"  # query projection init: vs, zero
     config.r_init = "vs"  # residual projection init: vs, zero
@@ -48,9 +52,9 @@ def get_base_config():
     config.qk_norm = False  # normalize queries and keys using rmsnorm?
     config.kv_mqa = False
     config.rotary_base = 10_000  # can be zero to use NoPE/NPE instead of RoPE
-    config.act_name = "relu"  # any activation defined in jax.nn, or "swiglu"
-    config.act_square = False  # activation squaring
-    config.norm_eps = 1e-6  # rmsnorm epsilon
+    config.attn_act_name = "softmax"
+    config.ff_act_name = "relu"  # any activation in jax.nn, or "swiglu", or "sqrelu".
+    config.norm_eps = 1e-5  # rmsnorm epsilon
     config.norm_gains = False  # rmsnorm gains
     config.norm_gains_type = "vector"  # vector or scalar
     config.proj_biases = False  # projections with bias
@@ -62,11 +66,13 @@ def get_base_config():
     config.lr_base = 1.0  # base learning rate
     config.lr_schedule_name = "linear"
     config.optim_name = "adamw"
-    config.optim_rule = "mup"  # mup or sp
+    config.optim_rule = "mup"  # abs_mup, mup, or sp
     config.optim_beta1 = 0.9
-    config.optim_beta2 = 0.98
-    config.optim_eps = 10**-9
-    config.wd = 0.0  # weight decay
+    config.optim_beta2 = 0.95
+    config.optim_eps = 10**-8
+    config.wd = 0.0  # weight decay lambda
+    config.use_iwd = False  # use independent weight decay?
+    config.use_eps_scaling = False  # multiply adam eps by some factor Theta(1/fan_in)?
 
     # periodic action settings
     config.n_print_step = 100  # print every
@@ -77,4 +83,16 @@ def get_base_config():
     config.n_finetune_step = 0  # finetuning steps, keep zero during pretraining
     config.no_checkpoint = False  # skip saving the model
 
+    # sampling settings
+    config.sampling_method = "nucleus"
+    config.sampling_nucleus = 0.8
+    config.sampling_topk = 20  # unused w sample_method=nucleus, and value is untuned
+    config.sampling_temp = 0.1  # unused w sample_method=nucleus, and value is untuned
+    config.sampling_prompt_len = 128
+    config.sampling_max_len = 1024
+
     return config
+
+
+def get_config():
+    return get_base_config()

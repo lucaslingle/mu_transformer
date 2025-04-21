@@ -7,6 +7,7 @@ license = "Apache License 2.0"
 readme = "README.md"
 
 [tool.poetry.dependencies]
+# python = "^3.12.3"  # cpu
 python = ">=3.9,<3.10.dev0"  # tpu v3
 # python = "3.10.*"  # tpu v4
 absl-py = "2.0.0"
@@ -18,13 +19,13 @@ flax = "0.7.5"
 huggingface-hub = "0.20.2"
 matplotlib = "^3.8.2"
 ml-collections = "0.1.1"
-numpy = "1.24.1"
+numpy = "1.26.0"
 optax = "0.1.9"
 orbax-checkpoint = "0.4.8"
 pandas = "^2.2.0"
 requests = "^2.31.0"
 seaborn = "^0.13.2"
-tensorflow = "2.12.1"
+tensorflow = "2.16.1"
 tqdm = "4.66.1"
 transformers = "4.36.2"
 wandb = "^0.16.5"
