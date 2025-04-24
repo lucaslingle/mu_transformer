@@ -6,7 +6,7 @@ Help() {
   echo ""
   echo "Trains a llama-style model with 4 billion parameters for 100 billion tokens."
   echo "Intended for larger-scale ablation studies."
-  echo "Diffs vs llama: mha; d_ff = 4d_model; wd on embs & gains; lr decay to zero."
+  echo "Diffs vs llama: mha; d_ff = 4d_model; wd on embs & gains."
   echo ""
   echo "Options:"
   echo "l     use learning rate lr = 2^-l for the given l."
@@ -53,6 +53,7 @@ LR=$(bc -l <<< "2 ^(-$LR_IDX)");
   --config.norm_gains="$NORM_PARAMS" \
   --config.tokens_per_global_batch=1048576 \
   --config.lr_schedule_name="cosine" \
+  --config.lr_schedule_end_frac=0.1 \
   --config.optim_rule="sp" \
   --config.wd=0.1 \
   --config.use_iwd=False \

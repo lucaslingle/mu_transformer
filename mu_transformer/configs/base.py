@@ -65,6 +65,7 @@ def get_base_config():
     config.grad_clip = 1.0  # grad clip max l2 norm
     config.lr_base = 1.0  # base learning rate
     config.lr_schedule_name = "linear"
+    config.lr_schedule_end_frac = 0.0001
     config.optim_name = "adamw"
     config.optim_rule = "mup"  # abs_mup, mup, or sp
     config.optim_beta1 = 0.9

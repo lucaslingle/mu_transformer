@@ -118,13 +118,13 @@ def param_label_fn(params):
 def schedule_factory():
     warm_steps = FLAGS.config.n_warmup_step
     cool_steps = FLAGS.config.n_pretrain_step - FLAGS.config.n_warmup_step
-    zero_ = 1e-4
-    warmup = optax.linear_schedule(zero_, 1.0, transition_steps=warm_steps)
+    end = FLAGS.config.lr_schedule_end_frac
+    warmup = optax.linear_schedule(end, 1.0, transition_steps=warm_steps)
     if FLAGS.config.lr_schedule_name == "linear":
-        cooldown = optax.linear_schedule(1.0, zero_, transition_steps=cool_steps)
+        cooldown = optax.linear_schedule(1.0, end, transition_steps=cool_steps)
         return optax.join_schedules([warmup, cooldown], boundaries=[warm_steps])
     elif FLAGS.config.lr_schedule_name == "cosine":
-        cooldown = optax.cosine_decay_schedule(1.0, alpha=zero_, decay_steps=cool_steps)
+        cooldown = optax.cosine_decay_schedule(1.0, alpha=end, decay_steps=cool_steps)
         return optax.join_schedules([warmup, cooldown], boundaries=[warm_steps])
     else:
         raise NotImplementedError(f"Unsupported sched: {FLAGS.config.lr_schedule_name}")
@@ -151,8 +151,10 @@ def get_standard_scaling(lr):
         "g_f": lr,
         "w_fi": lr,
         "w_fo": lr,
+        "w_fg": lr,
         "b_fi": lr,
         "b_fo": lr,
+        "b_fg": lr,
         # unembedding
         "g_u": lr,
         "w_u": lr,
@@ -182,8 +184,10 @@ def get_rel_mup_scaling(lr):
         "g_f": lr,
         "w_fi": lr / wm,
         "w_fo": lr / wm,
+        "w_fg": lr / wm,
         "b_fi": lr,
         "b_fo": lr,
+        "b_fg": lr,
         # unembedding
         "g_u": lr,
         "w_u": lr / wm,
@@ -214,8 +218,10 @@ def get_abs_mup_scaling(lr):
         "g_f": lr,
         "w_fi": lr / dm,
         "w_fo": lr / dff,
+        "w_fg": lr / dm,
         "b_fi": lr,
         "b_fo": lr,
+        "b_fg": lr,
         # unembedding
         "g_u": lr,
         "w_u": lr / dm,

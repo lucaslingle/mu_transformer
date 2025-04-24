@@ -397,7 +397,7 @@ class MultiHeadAttention(nn.Module):
         if not self.cfg.is_decoding:
             s = CausalMask(self.cfg.sequence_len, self.global_mesh)(s)
             s = sharding_constraint(s, MESH_AXES["XYNN"], self.global_mesh)
-            p = AttnNonlin(self.cfg, self.global_mesh)(s)
+            p = jax.nn.softmax(s, axis=-1)
             p = sharding_constraint(p, MESH_AXES["XYNN"], self.global_mesh)
             self.sow("intermediates", "ap_l1", coord_check_l1(p))
             o = jnp.einsum("bhij,bhjd->bhid", p, v)
@@ -450,19 +450,13 @@ class MultiLayerPerceptron(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        if self.cfg.ff_act_name == "swiglu":
-            d_ff_in = int(self.cfg.ff_multiple * self.cfg.d_model) * 2
-            d_ff_out = d_ff_in // 2
-        else:
-            d_ff_in = int(self.cfg.ff_multiple * self.cfg.d_model)
-            d_ff_out = d_ff_in
+        d_ff = int(self.cfg.ff_multiple * self.cfg.d_model)
 
         shapes = Dimensions(
             B=x.shape[0],
             T=self.cfg.sequence_len,
             M=self.cfg.d_model,
-            E=d_ff_in,
-            F=d_ff_out,
+            F=d_ff,
         )
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fx_l1", coord_check_l1(x))
@@ -470,14 +464,14 @@ class MultiLayerPerceptron(nn.Module):
         i_init = init.normal(self.cfg.d_model**-0.5)
         o_init = {
             "zero": init.zeros,
-            "vs": init.normal(d_ff_out**-0.5),
+            "vs": init.normal(d_ff**-0.5),
         }[self.cfg.r_init]
         b_init = init.zeros
 
         wi = self.param(
             "w_fi",
             nn.with_partitioning(i_init, MESH_AXES["XY"], self.global_mesh),
-            shapes["ME"],
+            shapes["MF"],
             self.cfg.param_dtype,
         )
         wo = self.param(
@@ -490,7 +484,7 @@ class MultiLayerPerceptron(nn.Module):
             bi = self.param(
                 "b_fi",
                 nn.with_partitioning(b_init, MESH_AXES["Y"], self.global_mesh),
-                shapes["E"],
+                shapes["F"],
                 self.cfg.param_dtype,
             )
             bo = self.param(
@@ -500,22 +494,35 @@ class MultiLayerPerceptron(nn.Module):
                 self.cfg.param_dtype,
             )
 
-        x = jnp.einsum("btm,me->bte", x, wi.astype(self.cfg.dtype))
-        x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
+        xi = jnp.einsum("btm,mf->btf", x, wi.astype(self.cfg.dtype))
+        xi = sharding_constraint(xi, MESH_AXES["XNY"], self.global_mesh)
         if self.cfg.proj_biases:
-            x += bi.astype(self.cfg.dtype)[None, None, ...]  # noqa
-            x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
-        self.sow("intermediates", "fh_l1", coord_check_l1(x))
+            xi += bi.astype(self.cfg.dtype)[None, None, ...]  # noqa
+            xi = sharding_constraint(xi, MESH_AXES["XNY"], self.global_mesh)
+        self.sow("intermediates", "fi_l1", coord_check_l1(xi))
 
         if self.cfg.ff_act_name == "swiglu":
-            # a more communication-efficient implementation of swiglu would define
-            # two separate projections for xg, xf with the same sharding.
-            xg, xf = jnp.split(x, 2, axis=-1)
-            x = jax.nn.silu(xg) * xf
+            wg = self.param(
+                "w_fg",
+                nn.with_partitioning(i_init, MESH_AXES["XY"], self.global_mesh),
+                shapes["MF"],
+                self.cfg.param_dtype,
+            )
+            xg = jnp.einsum("btm,mf->btf", x, wg.astype(self.cfg.dtype))
+            xg = sharding_constraint(xg, MESH_AXES["XNY"], self.global_mesh)
+            if self.cfg.proj_biases:
+                bg = self.param(
+                    "b_fg",
+                    nn.with_partitioning(b_init, MESH_AXES["Y"], self.global_mesh),
+                    shapes["F"],
+                    self.cfg.param_dtype,
+                )
+                xg += bg.astype(self.cfg.dtype)[None, None, ...]  # noqa
+            x = jax.nn.silu(xg) * xi
         elif self.cfg.ff_act_name == "sqrelu":
-            x = jnp.square(jax.nn.relu(x))
+            x = jnp.square(jax.nn.relu(xi))
         else:
-            x = getattr(jax.nn, self.cfg.ff_act_name)(x)
+            x = getattr(jax.nn, self.cfg.ff_act_name)(xi)
         x = sharding_constraint(x, MESH_AXES["XNY"], self.global_mesh)
         self.sow("intermediates", "fa_l1", coord_check_l1(x))
 
