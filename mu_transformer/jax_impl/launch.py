@@ -358,6 +358,7 @@ def automatic_modelname_factory():
         f"w{FLAGS.config.wd}",
         f"m{FLAGS.config.d_model}",
         f"l{FLAGS.config.n_layer}",
+        f"p{FLAGS.config.norm_gains}",
         f"n{FLAGS.config.ff_act_name}",
         f"o{FLAGS.config.optim_name}",
         f"r{FLAGS.config.optim_rule}",
