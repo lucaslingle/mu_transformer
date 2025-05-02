@@ -345,25 +345,24 @@ def global_batch_size_factory():
 def automatic_modelname_factory():
     dataset_name = FLAGS.config.hfds_identifier.split("/")[-1].lower()
     assert re.search(r"^[a-zA-Z0-9-_]+$", dataset_name) is not None  # ^=start, $=end.
-    lr = str(FLAGS.config.lr_base).split(".")
-    assert len(lr) == 2
+    eta = str(FLAGS.config.lr_base).split(".")
+    assert len(eta) == 2
+
+    nl = FLAGS.config.n_layer
+    dm = FLAGS.config.d_model
+    dff = int(FLAGS.config.d_model * FLAGS.config.ff_multiple)
+    ns = FLAGS.config.n_pretrain_step
+    bsz = FLAGS.config.tokens_per_global_batch
+    ff_proj_ct = 3 if FLAGS.config.ff_act_name == "swiglu" else 2
+
+    n = nl * (4 * dm**2 + ff_proj_ct * dm * dff)
+    d = ns * bsz
+
     parts = [
-        "mutransformer",
+        "mu_transformer",
         dataset_name,
         FLAGS.experiment_group,
-        f"t{FLAGS.rng_seed}",
-        f"d{FLAGS.config.dtype}",
-        f"b{FLAGS.config.tokens_per_global_batch}",
-        f"a{FLAGS.config.lr_base}",
-        f"w{FLAGS.config.wd}",
-        f"m{FLAGS.config.d_model}",
-        f"l{FLAGS.config.n_layer}",
-        f"p{FLAGS.config.norm_gains}",
-        f"n{FLAGS.config.ff_act_name}",
-        f"o{FLAGS.config.optim_name}",
-        f"r{FLAGS.config.optim_rule}",
-        f"s{FLAGS.config.lr_schedule_name}",
-        f"p{FLAGS.config.n_pretrain_step}",
+        f"n{n}_d{d}_b{bsz}_e{eta}",
     ]
     return "_".join(parts)
 
@@ -1090,7 +1089,7 @@ def main(argv):
     logging.info("Creating W&B connection...")
     if jax.process_index() == 0:
         wandb.init(
-            project="mu_transformer_experimental_improvements",
+            project="mu_transformer_llama_scaling",
             group=FLAGS.experiment_group,
             config={
                 **vars(FLAGS.config)["_fields"],
