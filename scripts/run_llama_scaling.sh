@@ -45,7 +45,7 @@ do
       --rng_seed=0 \
       --rng_fold=False \
       --wb_enabled=True \
-      --config.model_size = "custom" \
+      --config.model_size="custom" \
       --config.n_mesh_rows="$N_MESH_ROWS" \
       --config.n_mesh_cols="$N_MESH_COLS" \
       --config.is_sweep=True \
