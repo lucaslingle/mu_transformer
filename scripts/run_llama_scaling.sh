@@ -26,7 +26,7 @@ while getopts "n:d:h" option; do
   esac
 done
 
-N_LAYER=$(python -c "import math; print(math.ceil(($N / (13 * 128 * 128)) ** 0.33))");
+N_LAYER=$(python -c "import math; print(int(math.ceil(($N / (13 * 128 * 128)) ** 0.33)))");
 D_MODEL=$(python -c "print($N_LAYER * 128)");
 LR=$(bc -l <<< "2 ^(-$LR_IDX)");
 
