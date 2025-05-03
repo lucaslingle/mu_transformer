@@ -26,6 +26,8 @@ while getopts "n:d:h" option; do
   esac
 done
 
+N_MESH_ROWS=$(python -c "print(128 if $N < 10 ** 9 else 32)");
+N_MESH_COLS=$(python -c "print(1 if $N < 10 ** 9 else 4)");
 N_LAYER=$(python -c "import math; print(int(math.ceil(($N / (13 * 128 * 128)) ** 0.33)))");
 D_MODEL=$(python -c "print($N_LAYER * 128)");
 LR=$(bc -l <<< "2 ^(-$LR_IDX)");
@@ -38,12 +40,15 @@ do
     N_WARMUP=$(python -c "import math; print(int(math.ceil($N_STEP * 0.02)))");
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
       --experiment_group="$GROUP_NAME" \
-      --config="mu_transformer/configs/dm128.py" \
+      --config="mu_transformer/configs/base.py" \
       --workdir="gs://tpu_persist_bucket/mu_transformer_scaling/" \
       --mode="train" \
       --rng_seed=0 \
       --rng_fold=False \
       --wb_enabled=True \
+      --config.model_size = "custom" \
+      --config.n_mesh_rows="$N_MESH_ROWS" \
+      --config.n_mesh_cols="$N_MESH_COLS" \
       --config.is_sweep=True \
       --config.force_download=False \
       --config.n_ds_shard=16 \
