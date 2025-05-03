@@ -30,7 +30,6 @@ N_MESH_ROWS=$(python -c "print(128 if $N < 10 ** 9 else 32)");
 N_MESH_COLS=$(python -c "print(1 if $N < 10 ** 9 else 4)");
 N_LAYER=$(python -c "import math; print(int(math.ceil(($N / (13 * 128 * 128)) ** 0.33)))");
 D_MODEL=$(python -c "print($N_LAYER * 128)");
-LR=$(bc -l <<< "2 ^(-$LR_IDX)");
 
 for BSZ in 65536 131072 262144 524288 1048576 2097152 4194304;
 do
