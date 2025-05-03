@@ -19,6 +19,7 @@ def get_base_config():
 
     config.n_mesh_rows = 128
     config.n_mesh_cols = 1
+    config.model_size = "unspecified"
 
     # logging/plotting
     config.sow_intermediates = False
