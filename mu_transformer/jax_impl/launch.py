@@ -654,9 +654,11 @@ def train_loop():
             )
             if best_val_loss > val_metrics["loss_avg"]:
                 logging.info("Validation loss improved...")
-                if not FLAGS.config.no_checkpoint:
-                    do_save(save_checkpoint_mgr, step, state)
                 best_val_loss = val_metrics["loss_avg"]
+            else:
+                logging.info("Validation loss did not improve...")
+            if not FLAGS.config.no_checkpoint:
+                do_save(save_checkpoint_mgr, step, state)
             # start profiler
             if jax.process_index() == 0 and step == FLAGS.config.n_save_step:
                 assert FLAGS.config.n_save_step > FLAGS.config.n_print_step
