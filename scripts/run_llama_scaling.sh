@@ -35,7 +35,7 @@ do
   for LR in 0.0078125 0.00390625 0.001953125 0.0009765625 0.00048828125 0.000244140625 0.0001220703125;
   do
     N_STEP=$(python -c "print($D // $BSZ)");
-    N_WARMUP=$(python -c "import math; print(math.ceil($N_STEP * 0.02))");
+    N_WARMUP=$(python -c "import math; print(int(math.ceil($N_STEP * 0.02)))");
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
       --experiment_group="$GROUP_NAME" \
       --config="mu_transformer/configs/dm2048.py" \
