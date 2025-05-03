@@ -346,7 +346,6 @@ def automatic_modelname_factory():
     dataset_name = FLAGS.config.hfds_identifier.split("/")[-1].lower()
     assert re.search(r"^[a-zA-Z0-9-_]+$", dataset_name) is not None  # ^=start, $=end.
     eta = str(FLAGS.config.lr_base)
-    assert len(eta) == 2
 
     nl = FLAGS.config.n_layer
     dm = FLAGS.config.d_model
