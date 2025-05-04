@@ -342,11 +342,8 @@ def global_batch_size_factory():
     return global_bsz
 
 
-def automatic_modelname_factory():
-    dataset_name = FLAGS.config.hfds_identifier.split("/")[-1].lower()
-    assert re.search(r"^[a-zA-Z0-9-_]+$", dataset_name) is not None  # ^=start, $=end.
-    eta = str(FLAGS.config.lr_base)
-
+def get_ndbe():
+    # param ct, token ct, global bsz in tokens, lr
     nl = FLAGS.config.n_layer
     dm = FLAGS.config.d_model
     dff = int(FLAGS.config.d_model * FLAGS.config.ff_multiple)
@@ -356,12 +353,20 @@ def automatic_modelname_factory():
 
     n = nl * (4 * dm**2 + ff_proj_ct * dm * dff)
     d = ns * bsz
+    b = bsz
+    e = FLAGS.config.lr_base
+    return n, d, b, e
 
+
+def automatic_modelname_factory():
+    dataset_name = FLAGS.config.hfds_identifier.split("/")[-1].lower()
+    assert re.search(r"^[a-zA-Z0-9-_]+$", dataset_name) is not None  # ^=start, $=end.
+    n, d, b, e = get_ndbe()
     parts = [
         "mu_transformer",
         dataset_name,
         FLAGS.experiment_group,
-        f"n{n}_d{d}_b{bsz}_e{eta}",
+        f"n{n}_d{d}_b{b}_e{e}",
     ]
     return "_".join(parts)
 
@@ -996,43 +1001,10 @@ def save_eval_loss():
     eval_loss = eval_loop(params=None, mode="validation")["loss_avg"]
     logging.info(f"Eval loss: {eval_loss}")
     if jax.process_index() == 0:
+        n, d, b, e = get_ndbe()
         table = wandb.Table(
-            columns=[
-                "Group",
-                "RNG_Seed",
-                "RNG_Fold",
-                "Dtype",
-                "Bsz",
-                "LR",
-                "WD",
-                "Width",
-                "Depth",
-                "Nonlin",
-                "Optim",
-                "Rule",
-                "Sched",
-                "Steps",
-                "Loss",
-            ],
-            data=[
-                [
-                    FLAGS.experiment_group,
-                    FLAGS.rng_seed,
-                    FLAGS.rng_fold,
-                    FLAGS.config.dtype,
-                    FLAGS.config.tokens_per_global_batch,
-                    FLAGS.config.lr_base,
-                    FLAGS.config.wd,
-                    FLAGS.config.d_model,
-                    FLAGS.config.n_layer,
-                    FLAGS.config.ff_act_name,
-                    FLAGS.config.optim_name,
-                    FLAGS.config.optim_rule,
-                    FLAGS.config.lr_schedule_name,
-                    FLAGS.config.n_pretrain_step,
-                    eval_loss,
-                ],
-            ],
+            columns=["Group", "N", "D", "B", "E", "Loss"],
+            data=[[FLAGS.experiment_group, n, d, b, e, eval_loss]],
         )
         wandb.log({"sweep_table": table})
 
