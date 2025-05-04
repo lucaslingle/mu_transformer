@@ -31,7 +31,7 @@ N_MESH_COLS=$(python -c "print(1 if $N < 10 ** 9 else 4)");
 N_LAYER=$(python -c "import math; print(int(math.ceil(($N / (13 * 128 * 128)) ** 0.33)))");
 D_MODEL=$(python -c "print($N_LAYER * 128)");
 
-for BSZ in 65536 131072 262144 524288 1048576 2097152 4194304;
+for BSZ in 65536 131072 262144 524288 1048576 2097152;
 do
   for LR in 0.0078125 0.00390625 0.001953125 0.0009765625 0.00048828125 0.000244140625 0.0001220703125;
   do
