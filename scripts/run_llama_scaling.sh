@@ -1,6 +1,5 @@
 #!/bin/bash
 
-GROUP_NAME="llama_scaling";
 Help() {
   echo "Syntax: run_llama_scaling.sh [n|d|h]"
   echo ""
@@ -38,7 +37,7 @@ do
     N_STEP=$(python -c "print($D // $BSZ)");
     N_WARMUP=$(python -c "import math; print(int(math.ceil($N_STEP * 0.02)))");
     ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
-      --experiment_group="$GROUP_NAME" \
+      --experiment_group="$N-$D" \
       --config="mu_transformer/configs/base.py" \
       --workdir="gs://tpu_persist_bucket/mu_transformer_scaling/" \
       --mode="train" \
