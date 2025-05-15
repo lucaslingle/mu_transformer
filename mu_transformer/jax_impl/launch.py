@@ -1083,10 +1083,10 @@ def main(argv):
                 if os.path.exists(local_done_fp):
                     os.remove(local_done_fp)
                 train_loop()
-                save_eval_loss()
                 os.mknod(local_done_fp)
                 blobfile.copy(local_done_fp, done_fp, overwrite=True)
                 os.remove(local_done_fp)
+            save_eval_loss()
         else:
             train_loop()
     elif FLAGS.mode in {"validation", "test"}:
@@ -1097,6 +1097,9 @@ def main(argv):
         sampling_loop()
     else:
         raise NotImplementedError
+
+    if jax.process_index() == 0:
+        wandb.finish()
 
 
 if __name__ == "__main__":
