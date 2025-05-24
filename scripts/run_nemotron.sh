@@ -1,12 +1,12 @@
 #!/bin/bash
 
-GROUP_NAME="llama";
+GROUP_NAME="nemotron";
 Help() {
-  echo "Syntax: run_llama.sh [l|h]"
+  echo "Syntax: run_nemotron.sh [l|h]"
   echo ""
-  echo "Trains a llama-style model with 4 billion parameters for 100 billion tokens."
+  echo "Trains a nemotron-style model with 4 billion parameters for 100 billion tokens."
   echo "Intended for larger-scale ablation studies."
-  echo "Diffs vs llama: mha; d_ff = 3 * d_model; wd on embs & gains."
+  echo "Diffs vs llama: mha; d_ff = 4.5 * d_model; wd on embs & gains."
   echo ""
   echo "Options:"
   echo "l     use learning rate lr = 2^-l for the given l."
@@ -47,8 +47,8 @@ LR=$(bc -l <<< "2 ^(-$LR_IDX)");
   --config.n_layer=28 \
   --config.u_init="sp" \
   --config.qk_scale=0.08838834764831845 \
-  --config.ff_act_name="swiglu" \
-  --config.ff_multiple=3.0 \
+  --config.ff_act_name="sqrelu" \
+  --config.ff_multiple=4.5 \
   --config.norm_eps=1e-6 \
   --config.norm_gains="$NORM_PARAMS" \
   --config.tokens_per_global_batch=1048576 \
