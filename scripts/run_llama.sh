@@ -9,18 +9,15 @@ Help() {
   echo "Diffs vs llama: mha; d_ff = 3 * d_model; wd on embs & gains."
   echo ""
   echo "Options:"
-  echo "l     use learning rate lr = 2^-l for the given l."
-  echo "p     use parametric rmsnorm."
+  echo "l     learning rate."
   echo "h     Print this Help."
   echo
 }
 
-while getopts "l:p:h" option; do
+while getopts "l:h" option; do
   case $option in
     l)
-      LR_IDX=$OPTARG;;
-    p)
-      NORM_PARAMS=$OPTARG;;
+      LR=$OPTARG;;
     h)
       Help
       exit;;
@@ -30,7 +27,6 @@ while getopts "l:p:h" option; do
   esac
 done
 
-LR=$(bc -l <<< "2 ^(-$LR_IDX)");
 ~/.local/bin/poetry run python3 mu_transformer/jax_impl/launch.py \
   --experiment_group="$GROUP_NAME" \
   --config="mu_transformer/configs/dm4096.py" \
@@ -50,7 +46,7 @@ LR=$(bc -l <<< "2 ^(-$LR_IDX)");
   --config.ff_act_name="swiglu" \
   --config.ff_multiple=3.0 \
   --config.norm_eps=1e-6 \
-  --config.norm_gains="$NORM_PARAMS" \
+  --config.norm_gains=True \
   --config.tokens_per_global_batch=1048576 \
   --config.lr_schedule_name="cosine" \
   --config.lr_schedule_end_frac=0.1 \
