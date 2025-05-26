@@ -1029,8 +1029,6 @@ def main(argv):
     logging.info("=== Config: ===")
     for k, v in vars(FLAGS.config)["_fields"].items():
         logging.info(f"{k}: {v}")
-    assert FLAGS.config.d_model >= FLAGS.config.d_head
-    assert FLAGS.config.d_model % FLAGS.config.d_head == 0
 
     n_host = jax.process_count()
     n_ds_shard = FLAGS.config.n_ds_shard
